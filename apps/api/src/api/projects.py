@@ -13,8 +13,11 @@ import secrets
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from functools import lru_cache
 
 from domain.model_spec import ModelSpec, Scene, Units
+
+from api.config import get_settings
 
 _PROJECT_ID_PREFIX = "prj_"
 
@@ -133,3 +136,19 @@ class ProjectSessionService:
 
     def _is_expired(self, session: ProjectSession) -> bool:
         return (self._clock() - session.last_active_at) > self._ttl_seconds
+
+
+@lru_cache
+def get_project_service() -> ProjectSessionService:
+    """FastAPI dependency: one process-wide `ProjectSessionService` (Issue #21).
+
+    Mirrors `api.config.get_settings`'s own `@lru_cache` singleton pattern --
+    routes depend on this function, and tests override it the same way
+    `test_health.py` overrides `get_settings` (`app.dependency_overrides`).
+    """
+    settings = get_settings()
+    return ProjectSessionService(
+        ttl_seconds=settings.session_ttl_seconds,
+        default_units=settings.default_units,
+        default_display_scale=settings.default_display_scale,
+    )

@@ -1232,6 +1232,13 @@ Proposed REST surface:
 - `commit_revision` is the only way a project's `ModelSpec`/revision changes after creation: it re-checks `expected_revision` against the stored value (raising `RevisionConflictError` on mismatch, UC-12) and, on success, stores the given `ModelSpec` with `revision` overwritten to `expected_revision + 1` -- callers (Issue #7's `apply_plan`, later Issue #22's orchestration endpoint) do not need to manage the revision counter themselves.
 - A new project's empty `ModelSpec` uses configurable defaults (`Settings.default_units = "mm"`, `Settings.default_display_scale = 0.001`) rather than hardcoded ones; `0.001` was chosen because X3D's implicit native unit is meters, so mm-authored scenes render at a sane scale by default without per-project tuning (§3.10).
 
+**Implementation note (Issue #21, 2026-09-21):** Wires the three session routes to HTTP as `apps/api/src/api/routes/projects.py`, registered in `apps/api/src/api/main.py`. `POST /api/projects` (201), `GET /api/projects/{id}` (200), `DELETE /api/projects/{id}` (204, idempotent -- matches `delete_project`'s no-op-on-missing behavior, so there is no `PROJECT_NOT_FOUND` case for delete). Concrete decisions this issue made:
+
+- "Session/revision metadata returned" is the `ModelSpec` itself, returned directly as each route's `response_model` (create/get), not a separate wrapper -- `ModelSpec` already carries `projectId` and `revision` alongside `scene`/`objects` (§8.2), so a wrapper would only duplicate those two fields.
+- `ProjectSessionService` is provided to routes as a process-wide singleton via `api.projects.get_project_service` (an `@lru_cache`-wrapped FastAPI dependency, mirroring `api.config.get_settings`'s own singleton pattern exactly); tests override it with `app.dependency_overrides`, the same mechanism `test_health.py` already established for `get_settings`.
+- Error bodies use a new shared `apps/api/src/api/errors.py::api_error(status_code, code, message, *, details=None, correlation_id=None)` helper so every route already returns §9.4's `{code, message, details, correlationId}` shape (this issue's "error codes standardized" AC) without waiting for Issue #23's centralized exception-handler work; `api_error` also logs every call it raises (NFR-09), so routes do not add their own logging on error paths. Issue #23 remains the issue that consolidates this into global FastAPI exception handlers instead of each route's own `try`/`except`.
+- OpenAPI is FastAPI's automatic generation (`GET /openapi.json`) off each route's `response_model`/path/status code -- no manual schema authored.
+
 ### 9.2 Apply plan request
 
 ```json
