@@ -1144,6 +1144,15 @@ MVP operations:
 - X3D is the authoritative render/export representation for MVP, but not the future-proof domain model.
 - Backend and frontend schema versions must match or negotiate an explicit supported migration.
 
+**Implementation note (Issue #7, 2026-09-21):** Implemented as `apps/api/src/api/mutation.py`. `apply_plan(spec, plan) -> ModelSpec` is the only code path that turns an AI-proposed `ModelPlan` into a new `ModelSpec`; it never mutates its `spec` argument and returns a separate candidate, so a `MutationError` partway through a plan leaves the caller's original `spec` (and thus the committed revision) untouched -- whole-plan rollback falls out of never writing to the input rather than needing explicit undo logic. Concrete decisions this issue made:
+
+- `target` on every operation is resolved by exact `ModelObject.id` only. FR-08's "by ID first, by unique display name second" resolution is agent/prompt-layer behavior (the agent is given both in its ModelSpec summary and is expected to emit IDs), not something this engine does -- the `ModelPlan` schema already types `target` as an `ObjectId`-pattern string, not free text.
+- `create_object` dimensions/`set_dimensions` are checked against a kind-specific required key set (`box` -> `width`/`height`/`depth`, `sphere` -> `radius`, `cylinder` -> `radius`/`height`, `cone` -> `bottomRadius`/`height`, matching `packages/domain/README.md`'s convention) and rejected otherwise; the JSON Schema deliberately does not enforce this per kind to stay renderer-independent, so the engine is where it is enforced.
+- `create_object` omitting `color` defaults to `#808080`; omitting `position`/`rotation` defaults to the origin; new objects always start at scale `(1, 1, 1)` (no `scale` field exists on `create_object`).
+- `create_object` omitting `id` generates one as `obj_<12 hex chars>` (`secrets.token_hex`), collision-checked against both existing objects and IDs already introduced earlier in the same plan.
+- Every mutating operation rebuilds the affected `ModelObject`/`Transform`/`Material` through its pydantic constructor (not `model_copy`, which skips validation) so field/model validators -- dimension positivity, nonzero scale, normalized color -- re-run on the merged result, not just on the operation's own input.
+- `clarify`/`no_change` are no-ops for this engine (no target, no state change); a plan that mixes either with mutating operations is not rejected here -- keeping the two apart is prompt/agent-layer policy, not a domain invariant this issue enforces.
+
 ### 8.5 State transition
 
 ```mermaid
