@@ -44,10 +44,11 @@ Serves at `http://localhost:5173`.
 
 ```bash
 cd apps/api
+cp .env.example .env  # optional, defaults work out of the box
 uv run uvicorn api.main:app --reload --port 8001
 ```
 
-Serves at `http://localhost:8001` (interactive docs at `/docs`).
+Serves at `http://localhost:8001` (interactive docs at `/docs`). Configuration (MCP base URL, timeouts, session TTL, complexity limits, CORS origins) is typed and validated at startup — see [`apps/api/src/api/config.py`](apps/api/src/api/config.py) and `apps/api/.env.example`. `GET /api/health` reports API liveness; `GET /api/health/mcp` reports `x3d_mcp` reachability separately.
 
 ### 3. `x3d_mcp` (`services/x3d-mcp`)
 
@@ -64,6 +65,10 @@ Serves at `http://localhost:8000` (`/pulse` health check, `/mcp` MCP endpoint). 
 | --- | --- | --- |
 | `apps/web` | `npm run lint` | `npm run typecheck` |
 | `apps/api` | `uv run ruff check .` | `uv run mypy src` |
+
+## Tests
+
+- `apps/api`: `uv run pytest`
 
 ## Product limitations
 
