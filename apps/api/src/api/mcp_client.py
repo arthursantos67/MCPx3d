@@ -146,9 +146,23 @@ class X3DMcpClient:
         """Schema (XSD) and semantic validation of the session's current scene."""
         return await self._call("validate_current_scene")
 
+    async def validate_x3d(self, content: str, *, encoding: Literal["xml", "json"] = "xml") -> str:
+        """Schema (XSD/JSON Schema) validation for arbitrary X3D content.
+
+        Returns the raw `{"valid": bool, "errors": [...]}` JSON text.
+        """
+        return await self._call("validate_x3d", {"content": content, "encoding": encoding})
+
     async def validate_semantic(self, content: str) -> str:
         """Semantic validation report for arbitrary X3D content."""
         return await self._call("validate_semantic", {"content": content})
+
+    async def autofix_x3d(self, content: str) -> str:
+        """Auto-correct containerField mistakes in `content`.
+
+        Returns the raw `{"fixed": str, "changes": [...], "unfixable": [...]}` JSON text.
+        """
+        return await self._call("autofix_x3d", {"content": content})
 
     async def generate_x3dom_page(self, content: str, *, title: str = "X3D Preview") -> str:
         """Wrap X3D content in a standalone X3DOM HTML page."""

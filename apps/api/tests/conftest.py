@@ -1,6 +1,7 @@
 import os
 import shutil
 import subprocess
+import sys
 import time
 from collections.abc import Iterator
 from pathlib import Path
@@ -40,6 +41,31 @@ def _wait_for_pulse(base_url: str, process: subprocess.Popen[bytes], timeout: fl
     raise RuntimeError(f"x3d_mcp server did not become ready in time: {last_error}")
 
 
+def _terminate_tree(process: subprocess.Popen[bytes]) -> None:
+    """Stops the server subprocess, including children `terminate()` alone would miss.
+
+    `uv run ...` execs the real interpreter as a *child* of the process this
+    fixture's `Popen` tracks; on Windows, `Popen.terminate()` only signals that
+    direct `uv` process, leaving the actual `src/server.py` interpreter
+    orphaned and still bound to `port` for every test session afterwards.
+    `taskkill /T` kills the whole tree instead.
+    """
+    if sys.platform == "win32":
+        subprocess.run(
+            ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+            capture_output=True,
+            check=False,
+        )
+        process.wait(timeout=10)
+        return
+    process.terminate()
+    try:
+        process.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=10)
+
+
 @pytest.fixture(scope="session")
 def x3d_mcp_server() -> Iterator[str]:
     """Runs the pinned x3d_mcp vendor server as a real subprocess for integration tests."""
@@ -55,16 +81,14 @@ def x3d_mcp_server() -> Iterator[str]:
         [uv, "run", "--with", "mcp<2", "python", "src/server.py"],
         cwd=_VENDOR_DIR,
         env=env,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        # Nothing ever reads Popen.stdout/stderr here; PIPE-ing them without a
+        # reader deadlocks the server once it fills the OS pipe buffer with
+        # its own logging (reliably hit partway through this file's tests).
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
     )
     try:
         _wait_for_pulse(base_url, process)
         yield base_url
     finally:
-        process.terminate()
-        try:
-            process.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            process.kill()
-            process.wait(timeout=10)
+        _terminate_tree(process)
