@@ -1,11 +1,11 @@
-"""Downloadable standalone HTML artifact for a validated revision (PRD FR-18,
-FR-21/22, UC-07, Issue #11).
+"""Downloadable revision artifacts: standalone HTML and X3D XML (PRD FR-18/19/21/22,
+UC-07/UC-08, Issues #11 and #12).
 
-`build_html_artifact` is built from an already-validated revision's X3D
-content (`x3d_validation.ValidationResult.content`) -- it mutates no stored
-project/revision state, so a failure here (e.g. `generate_x3dom_page` being
-unreachable) can never invalidate or replace the revision it was asked to
-render (PRD FE-08, "generation failure does not invalidate X3D revision").
+Both artifact kinds are built from an already-validated revision's X3D content
+(`x3d_validation.ValidationResult.content`) -- neither function mutates any
+stored project/revision state, so a failure here (e.g. `generate_x3dom_page`
+being unreachable) can never invalidate or replace the revision it was asked
+to render (PRD FE-08, "generation failure does not invalidate X3D revision").
 `requested_revision` is mandatory, mirroring
 `ProjectSessionService.commit_revision`'s `expected_revision`, so a caller
 cannot silently receive a stale artifact by omitting the check (FR-22).
@@ -18,6 +18,7 @@ import dataclasses
 from api.mcp_client import X3DMcpClient
 
 _HTML_MEDIA_TYPE = "text/html; charset=utf-8"
+_X3D_MEDIA_TYPE = "model/x3d+xml"
 
 
 class ArtifactError(Exception):
@@ -69,4 +70,20 @@ async def build_html_artifact(
         filename=normalized_artifact_filename(project_id, revision, "html"),
         media_type=_HTML_MEDIA_TYPE,
         content=html,
+    )
+
+
+def build_x3d_artifact(
+    *,
+    project_id: str,
+    revision: int,
+    x3d_content: str,
+    requested_revision: int,
+) -> Artifact:
+    """The validated revision's X3D XML, ready for download (FR-19, UC-08)."""
+    _check_revision(project_id, requested_revision, revision)
+    return Artifact(
+        filename=normalized_artifact_filename(project_id, revision, "x3d"),
+        media_type=_X3D_MEDIA_TYPE,
+        content=x3d_content,
     )

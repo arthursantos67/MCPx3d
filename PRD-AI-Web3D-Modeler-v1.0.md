@@ -538,6 +538,8 @@ For every validated scene, the backend shall generate a standalone browser-viewa
 
 For every validated scene, the system shall expose downloadable `.x3d` XML content.
 
+**Implementation note (Issue #12, 2026-09-21):** Implemented in the same `apps/api/src/api/artifacts.py` module as Issue #11. `build_x3d_artifact(project_id, revision, x3d_content, requested_revision)` is a synchronous pure function -- the already-validated `ValidationResult.content` from Issue #10's pipeline is the X3D XML, so no further MCP call or parsing is needed to serve it. The same mandatory `requested_revision` check as Issue #11 enforces FR-22's "never silently return a prior revision"; tests additionally round-trip a downloaded artifact's content back through `validate_x3d` to prove it revalidates as-is.
+
 ### FR-20 Additional X3D Encoding Export
 
 Where upstream conversion succeeds, the system shall allow `.x3dj` JSON and `.x3dv` ClassicVRML downloads.

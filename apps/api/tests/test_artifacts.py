@@ -1,8 +1,11 @@
+import json
+
 import pytest
 
 from api.artifacts import (
     StaleArtifactRequestError,
     build_html_artifact,
+    build_x3d_artifact,
     normalized_artifact_filename,
 )
 from api.mcp_client import X3DMcpClient
@@ -24,6 +27,22 @@ async def _real_x3d_content(client: X3DMcpClient) -> str:
 
 def test_normalized_artifact_filename_matches_fr21_example() -> None:
     assert normalized_artifact_filename("chair", 7, "x3d") == "chair-r0007.x3d"
+
+
+def test_build_x3d_artifact_returns_content_filename_and_media_type() -> None:
+    artifact = build_x3d_artifact(
+        project_id="prj_test", revision=3, x3d_content=_OPAQUE_CONTENT, requested_revision=3
+    )
+    assert artifact.filename == "prj_test-r0003.x3d"
+    assert artifact.media_type == "model/x3d+xml"
+    assert artifact.content == _OPAQUE_CONTENT
+
+
+def test_build_x3d_artifact_rejects_a_stale_requested_revision() -> None:
+    with pytest.raises(StaleArtifactRequestError):
+        build_x3d_artifact(
+            project_id="prj_test", revision=3, x3d_content=_OPAQUE_CONTENT, requested_revision=2
+        )
 
 
 async def test_build_html_artifact_renders_a_known_scene(x3d_mcp_server: str) -> None:
@@ -76,3 +95,15 @@ async def test_build_html_artifact_propagates_generation_failure_untouched() -> 
             x3d_content=_OPAQUE_CONTENT,
             requested_revision=1,
         )
+
+
+async def test_downloaded_x3d_artifact_content_revalidates(x3d_mcp_server: str) -> None:
+    async with X3DMcpClient.connect(x3d_mcp_server) as client:
+        x3d_content = await _real_x3d_content(client)
+        artifact = build_x3d_artifact(
+            project_id="prj_test", revision=1, x3d_content=x3d_content, requested_revision=1
+        )
+        validation = json.loads(await client.validate_x3d(artifact.content))
+
+    assert validation["valid"] is True
+    assert validation["errors"] == []
