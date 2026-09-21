@@ -168,6 +168,15 @@ class X3DMcpClient:
         """Wrap X3D content in a standalone X3DOM HTML page."""
         return await self._call("x3dom_page", {"content": content, "title": title})
 
+    async def convert_x3d(
+        self, content: str, *, from_encoding: Literal["xml"], to_encoding: Literal["json", "vrml"]
+    ) -> str:
+        """Convert X3D `content` between encodings (currently XML source only)."""
+        return await self._call(
+            "convert_x3d",
+            {"content": content, "from_encoding": from_encoding, "to_encoding": to_encoding},
+        )
+
     async def _create_node(self, node_type: str, fields: dict[str, Any] | None = None) -> str:
         text = await self._call("create_node", {"node_type": node_type, "fields": fields or None})
         # Tool returns "Created {node_type} with ID: {node_id}".

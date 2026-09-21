@@ -16,3 +16,9 @@ At the time of pinning, this was the tip of upstream `main`. It was verified to:
 - accept a real MCP client session at `/mcp` (`initialize()` + `list_tools()` returned 34 tools, matching the tool groups described in the PRD §3.5/Appendix C).
 
 See `services/x3d-mcp/README.md` for the `mcp<2` dependency pin required to run this exact commit, and the procedure for updating the pin later.
+
+## Known upstream limitation: `convert_x3d(to_encoding="json")` (found in Issue #13, 2026-09-21)
+
+At this pinned commit, `convert_x3d`'s JSON target (`.x3dj`) never returns well-formed JSON -- confirmed even for an empty `<Scene/>`, so it isn't content-specific. The bug is in the vendored `x3d` pip package's `X3D.JSON()` serializer (invoked by `services/x3d-mcp/vendor/src/tools/convert.py`), not in this repository's code, and not something to patch inside the pinned submodule. It appears to have gone unnoticed upstream because the vendored server's own test suite (`tests/test_tools.py::test_convert_xml_to_json`) only asserts substrings like `"X3D" in json_out`, never that the result actually parses.
+
+`apps/api/src/api/artifacts.py`'s `build_converted_artifact` treats this as a normal "conversion unavailable" case rather than a crash: it validates the tool's output with `json.loads` and raises `ArtifactConversionError` when it doesn't parse, so `.x3dj` downloads are consistently unavailable today while `.x3dv` (ClassicVRML) continues to work. Revisit this note if the pinned commit is ever bumped past an upstream fix.

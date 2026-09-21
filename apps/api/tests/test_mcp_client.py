@@ -58,6 +58,24 @@ async def test_create_primitive_applies_transform_scale(x3d_mcp_server: str) -> 
         assert "scale='2.0 3.0 4.0'" in scene_xml
 
 
+async def test_convert_x3d_xml_to_json_and_vrml(x3d_mcp_server: str) -> None:
+    async with X3DMcpClient.connect(x3d_mcp_server) as client:
+        await client.reset_scene()
+        await client.create_primitive("box", {"size": [1.0, 1.0, 1.0]}, def_name="ConvertBox")
+        scene_xml = await client.get_scene()
+
+        as_json = await client.convert_x3d(scene_xml, from_encoding="xml", to_encoding="json")
+        as_vrml = await client.convert_x3d(scene_xml, from_encoding="xml", to_encoding="vrml")
+
+    # `as_json` is not asserted to be well-formed JSON here: the pinned x3d_mcp
+    # commit's JSON serializer has a pre-existing bug that makes it never
+    # produce valid JSON (see test_artifacts.py's
+    # test_build_converted_artifact_x3dj_raises_on_malformed_upstream_output).
+    # This test only proves the tool call itself round-trips successfully.
+    assert "ConvertBox" in as_json
+    assert "Shape" in as_vrml
+
+
 async def test_reset_scene_clears_prior_primitives(x3d_mcp_server: str) -> None:
     async with X3DMcpClient.connect(x3d_mcp_server) as client:
         await client.reset_scene()

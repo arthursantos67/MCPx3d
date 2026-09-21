@@ -3,7 +3,9 @@ import json
 import pytest
 
 from api.artifacts import (
+    ArtifactConversionError,
     StaleArtifactRequestError,
+    build_converted_artifact,
     build_html_artifact,
     build_x3d_artifact,
     normalized_artifact_filename,
@@ -107,3 +109,94 @@ async def test_downloaded_x3d_artifact_content_revalidates(x3d_mcp_server: str) 
 
     assert validation["valid"] is True
     assert validation["errors"] == []
+
+
+async def test_build_converted_artifact_x3dj_raises_on_malformed_upstream_output(
+    x3d_mcp_server: str,
+) -> None:
+    """The pinned `x3d_mcp` commit's `convert_x3d(to_encoding="json")` currently
+    returns text that is not valid JSON for any scene, including an empty one
+    -- a pre-existing upstream serialization bug in the vendored `x3d` pip
+    package, not something `x3d_adapter`/`artifacts` content triggers (the
+    vendored server's own test suite never asserts its `model.JSON()` output
+    actually parses either). Until that's fixed upstream, `.x3dj` is
+    unavailable for every revision; `ArtifactConversionError` is how a caller
+    (e.g. the download endpoint) learns to omit the format rather than serve
+    corrupt content, per FR-20's "where upstream conversion succeeds"."""
+    async with X3DMcpClient.connect(x3d_mcp_server) as client:
+        x3d_content = await _real_x3d_content(client)
+        with pytest.raises(ArtifactConversionError) as excinfo:
+            await build_converted_artifact(
+                client,
+                format="x3dj",
+                project_id="prj_test",
+                revision=2,
+                x3d_content=x3d_content,
+                requested_revision=2,
+            )
+
+    assert excinfo.value.format == "x3dj"
+
+
+async def test_build_converted_artifact_x3dv_produces_classic_vrml(x3d_mcp_server: str) -> None:
+    async with X3DMcpClient.connect(x3d_mcp_server) as client:
+        x3d_content = await _real_x3d_content(client)
+        artifact = await build_converted_artifact(
+            client,
+            format="x3dv",
+            project_id="prj_test",
+            revision=2,
+            x3d_content=x3d_content,
+            requested_revision=2,
+        )
+
+    assert artifact.filename == "prj_test-r0002.x3dv"
+    assert artifact.media_type == "model/x3d-vrml"
+    assert "Shape" in artifact.content
+
+
+async def test_build_converted_artifact_rejects_a_stale_requested_revision() -> None:
+    class _ExplodingClient:
+        async def convert_x3d(self, content: str, *, from_encoding: str, to_encoding: str) -> str:
+            raise AssertionError("must not convert for a stale revision request")
+
+    with pytest.raises(StaleArtifactRequestError):
+        await build_converted_artifact(
+            _ExplodingClient(),  # type: ignore[arg-type]
+            format="x3dj",
+            project_id="prj_test",
+            revision=3,
+            x3d_content=_OPAQUE_CONTENT,
+            requested_revision=2,
+        )
+
+
+async def test_build_converted_artifact_conversion_failure_does_not_touch_base_artifact(
+    x3d_mcp_server: str,
+) -> None:
+    """A conversion failure isolates itself to the `.x3dj`/`.x3dv` request -- the
+    caller's already-built `.x3d` artifact (built separately, before or after)
+    is a plain string it already holds, untouched by this raising (FR-20)."""
+
+    class _FailingConvertClient:
+        async def convert_x3d(self, content: str, *, from_encoding: str, to_encoding: str) -> str:
+            raise RuntimeError("conversion tool unreachable")
+
+    async with X3DMcpClient.connect(x3d_mcp_server) as client:
+        x3d_content = await _real_x3d_content(client)
+
+    base_artifact = build_x3d_artifact(
+        project_id="prj_test", revision=1, x3d_content=x3d_content, requested_revision=1
+    )
+
+    with pytest.raises(RuntimeError, match="conversion tool unreachable"):
+        await build_converted_artifact(
+            _FailingConvertClient(),  # type: ignore[arg-type]
+            format="x3dj",
+            project_id="prj_test",
+            revision=1,
+            x3d_content=x3d_content,
+            requested_revision=1,
+        )
+
+    assert base_artifact.content == x3d_content
