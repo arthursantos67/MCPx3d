@@ -52,6 +52,8 @@ Serves at `http://localhost:8001` (interactive docs at `/docs`). Configuration (
 
 [`apps/api/src/api/routes/projects.py`](apps/api/src/api/routes/projects.py) wires `ProjectSessionService` to HTTP: `POST /api/projects`, `GET /api/projects/{id}`, `DELETE /api/projects/{id}` (PRD §9.1, Issue #21). Error responses across routes follow PRD §9.4's standardized `{code, message, details, correlationId}` body via [`apps/api/src/api/errors.py`](apps/api/src/api/errors.py)'s `api_error` helper.
 
+[`apps/api/src/api/routes/plans.py`](apps/api/src/api/routes/plans.py)'s `POST /api/projects/{id}/plans` is the central mutation transaction (PRD §9.2/§9.3, Issue #22): validate the request → reject a `clarify`-containing plan as `422 AMBIGUOUS_TARGET` before touching MCP → check the expected revision → `apply_plan` → build/validate the candidate as X3D → commit → describe available artifacts, all through the modules above.
+
 ### 3. `x3d_mcp` (`services/x3d-mcp`)
 
 ```bash
