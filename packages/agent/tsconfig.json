@@ -1,0 +1,27 @@
+{
+  // "bundler" resolution (not "NodeNext", unlike packages/domain/ts): under
+  // NodeNext, TS fails to resolve @mlc-ai/web-llm's re-exported OpenAI-shaped
+  // types (e.g. ChatCompletionMessageParam) through its extensionless
+  // `export *` chain, even though Node's own runtime resolution (which
+  // `node --test` actually uses, unaffected by this setting) loads the
+  // package fine either way.
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023", "DOM"],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "erasableSyntaxOnly": true,
+    "noFallthroughCasesInSwitch": true,
+    "types": ["node"]
+  },
+  "include": ["src", "tests"]
+}

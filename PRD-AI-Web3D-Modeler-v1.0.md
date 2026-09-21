@@ -323,6 +323,13 @@ Initial providers:
 
 No domain or geometry code may call WebLLM directly outside the provider package.
 
+**Implementation note (Issue #18, 2026-09-21):** Implemented in `packages/agent/src/provider.ts` (the `LLMProvider`/`AgentMessage`/`JsonSchema`/`GenerationOptions` types, matching this section's shape exactly), `packages/agent/src/webllm-provider.ts` (`WebLLMProvider`, `createWebLLMProvider`), and `packages/agent/src/mock-provider.ts` (`MockLLMProvider`). `PuterProvider`/`OpenAICompatibleProvider` remain unimplemented (future fallback/BYOK providers, not required for this issue). Concrete decisions this issue made:
+
+- `WebLLMProvider` is a new, self-contained implementation, not a reuse of `apps/web/src/ai/webllm-runtime.ts` (Issue #16): that code is Phase-0 spike code (§14.1) written before this package existed and is still not wired into any UI, whereas this section already assigns "the provider package" as the only place allowed to call WebLLM directly. `detectWebGpu`/`createWorker`/`createEngine` are constructor-injected (the same DI shape Issue #16 used) so it is unit-tested without a browser, GPU, or model download.
+- `generateStructured` uses `@mlc-ai/web-llm`'s own JSON mode (`response_format: { type: "json_object", schema: JSON.stringify(schema) }` on `engine.chat.completions.create`), not free-text prompting plus hopeful parsing.
+- `WebLLMProvider` exposes a richer `getState()`/`onStateChange()` beyond the interface's boolean `isAvailable()` -- phases `idle`/`unsupported`/`loading`/`ready`/`generating`/`error` -- satisfying this issue's "provider exposes availability/init/structured-generation state" beyond what the interface itself requires. `generateStructured` called while not `ready` throws a descriptive error rather than silently queuing or guessing.
+- `MockLLMProvider` takes an ordered array of scripted responses (a value, a JSON string so a test can script malformed JSON, or a function of the call's messages/schema); each `generateStructured` call consumes the next one, and exhausting the script throws rather than returning `undefined`.
+
 ### 3.8 ModelSpec intermediate representation
 
 The application shall maintain a renderer-independent semantic model.

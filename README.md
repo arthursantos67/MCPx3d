@@ -63,6 +63,10 @@ Serves at `http://localhost:8000` (`/pulse` health check, `/mcp` MCP endpoint). 
 
 Not a running service — the `ModelSpec`/`ModelPlan` v1 JSON Schemas and their TypeScript/Python type mirrors that `apps/web`, `apps/api`, and `packages/agent` build on. See [`packages/domain/README.md`](packages/domain/README.md).
 
+### 5. Agent runtime (`packages/agent`)
+
+Not a running service — the `LLMProvider` abstraction (`isAvailable`/`initialize`/`generateStructured`/`cancel`, PRD §3.7, FR-27, Issue #18) and its required `WebLLMProvider` implementation. See [`packages/agent/README.md`](packages/agent/README.md). Not wired into a chat UI yet -- that's Issue #27. **Issue #17** (benchmarking candidate WebLLM models and picking a real default) **was explicitly skipped for this pass**, at the user's request, since this environment has no browser with WebGPU to run a real benchmark on; see `packages/agent/README.md` for what that leaves open.
+
 ## Lint and typecheck
 
 | | Lint | Typecheck |
@@ -71,6 +75,7 @@ Not a running service — the `ModelSpec`/`ModelPlan` v1 JSON Schemas and their 
 | `apps/api` | `uv run ruff check .` | `uv run mypy` |
 | `packages/domain/ts` | — | `npm run typecheck` |
 | `packages/domain/python` | `uv run ruff check .` | `uv run mypy` |
+| `packages/agent` | — | `npm run typecheck` |
 
 ## Tests
 
@@ -78,6 +83,7 @@ Not a running service — the `ModelSpec`/`ModelPlan` v1 JSON Schemas and their 
 - `apps/web`: `npm test` (`src/ai`'s WebGPU/WebLLM logic against injected fakes -- no browser, GPU, or model download involved; see `apps/web/README.md`)
 - `packages/domain/ts`: `npm test`
 - `packages/domain/python`: `uv run pytest`
+- `packages/agent`: `npm test` (provider logic against injected fakes and a `MockLLMProvider` -- no browser, GPU, or model download involved; see `packages/agent/README.md`)
 
 ## Product limitations
 
