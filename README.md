@@ -48,7 +48,7 @@ cp .env.example .env  # optional, defaults work out of the box
 uv run uvicorn api.main:app --reload --port 8001
 ```
 
-Serves at `http://localhost:8001` (interactive docs at `/docs`). Configuration (MCP base URL, timeouts, session TTL, complexity limits, CORS origins) is typed and validated at startup — see [`apps/api/src/api/config.py`](apps/api/src/api/config.py) and `apps/api/.env.example`. `GET /api/health` reports API liveness; `GET /api/health/mcp` reports `x3d_mcp` reachability separately.
+Serves at `http://localhost:8001` (interactive docs at `/docs`). Configuration (MCP base URL, timeouts, session TTL, complexity limits, CORS origins) is typed and validated at startup — see [`apps/api/src/api/config.py`](apps/api/src/api/config.py) and `apps/api/.env.example`. `GET /api/health` reports API liveness; `GET /api/health/mcp` reports `x3d_mcp` reachability separately. [`apps/api/src/api/mcp_client.py`](apps/api/src/api/mcp_client.py) (`X3DMcpClient`) wraps the `x3d_mcp` Streamable HTTP tool surface (scene create/reset, primitive creation, schema/semantic validation, X3DOM page generation) behind typed methods and errors, per PRD §9.5.
 
 ### 3. `x3d_mcp` (`services/x3d-mcp`)
 
@@ -64,11 +64,11 @@ Serves at `http://localhost:8000` (`/pulse` health check, `/mcp` MCP endpoint). 
 | | Lint | Typecheck |
 | --- | --- | --- |
 | `apps/web` | `npm run lint` | `npm run typecheck` |
-| `apps/api` | `uv run ruff check .` | `uv run mypy src` |
+| `apps/api` | `uv run ruff check .` | `uv run mypy` |
 
 ## Tests
 
-- `apps/api`: `uv run pytest`
+- `apps/api`: `uv run pytest` (includes an `X3DMcpClient` integration test that runs the real `services/x3d-mcp` server as a subprocess; skipped automatically if `uv` or the vendor submodule isn't available)
 
 ## Product limitations
 

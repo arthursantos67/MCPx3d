@@ -1243,6 +1243,19 @@ Standard body:
 
 The API shall encapsulate MCP protocol details inside `X3DMcpClient`. Frontend code shall not need to know MCP tool transport schemas.
 
+**Implementation note (Issue #4, 2026-09-21):** Implemented as `apps/api/src/api/mcp_client.py`. `X3DMcpClient.connect(base_url, timeout_seconds)` is an async context manager that opens one MCP Streamable HTTP session (`mcp` Python SDK, pinned `<2` to match `services/x3d-mcp`'s server pin) against `{base_url}/mcp` and yields a client exposing:
+
+| Method | Underlying `x3d_mcp` tool(s) |
+| --- | --- |
+| `reset_scene()` | `reset_scene` |
+| `create_primitive(kind, dimensions, ...)` | composite: `create_node`/`set_field`/`add_child`/`def_node` (builds Transform → Shape → Appearance/Material + geometry) |
+| `get_scene(encoding)` | `get_scene` |
+| `validate_current_scene()` | `validate_current_scene` (schema + semantic, combined) |
+| `validate_semantic(content)` | `validate_semantic` |
+| `generate_x3dom_page(content, title)` | `x3dom_page` |
+
+Because `x3d_mcp`'s granular scene-building tools keep state per MCP session (its own session-isolation mechanism for FR-25), one `X3DMcpClient` holds a single session for its whole lifetime; primitives created through it accumulate in that session's scene until `reset_scene()` is called. Failures are mapped to typed errors: `McpUnavailableError` (connection/session-establishment failure) and `McpToolError` (a tool call completed but reported an error, e.g. an unknown target). This is a minimal wrapper sufficient for the Milestone M0 vertical-slice spike; the structured `ValidationResult` shape in §8.1/§9.3 (parsed schema/semantic outcome, warnings, autofixes) is Issue #10's concern, not this client's.
+
 ### 9.6 Timeouts
 
 Recommended initial limits:
