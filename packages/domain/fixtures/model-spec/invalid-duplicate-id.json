@@ -1,0 +1,25 @@
+{
+  "schemaVersion": "1.0",
+  "projectId": "prj_demo",
+  "revision": 0,
+  "units": "mm",
+  "scene": { "displayScale": 1 },
+  "objects": [
+    {
+      "id": "obj_cube1",
+      "name": "Cube A",
+      "kind": "box",
+      "dimensions": { "width": 40, "height": 40, "depth": 40 },
+      "transform": { "position": [0, 0, 0], "rotation": [0, 0, 0], "scale": [1, 1, 1] },
+      "material": { "color": "#ff0000" }
+    },
+    {
+      "id": "obj_cube1",
+      "name": "Cube B",
+      "kind": "box",
+      "dimensions": { "width": 20, "height": 20, "depth": 20 },
+      "transform": { "position": [50, 0, 0], "rotation": [0, 0, 0], "scale": [1, 1, 1] },
+      "material": { "color": "#00ff00" }
+    }
+  ]
+}

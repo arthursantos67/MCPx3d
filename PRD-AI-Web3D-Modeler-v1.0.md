@@ -1095,6 +1095,13 @@ interface ModelObject {
 }
 ```
 
+**Implementation note (Issue #5, 2026-09-21):** Implemented as `packages/domain/schemas/model-spec.v1.schema.json` (JSON Schema, draft 2020-12), mirrored by `packages/domain/ts/src/model-spec.ts` and `packages/domain/python/src/domain/model_spec.py`. Concrete decisions the baseline above left open:
+
+- `material.color` must be a normalized lowercase 6-digit hex string (`^#[0-9a-f]{6}$`).
+- `id` must match `^[A-Za-z0-9_-]+$`.
+- `dimensions` keys are kind-specific by convention, not schema-enforced per kind (keeps the schema renderer-independent): `box` → `width`/`height`/`depth`, `sphere` → `radius`, `cylinder` → `radius`/`height`, `cone` → `bottomRadius`/`height`. These match the `x3d_mcp` primitive tool parameters used by the Issue #4 `X3DMcpClient` (`services/x3d-mcp/vendor/src/tools/workflow.py`).
+- Unique `ModelObject.id` (§8.4) is not expressible in JSON Schema and is enforced by a domain validator in each language mirror, not by the schema file itself; see `packages/domain/README.md`.
+
 ### 8.3 ModelPlan operations
 
 MVP operations:

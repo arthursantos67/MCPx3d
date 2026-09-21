@@ -59,16 +59,24 @@ git submodule update --init --recursive services/x3d-mcp/vendor
 
 Serves at `http://localhost:8000` (`/pulse` health check, `/mcp` MCP endpoint). See [`services/x3d-mcp/README.md`](services/x3d-mcp/README.md) and [`docs/x3d-mcp.md`](docs/x3d-mcp.md) for the pinned commit and a required dependency pin.
 
+### 4. Shared domain schemas (`packages/domain`)
+
+Not a running service — the `ModelSpec`/`ModelPlan` v1 JSON Schemas and their TypeScript/Python type mirrors that `apps/web`, `apps/api`, and `packages/agent` build on. See [`packages/domain/README.md`](packages/domain/README.md).
+
 ## Lint and typecheck
 
 | | Lint | Typecheck |
 | --- | --- | --- |
 | `apps/web` | `npm run lint` | `npm run typecheck` |
 | `apps/api` | `uv run ruff check .` | `uv run mypy` |
+| `packages/domain/ts` | — | `npm run typecheck` |
+| `packages/domain/python` | `uv run ruff check .` | `uv run mypy` |
 
 ## Tests
 
 - `apps/api`: `uv run pytest` (includes an `X3DMcpClient` integration test that runs the real `services/x3d-mcp` server as a subprocess; skipped automatically if `uv` or the vendor submodule isn't available)
+- `packages/domain/ts`: `npm test`
+- `packages/domain/python`: `uv run pytest`
 
 ## Product limitations
 

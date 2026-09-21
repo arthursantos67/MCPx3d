@@ -1,0 +1,15 @@
+{
+  "name": "@ai-web3d-modeler/domain",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.6",
+    "ajv": "^8.17.1",
+    "typescript": "~6.0.2"
+  }
+}

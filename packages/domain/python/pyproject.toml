@@ -1,0 +1,33 @@
+[project]
+name = "domain"
+version = "0.1.0"
+description = "Shared ModelSpec/ModelPlan Python types (PRD §8)"
+readme = "README.md"
+authors = [
+    { name = "Arthur Santos", email = "arthursantos.homeoffice@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic>=2.9",
+]
+
+[build-system]
+requires = ["uv_build>=0.12.17,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "jsonschema>=4.26",
+    "mypy>=2.3.1",
+    "pytest>=9.1.1",
+    "ruff>=0.16.8",
+]
+
+[tool.ruff]
+src = ["src"]
+
+[tool.mypy]
+python_version = "3.12"
+packages = ["domain"]
+mypy_path = "src"
+strict = true

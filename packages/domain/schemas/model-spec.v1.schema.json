@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-web3d-modeler.dev/schemas/model-spec.v1.schema.json",
+  "title": "ModelSpec",
+  "description": "Renderer-independent semantic description of the current model. PRD §8.2. Cross-field rules the schema cannot express (unique object IDs) are enforced by domain validators, not here.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "projectId", "revision", "units", "scene", "objects"],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "projectId": { "type": "string", "minLength": 1 },
+    "revision": { "type": "integer", "minimum": 0 },
+    "units": { "enum": ["mm", "cm", "m", "unitless"] },
+    "scene": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["displayScale"],
+      "properties": {
+        "background": { "type": "string", "minLength": 1 },
+        "displayScale": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    },
+    "objects": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/modelObject" }
+    }
+  },
+  "$defs": {
+    "vec3": {
+      "type": "array",
+      "items": { "type": "number" },
+      "minItems": 3,
+      "maxItems": 3
+    },
+    "scaleVec3": {
+      "type": "array",
+      "items": { "type": "number", "not": { "const": 0 } },
+      "minItems": 3,
+      "maxItems": 3
+    },
+    "modelObject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "kind", "dimensions", "transform", "material"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "minLength": 1
+        },
+        "name": { "type": "string", "minLength": 1 },
+        "kind": { "enum": ["box", "sphere", "cylinder", "cone"] },
+        "dimensions": {
+          "description": "Positive, kind-specific size fields. Convention: box -> width/height/depth, sphere -> radius, cylinder -> radius/height, cone -> bottomRadius/height.",
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": { "type": "number", "exclusiveMinimum": 0 }
+        },
+        "transform": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["position", "rotation", "scale"],
+          "properties": {
+            "position": { "$ref": "#/$defs/vec3" },
+            "rotation": { "$ref": "#/$defs/vec3" },
+            "scale": { "$ref": "#/$defs/scaleVec3" }
+          }
+        },
+        "material": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["color"],
+          "properties": {
+            "color": {
+              "description": "Normalized lowercase 6-digit hex color, e.g. #ff0000.",
+              "type": "string",
+              "pattern": "^#[0-9a-f]{6}$"
+            },
+            "transparency": { "type": "number", "minimum": 0, "maximum": 1 }
+          }
+        },
+        "tags": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  }
+}

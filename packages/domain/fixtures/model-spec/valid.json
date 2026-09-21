@@ -1,0 +1,37 @@
+{
+  "schemaVersion": "1.0",
+  "projectId": "prj_demo",
+  "revision": 2,
+  "units": "mm",
+  "scene": {
+    "background": "#cccccc",
+    "displayScale": 1
+  },
+  "objects": [
+    {
+      "id": "obj_cube1",
+      "name": "Cube",
+      "kind": "box",
+      "dimensions": { "width": 40, "height": 40, "depth": 40 },
+      "transform": {
+        "position": [0, 20, 0],
+        "rotation": [0, 0, 0],
+        "scale": [1, 1, 1]
+      },
+      "material": { "color": "#ff0000" },
+      "tags": ["primary"]
+    },
+    {
+      "id": "obj_platform1",
+      "name": "Platform",
+      "kind": "cylinder",
+      "dimensions": { "radius": 60, "height": 10 },
+      "transform": {
+        "position": [0, -5, 0],
+        "rotation": [0, 0, 0],
+        "scale": [1, 1, 1]
+      },
+      "material": { "color": "#808080", "transparency": 0 }
+    }
+  ]
+}
