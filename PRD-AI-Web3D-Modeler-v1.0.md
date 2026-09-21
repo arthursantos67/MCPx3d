@@ -693,6 +693,8 @@ On first use, the frontend shall detect WebGPU support and initialize the config
 
 If WebGPU is unavailable, the UI shall clearly explain that the zero-key local AI mode is not supported in the current browser/device and present configured alternatives, such as an optional Puter.js provider, if enabled.
 
+**Implementation note (Issue #15, 2026-09-21):** Implemented as `apps/web/src/ai/webgpu-capability.ts` (`detectWebGpuCapability`). Resolves `{ status: "ready" }` or `{ status: "unsupported", reason }` by checking for `navigator.gpu` and, if present, actually calling `requestAdapter()` (a browser can expose the `navigator.gpu` surface yet still fail to produce a usable adapter on some hardware/driver combinations, so presence alone isn't "ready-capable"). The `reason` text is deliberately scoped to AI-mode availability ("the built-in local AI mode can't run here... the 3D viewer and manual editing are unaffected") so it can't be misread as the whole app/viewer being unsupported, per this requirement's own wording. The "present configured alternatives" (Puter.js) half of this requirement is out of scope for #15 -- no fallback provider exists yet (PRD §3.6, Issue #18 is `LLMProvider` abstraction).
+
 ### FE-06 3D Preview
 
 The right-hand panel shall render the current validated scene and allow normal viewer navigation such as orbit, zoom, and pan according to X3DOM/X_ITE behavior.

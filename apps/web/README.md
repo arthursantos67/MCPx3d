@@ -1,3 +1,7 @@
+## Local AI runtime (`src/ai`)
+
+[`src/ai/webgpu-capability.ts`](src/ai/webgpu-capability.ts) (`detectWebGpuCapability`) checks whether the default local AI mode can run in this browser/device before anything downloads a model (PRD FE-04/FE-05, Issue #15) -- it reports `{ status: "ready" }` or `{ status: "unsupported", reason }`, and the reason text is scoped to AI-mode availability, never implying the 3D viewer itself is unsupported. Nothing consumes this yet -- FE-01's chat/workspace UI is a separate, not-yet-implemented issue.
+
 # React + TypeScript + Vite
 
 This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.

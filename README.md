@@ -38,7 +38,7 @@ npm install
 npm run dev
 ```
 
-Serves at `http://localhost:5173`.
+Serves at `http://localhost:5173`. [`apps/web/src/ai/webgpu-capability.ts`](apps/web/src/ai/webgpu-capability.ts) detects whether the default local AI mode can run before any model download starts (Issue #15). See [`apps/web/README.md`](apps/web/README.md) for details. Not wired into a chat/workspace UI yet -- that's FE-01, a separate not-yet-implemented issue.
 
 ### 2. API (`apps/api`)
 
@@ -75,6 +75,7 @@ Not a running service — the `ModelSpec`/`ModelPlan` v1 JSON Schemas and their 
 ## Tests
 
 - `apps/api`: `uv run pytest` (includes an `X3DMcpClient` integration test that runs the real `services/x3d-mcp` server as a subprocess; skipped automatically if `uv` or the vendor submodule isn't available)
+- `apps/web`: `npm test` (`src/ai`'s WebGPU/WebLLM logic against injected fakes -- no browser, GPU, or model download involved; see `apps/web/README.md`)
 - `packages/domain/ts`: `npm test`
 - `packages/domain/python`: `uv run pytest`
 
