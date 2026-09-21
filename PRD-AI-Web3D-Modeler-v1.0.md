@@ -1121,6 +1121,13 @@ MVP operations:
 | `clarify` | Ask user for missing/ambiguous information; no mutation. |
 | `no_change` | Respond without modifying geometry. |
 
+**Implementation note (Issue #6, 2026-09-21):** Implemented as `packages/domain/schemas/model-plan.v1.schema.json`, mirrored by `packages/domain/ts/src/model-plan.ts` and `packages/domain/python/src/domain/model_plan.py`. Concrete decisions the baseline above left open:
+
+- Each operation object carries a discriminator field `op` (e.g. `"op": "create_object"`), and every operation schema is closed (`additionalProperties: false` / no TS index signature / pydantic `extra="forbid"`), so an unrecognized `op` or any extra field (an executable-code field in particular) fails validation rather than being silently accepted.
+- `translate_object`/`rotate_object` (`delta`) and `scale_object` (`factor`) are **relative** to the target's current transform; `set_dimensions` and `set_material` remain **absolute** sets. The PRD text above did not specify this, and it was chosen so the operation name alone (verb vs. "set_X") tells the caller which mode applies.
+- `create_object.id` is optional: omitted, the mutation engine (Issue #7) generates one; provided, it lets a later operation in the same plan target the new object before commit, per §8.4's "same atomic plan first creates it" rule.
+- `set_material` and `set_scene` each require at least one of their optional fields (schema `anyOf`, plus a matching domain validator), since an operation with neither is a no-op that should have been `no_change`.
+
 ### 8.4 Integrity rules
 
 - Object IDs are unique within a project.

@@ -1,0 +1,20 @@
+{
+  "intent": "modify_model",
+  "operations": [
+    {
+      "op": "set_dimensions",
+      "target": "obj_leg1",
+      "dimensions": { "radius": 8, "height": 400 }
+    },
+    {
+      "op": "set_material",
+      "target": "obj_seat1",
+      "color": "#2e7d32"
+    },
+    {
+      "op": "translate_object",
+      "target": "obj_sphere1",
+      "delta": [0, 50, 0]
+    }
+  ]
+}

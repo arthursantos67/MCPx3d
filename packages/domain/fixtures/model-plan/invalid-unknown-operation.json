@@ -1,0 +1,10 @@
+{
+  "intent": "modify_model",
+  "operations": [
+    {
+      "op": "run_script",
+      "target": "obj_cube1",
+      "script": "delete_all_objects()"
+    }
+  ]
+}

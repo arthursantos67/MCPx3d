@@ -1,0 +1,200 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-web3d-modeler.dev/schemas/model-plan.v1.schema.json",
+  "title": "ModelPlan",
+  "description": "The only operations the AI agent is allowed to propose. PRD §8.3. Every operation variant is closed (additionalProperties: false) so no executable-code field (script/code/expression/...) can ever be accepted, and an unrecognized op value matches no branch of the operations oneOf and is rejected.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["intent", "operations"],
+  "properties": {
+    "intent": { "type": "string", "minLength": 1 },
+    "operations": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/operation" }
+    }
+  },
+  "$defs": {
+    "vec3": {
+      "type": "array",
+      "items": { "type": "number" },
+      "minItems": 3,
+      "maxItems": 3
+    },
+    "objectId": { "type": "string", "pattern": "^[A-Za-z0-9_-]+$", "minLength": 1 },
+    "dimensions": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": { "type": "number", "exclusiveMinimum": 0 }
+    },
+    "color": { "type": "string", "pattern": "^#[0-9a-f]{6}$" },
+
+    "createObject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["op", "name", "kind", "dimensions"],
+      "properties": {
+        "op": { "const": "create_object" },
+        "id": {
+          "description": "Optional caller-proposed ID, required only when a later operation in the same plan must target this object before it exists.",
+          "$ref": "#/$defs/objectId"
+        },
+        "name": { "type": "string", "minLength": 1 },
+        "kind": { "enum": ["box", "sphere", "cylinder", "cone"] },
+        "dimensions": { "$ref": "#/$defs/dimensions" },
+        "position": { "$ref": "#/$defs/vec3" },
+        "rotation": { "$ref": "#/$defs/vec3" },
+        "color": { "$ref": "#/$defs/color" },
+        "tags": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+      }
+    },
+
+    "deleteObject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["op", "target"],
+      "properties": {
+        "op": { "const": "delete_object" },
+        "target": { "$ref": "#/$defs/objectId" }
+      }
+    },
+
+    "duplicateObject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["op", "target", "newId"],
+      "properties": {
+        "op": { "const": "duplicate_object" },
+        "target": { "$ref": "#/$defs/objectId" },
+        "newId": { "$ref": "#/$defs/objectId" },
+        "offset": { "$ref": "#/$defs/vec3" }
+      }
+    },
+
+    "setDimensions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["op", "target", "dimensions"],
+      "properties": {
+        "op": { "const": "set_dimensions" },
+        "target": { "$ref": "#/$defs/objectId" },
+        "dimensions": { "$ref": "#/$defs/dimensions" }
+      }
+    },
+
+    "translateObject": {
+      "description": "Moves the target by `delta`, relative to its current position.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["op", "target", "delta"],
+      "properties": {
+        "op": { "const": "translate_object" },
+        "target": { "$ref": "#/$defs/objectId" },
+        "delta": { "$ref": "#/$defs/vec3" }
+      }
+    },
+
+    "rotateObject": {
+      "description": "Rotates the target by `delta` (radians per axis), relative to its current rotation.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["op", "target", "delta"],
+      "properties": {
+        "op": { "const": "rotate_object" },
+        "target": { "$ref": "#/$defs/objectId" },
+        "delta": { "$ref": "#/$defs/vec3" }
+      }
+    },
+
+    "scaleObject": {
+      "description": "Multiplies the target's current scale by `factor` per axis; each factor must be nonzero.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["op", "target", "factor"],
+      "properties": {
+        "op": { "const": "scale_object" },
+        "target": { "$ref": "#/$defs/objectId" },
+        "factor": {
+          "type": "array",
+          "items": { "type": "number", "not": { "const": 0 } },
+          "minItems": 3,
+          "maxItems": 3
+        }
+      }
+    },
+
+    "setMaterial": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["op", "target"],
+      "anyOf": [{ "required": ["color"] }, { "required": ["transparency"] }],
+      "properties": {
+        "op": { "const": "set_material" },
+        "target": { "$ref": "#/$defs/objectId" },
+        "color": { "$ref": "#/$defs/color" },
+        "transparency": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+
+    "renameObject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["op", "target", "name"],
+      "properties": {
+        "op": { "const": "rename_object" },
+        "target": { "$ref": "#/$defs/objectId" },
+        "name": { "type": "string", "minLength": 1 }
+      }
+    },
+
+    "setScene": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["op"],
+      "anyOf": [{ "required": ["background"] }, { "required": ["displayScale"] }],
+      "properties": {
+        "op": { "const": "set_scene" },
+        "background": { "type": "string", "minLength": 1 },
+        "displayScale": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    },
+
+    "clarify": {
+      "description": "Asks the user for missing/ambiguous information. Never mutates ModelSpec.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["op", "question"],
+      "properties": {
+        "op": { "const": "clarify" },
+        "question": { "type": "string", "minLength": 1 }
+      }
+    },
+
+    "noChange": {
+      "description": "Responds without modifying geometry.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["op"],
+      "properties": {
+        "op": { "const": "no_change" },
+        "reason": { "type": "string", "minLength": 1 }
+      }
+    },
+
+    "operation": {
+      "oneOf": [
+        { "$ref": "#/$defs/createObject" },
+        { "$ref": "#/$defs/deleteObject" },
+        { "$ref": "#/$defs/duplicateObject" },
+        { "$ref": "#/$defs/setDimensions" },
+        { "$ref": "#/$defs/translateObject" },
+        { "$ref": "#/$defs/rotateObject" },
+        { "$ref": "#/$defs/scaleObject" },
+        { "$ref": "#/$defs/setMaterial" },
+        { "$ref": "#/$defs/renameObject" },
+        { "$ref": "#/$defs/setScene" },
+        { "$ref": "#/$defs/clarify" },
+        { "$ref": "#/$defs/noChange" }
+      ]
+    }
+  }
+}
