@@ -93,10 +93,11 @@ class X3DMcpClient:
     async def create_primitive(
         self,
         kind: PrimitiveKind,
-        dimensions: dict[str, float],
+        dimensions: dict[str, float | list[float]],
         *,
         translation: tuple[float, float, float] | None = None,
         rotation: tuple[float, float, float, float] | None = None,
+        scale: tuple[float, float, float] | None = None,
         color: tuple[float, float, float] | None = None,
         transparency: float | None = None,
         def_name: str,
@@ -113,6 +114,8 @@ class X3DMcpClient:
             transform_fields["translation"] = list(translation)
         if rotation is not None:
             transform_fields["rotation"] = list(rotation)
+        if scale is not None:
+            transform_fields["scale"] = list(scale)
         transform_id = await self._create_node("Transform", transform_fields)
 
         shape_id = await self._create_node("Shape")

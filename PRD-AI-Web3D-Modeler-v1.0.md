@@ -1392,6 +1392,14 @@ Recommended:
 - Z: front/back;
 - positions in semantic project units before `displayScale`.
 
+**Implementation note (Issue #9, 2026-09-21):** Implemented as `apps/api/src/api/x3d_adapter.py`. `apply_model_spec(client, spec)` resets the `X3DMcpClient` session's scene and recreates every `ModelSpec` object via `create_primitive` (Issue #4), one X3D `Transform > Shape(Appearance/Material + geometry)` per object; it returns the `ModelObject.id -> X3D DEF name` mapping. Nothing here or in `X3DMcpClient` accepts LLM-produced XML/strings as scene content -- every call is structured tool arguments (FR-12, NFR-08). Concrete decisions this issue made:
+
+- `ModelObject.dimensions` mostly already match X3D field names (`radius`, `height`, `bottomRadius`) except `box`, whose separate `width`/`height`/`depth` keys are combined into X3D `Box.size` (a single SFVec3f) -- the one primitive where the ModelSpec/X3D shapes are not 1:1.
+- `scene.displayScale` (§3.10/§10.6) is applied to dimensions and position (translation); it is **not** applied to `transform.scale`, since that is already a unitless multiplier, not a semantic-unit length.
+- `transform.rotation`'s three per-axis radian values (see `domain.model_plan`'s `rotate_object` docstring) are converted to one X3D `SFRotation` (axis + angle) via quaternion composition, interpreting them as intrinsic rotations applied in X, then Y, then Z order. `X3DMcpClient.create_primitive` gained an optional `scale` parameter (previously only `translation`/`rotation`) so the adapter can set all three Transform fields; a zero rotation maps to X3D's own default `SFRotation` (`0 0 1 0`).
+- `ModelObject.id` allows characters (e.g. a leading digit) that an X3D DEF (an XML NCName) does not, so each object's DEF is `obj_<id>`, not the bare id.
+- `Material.color` (`#rrggbb`) is converted to 0-1 RGB floats for `create_primitive`'s `color` argument; `transparency` passes through unchanged.
+
 ---
 
 ## 11. Security and Access Control

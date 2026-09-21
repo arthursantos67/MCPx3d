@@ -43,6 +43,21 @@ async def test_create_box_round_trip(x3d_mcp_server: str) -> None:
         assert "<html" in html.lower()
 
 
+async def test_create_primitive_applies_transform_scale(x3d_mcp_server: str) -> None:
+    async with X3DMcpClient.connect(x3d_mcp_server) as client:
+        await client.reset_scene()
+
+        await client.create_primitive(
+            "sphere",
+            {"radius": 1.0},
+            scale=(2.0, 3.0, 4.0),
+            def_name="ScaledSphere",
+        )
+
+        scene_xml = await client.get_scene()
+        assert "scale='2.0 3.0 4.0'" in scene_xml
+
+
 async def test_reset_scene_clears_prior_primitives(x3d_mcp_server: str) -> None:
     async with X3DMcpClient.connect(x3d_mcp_server) as client:
         await client.reset_scene()
