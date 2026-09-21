@@ -532,6 +532,8 @@ If X3D generation remains invalid after supported autofix, the system may return
 
 For every validated scene, the backend shall generate a standalone browser-viewable X3DOM HTML document using the upstream X3D rendering helper or equivalent vetted adapter.
 
+**Implementation note (Issue #11, 2026-09-21):** Implemented as `apps/api/src/api/artifacts.py`. `build_html_artifact(client, project_id, revision, x3d_content, requested_revision)` wraps `X3DMcpClient.generate_x3dom_page` (the upstream `x3dom_page` tool, §9.5) and returns an `Artifact(filename, media_type, content)`. It is a pure function over its arguments -- it holds no project/revision state of its own -- so a generation failure (the underlying MCP call raising) simply propagates and never leaves any stored "current revision" touched, satisfying "generation failure does not invalidate X3D revision" by construction rather than by explicit rollback code. `requested_revision` is mandatory (mirroring `ProjectSessionService.commit_revision`'s `expected_revision`, Issue #8): a mismatch against `revision` raises `StaleArtifactRequestError` *before* any MCP call is made, so a stale request never even reaches HTML generation. `normalized_artifact_filename(project_id, revision, extension)` implements FR-21's `chair-r0007.x3d` convention (`{name}-r{revision:04d}.{extension}`); `project_id` stands in for the FE-12 user-assigned project name, since that name is frontend-only state not yet part of `ModelSpec`/`ProjectSession` (revisit this helper's first argument once project naming lands).
+
 ### FR-19 X3D XML Export
 
 For every validated scene, the system shall expose downloadable `.x3d` XML content.
