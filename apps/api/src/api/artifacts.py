@@ -1,10 +1,11 @@
-"""Downloadable revision artifacts: standalone HTML, X3D XML, and alternative
-X3D encodings (PRD FR-18/19/20/21/22, UC-07/08, Issues #11, #12, and #13).
+"""Downloadable revision artifacts: standalone HTML, X3D XML, alternative X3D
+encodings, and the ModelSpec manifest (PRD FR-18/19/20/21/22/36, UC-07/08/09,
+Issues #11, #12, #13, and #14).
 
 All artifact kinds are built from an already-validated revision's X3D content
-(`x3d_validation.ValidationResult.content`) -- none of these functions mutate
-any stored project/revision state, so a failure here (e.g.
-`generate_x3dom_page` or `convert_x3d` being unreachable) can never
+(`x3d_validation.ValidationResult.content`) or its `ModelSpec` -- none of
+these functions mutate any stored project/revision state, so a failure here
+(e.g. `generate_x3dom_page` or `convert_x3d` being unreachable) can never
 invalidate or replace the revision it was asked to render (PRD FE-08,
 "generation failure does not invalidate X3D revision"); for the two
 conversion formats, that same isolation-by-construction is also what FR-20
@@ -22,12 +23,15 @@ import dataclasses
 import json
 from typing import Literal
 
+from domain.model_spec import ModelSpec
+
 from api.mcp_client import X3DMcpClient
 
 _HTML_MEDIA_TYPE = "text/html; charset=utf-8"
 _X3D_MEDIA_TYPE = "model/x3d+xml"
 _X3DJ_MEDIA_TYPE = "model/x3d+json"
 _X3DV_MEDIA_TYPE = "model/x3d-vrml"
+_MANIFEST_MEDIA_TYPE = "application/json"
 
 ConversionFormat = Literal["x3dj", "x3dv"]
 _CONVERSION_TARGETS: dict[ConversionFormat, Literal["json", "vrml"]] = {
@@ -155,4 +159,31 @@ async def build_converted_artifact(
         filename=normalized_artifact_filename(project_id, revision, format),
         media_type=_CONVERSION_MEDIA_TYPES[format],
         content=converted,
+    )
+
+
+def build_model_spec_artifact(
+    *,
+    project_id: str,
+    revision: int,
+    model_spec: ModelSpec,
+    requested_revision: int,
+) -> Artifact:
+    """The current `ModelSpec` as a downloadable JSON manifest (FR-36, UC-09).
+
+    `model_spec.model_dump_json()` only ever serializes `ModelSpec`'s own
+    declared fields (its models all set `extra="forbid"`), so the manifest
+    can never leak session/implementation details that aren't already part
+    of the schema-validated semantic model. `exclude_none=True` matches the
+    schema: optional fields like `scene.background`, `material.transparency`,
+    and `tags` are typed/constrained for when they're present (e.g. a
+    non-empty string) and are simply absent otherwise -- the schema has no
+    `"type": ["string", "null"]` case for them, so an emitted `null` would
+    fail validation where omitting the key entirely passes.
+    """
+    _check_revision(project_id, requested_revision, revision)
+    return Artifact(
+        filename=normalized_artifact_filename(project_id, revision, "json"),
+        media_type=_MANIFEST_MEDIA_TYPE,
+        content=model_spec.model_dump_json(indent=2, exclude_none=True),
     )

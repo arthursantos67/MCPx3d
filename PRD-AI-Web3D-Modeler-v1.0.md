@@ -634,6 +634,8 @@ If the optional X_ITE/Playwright rendering dependency is enabled, the backend ma
 
 The user shall be able to download a project manifest containing the current ModelSpec and metadata as JSON. This file is distinct from X3D and is intended to preserve semantic intent for future migrations.
 
+**Implementation note (Issue #14, 2026-09-21):** Implemented in `apps/api/src/api/artifacts.py`. `build_model_spec_artifact(project_id, revision, model_spec, requested_revision)` is a synchronous pure function (no MCP call -- the caller's already-held `ModelSpec`, from Issue #8's `ProjectSession`, is the manifest) that serializes with `model_spec.model_dump_json(indent=2, exclude_none=True)` and reuses Issue #11/#12's `normalized_artifact_filename`/`requested_revision` conventions (e.g. `chair-r0007.json`). `exclude_none=True` matters: `ModelSpec`'s optional fields (`scene.background`, `material.transparency`, `tags`) are schema-typed for when they're present (e.g. a non-empty string) with no explicit `null` case, so the default pydantic dump (`null` for unset optionals) fails `model-spec.v1.schema.json` validation where omitting the key passes. Every `ModelSpec` model sets `extra="forbid"` (Issue #5), so the manifest can only ever contain the schema's own declared fields -- no session/implementation detail can leak into it by construction, satisfying that acceptance criterion without an explicit allowlist/redaction step.
+
 ### FR-37 Project Manifest Import
 
 Post-MVP or late-MVP implementation may allow a previously exported compatible manifest to reconstruct a project. Import shall validate version and schema before mutation.

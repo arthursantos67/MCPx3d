@@ -1,12 +1,16 @@
 import json
+from pathlib import Path
 
 import pytest
+from domain.model_spec import Material, ModelObject, ModelSpec, Scene, Transform
+from jsonschema import Draft202012Validator
 
 from api.artifacts import (
     ArtifactConversionError,
     StaleArtifactRequestError,
     build_converted_artifact,
     build_html_artifact,
+    build_model_spec_artifact,
     build_x3d_artifact,
     normalized_artifact_filename,
 )
@@ -17,6 +21,32 @@ pytestmark = pytest.mark.anyio
 # The stale-revision check happens before any content is inspected, so its
 # tests don't need a real X3D document -- any string round-trips unchanged.
 _OPAQUE_CONTENT = "<X3D><Scene/></X3D>"
+
+_MODEL_SPEC_SCHEMA_PATH = (
+    Path(__file__).resolve().parents[3] / "packages" / "domain" / "schemas" / "model-spec.v1.schema.json"
+)
+
+
+def _model_spec(project_id: str = "prj_test", revision: int = 3) -> ModelSpec:
+    return ModelSpec(
+        schemaVersion="1.0",
+        projectId=project_id,
+        revision=revision,
+        units="mm",
+        scene=Scene(displayScale=1.0),
+        objects=[
+            ModelObject(
+                id="box1",
+                name="box1",
+                kind="box",
+                dimensions={"width": 1.0, "height": 1.0, "depth": 1.0},
+                transform=Transform(
+                    position=(0.0, 0.0, 0.0), rotation=(0.0, 0.0, 0.0), scale=(1.0, 1.0, 1.0)
+                ),
+                material=Material(color="#ff0000"),
+            )
+        ],
+    )
 
 
 async def _real_x3d_content(client: X3DMcpClient) -> str:
@@ -200,3 +230,44 @@ async def test_build_converted_artifact_conversion_failure_does_not_touch_base_a
         )
 
     assert base_artifact.content == x3d_content
+
+
+def test_build_model_spec_artifact_returns_manifest_json() -> None:
+    spec = _model_spec(revision=3)
+    artifact = build_model_spec_artifact(
+        project_id="prj_test", revision=3, model_spec=spec, requested_revision=3
+    )
+
+    assert artifact.filename == "prj_test-r0003.json"
+    assert artifact.media_type == "application/json"
+    manifest = json.loads(artifact.content)
+    assert manifest["schemaVersion"] == "1.0"
+    assert manifest["revision"] == 3
+    assert manifest["units"] == "mm"
+    assert manifest["projectId"] == "prj_test"
+    assert set(manifest.keys()) == {
+        "schemaVersion",
+        "projectId",
+        "revision",
+        "units",
+        "scene",
+        "objects",
+    }
+
+
+def test_build_model_spec_artifact_passes_model_spec_schema() -> None:
+    spec = _model_spec()
+    artifact = build_model_spec_artifact(
+        project_id="prj_test", revision=3, model_spec=spec, requested_revision=3
+    )
+    schema = json.loads(_MODEL_SPEC_SCHEMA_PATH.read_text(encoding="utf-8"))
+
+    Draft202012Validator(schema).validate(json.loads(artifact.content))
+
+
+def test_build_model_spec_artifact_rejects_a_stale_requested_revision() -> None:
+    spec = _model_spec(revision=3)
+    with pytest.raises(StaleArtifactRequestError):
+        build_model_spec_artifact(
+            project_id="prj_test", revision=3, model_spec=spec, requested_revision=2
+        )
