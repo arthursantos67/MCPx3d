@@ -1,6 +1,6 @@
 # packages/agent
 
-`LLMProvider` abstraction, prompt composition, and structured `ModelPlan` generation for the local AI agent runtime (PRD §3.7 and §10.5, Issues #18 and #19).
+`LLMProvider` abstraction, prompt composition, and structured `ModelPlan` generation (including ambiguity/clarification handling) for the local AI agent runtime (PRD §3.7 and §10.5, Issues #18, #19, and #20).
 
 ```bash
 cd packages/agent
@@ -31,6 +31,16 @@ npm run typecheck
 The unknown-target check in step 3 is a heuristic, non-order-sensitive pre-check meant only to give the model a chance to self-correct before a plan is even sent toward the backend -- it is not the authoritative integrity boundary for PRD §8.4's "same atomic plan first creates it, and ordering is explicitly supported" rule. That remains `apps/api/src/api/mutation.py`'s job (Issue #7), which enforces true creation order and is unaffected by this package.
 
 `summarizeModelSpec` (`src/model-spec-summary.ts`) is deliberately minimal -- just enough context for this generation loop. Issue #34 replaces it with a bounded, more complete summarizer; callers should not depend on its exact text format.
+
+## Ambiguity/clarification handling (Issue #20)
+
+§8.4's implementation note (Issue #7) explicitly left "keeping `clarify` apart from mutating operations" as prompt/agent-layer policy rather than a mutation-engine invariant. This package is that policy layer (FR-08, UC-05):
+
+- Step 3 of `generateModelPlan`'s validation above also rejects a plan that combines a `clarify` operation with any other operation (mutating or not). Like any other invalid output, that goes through the same one-shot repair retry before `ModelPlanGenerationError` -- so a plan this function returns is always either a pure `clarify` (exactly one operation, nothing else) or contains no `clarify` at all, never a guess mixed with a question.
+- [`buildClarificationFollowUp(question, answer)`](src/generate-model-plan.ts) turns a `clarify` operation's `question` and the user's next reply into the two `AgentMessage`s (`assistant` then `user`) a caller passes as `recentMessages` on the next `generateModelPlan` call, so that call sees its own prior question and the user's answer as context (FR-31). `recentMessages` already existed from Issue #19; this is the one piece of glue a caller needs to thread a clarification round trip through it.
+- [`tests/clarification.test.ts`](tests/clarification.test.ts) covers 6 ambiguous-prompt scenarios that each produce a pure `clarify` plan, a mixed clarify+mutation plan being rejected then repaired, one that still mixes them after repair throwing instead of guessing, and the full clarify -> `buildClarificationFollowUp` -> disambiguated second call round trip.
+
+`apps/api/src/api/routes/plans.py` (Issue #22) does not trust this package's guarantee from an untrusted caller and re-enforces "a `clarify`-containing plan never commits" as the authoritative boundary at the API layer.
 
 ## Why `packages/domain` is imported by relative path, not as an npm dependency
 

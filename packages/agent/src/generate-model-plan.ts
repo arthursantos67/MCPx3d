@@ -19,6 +19,15 @@
  * boundary for §8.4's "same atomic plan first creates it" rule -- that is
  * `apps/api/src/api/mutation.py`'s job (Issue #7), which enforces true
  * creation order and is unaffected by this package.
+ *
+ * `clarify`/`no_change` pass schema and domain validation as ordinary
+ * operations (§8.4's implementation note explicitly leaves "keeping the two
+ * apart" as prompt/agent-layer policy, not something the mutation engine
+ * enforces). This module is that policy layer (Issue #20, FR-08, UC-05): a
+ * plan that combines a `clarify` with any mutating operation is rejected and
+ * goes through the same one-shot repair retry as any other invalid output,
+ * so a plan that ever reaches a caller either asks a pure clarifying
+ * question or proposes a mutation -- never a guess mixed with a question.
  */
 
 import { Ajv2020 } from "ajv/dist/2020.js";
@@ -83,6 +92,21 @@ export async function generateModelPlan(input: GenerateModelPlanInput): Promise<
   );
 }
 
+/**
+ * Builds the `recentMessages` entries a caller should append after a
+ * `clarify` operation, so the next `generateModelPlan` call for the user's
+ * answer sees its own question and that answer as context (Issue #20's
+ * "next user answer is provided with prior clarification context"). The
+ * clarify question becomes an `assistant` turn -- what the agent actually
+ * "said" -- even though it was produced as ModelPlan JSON, not free text.
+ */
+export function buildClarificationFollowUp(clarifyQuestion: string, userAnswer: string): AgentMessage[] {
+  return [
+    { role: "assistant", content: clarifyQuestion },
+    { role: "user", content: userAnswer },
+  ];
+}
+
 type AttemptResult = { readonly ok: true; readonly plan: ModelPlan } | { readonly ok: false; readonly reason: string };
 
 async function attempt(
@@ -117,7 +141,18 @@ async function attempt(
     return { ok: false, reason: `operation(s) target unknown object id(s): ${unknownTargets.join(", ")}` };
   }
 
+  if (hasMixedClarify(plan.operations)) {
+    return {
+      ok: false,
+      reason: "a clarify operation must not be combined with any other operation in the same plan",
+    };
+  }
+
   return { ok: true, plan };
+}
+
+function hasMixedClarify(operations: readonly Operation[]): boolean {
+  return operations.some((op) => op.op === "clarify") && operations.length > 1;
 }
 
 function collectKnownIds(modelSpec: ModelSpec, operations: readonly Operation[]): Set<string> {
