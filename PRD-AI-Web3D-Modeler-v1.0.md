@@ -1,0 +1,1803 @@
+# AI Web3D Modeler: Product Requirements Document
+
+## Software Requirements Specification
+
+**Project:** AI Web3D Modeler  
+**Document type:** Product Requirements Document (PRD): Full-Stack  
+**Version:** 1.0  
+**Last update:** 2026-09-21  
+**Status:** Initial implementation specification / MVP baseline  
+**Primary reference architecture:** Web3D Consortium `x3d_mcp`  
+**Primary AI runtime (MVP):** WebLLM, local in-browser inference via WebGPU  
+**Primary 3D representation (MVP):** X3D 4.x / X3DOM standalone HTML  
+**Future evolution:** geometry IR → mesh/export pipeline → optional CAD adapter (CadQuery/OpenCascade)
+
+---
+
+## Table of Contents
+
+- [1. Purpose and Scope](#1-purpose-and-scope)
+- [2. System Context](#2-system-context)
+- [3. Architecture Overview](#3-architecture-overview)
+- [4. Functional Requirements: Backend and Domain](#4-functional-requirements-backend-and-domain)
+- [5. Functional Requirements: Frontend](#5-functional-requirements-frontend)
+- [6. End-to-End Use Cases](#6-end-to-end-use-cases)
+- [7. Non-Functional Requirements](#7-non-functional-requirements)
+- [8. Data Model and Integrity Rules](#8-data-model-and-integrity-rules)
+- [9. API Contract and Error Standard](#9-api-contract-and-error-standard)
+- [10. Frontend Component Specification](#10-frontend-component-specification)
+- [11. Security and Access Control](#11-security-and-access-control)
+- [12. Operational and Deployment Requirements](#12-operational-and-deployment-requirements)
+- [13. Requirements Traceability Matrix](#13-requirements-traceability-matrix)
+- [14. Product Roadmap and Scope Boundaries](#14-product-roadmap-and-scope-boundaries)
+- [15. Implementation Maturity and Exit Criteria](#15-implementation-maturity-and-exit-criteria)
+- [16. Appendices](#16-appendices)
+
+---
+
+## 1. Purpose and Scope
+
+AI Web3D Modeler is a web application for conversational creation and modification of three-dimensional models. The user describes an object in natural language through a chat interface; an AI agent interprets the request, creates or modifies a structured geometry model, delegates valid X3D construction to the Web3D toolchain, validates the result, and presents the rendered 3D object beside the conversation.
+
+The initial product is deliberately a **Web3D modeling system, not a mechanical CAD system**. Its MVP objective is to prove reliable natural-language-to-3D generation, iterative editing, validation, browser visualization, and downloadable artifacts without requiring a commercial CAD installation or paid AI API.
+
+The project is designed so that the conversational layer and model intent are not tied permanently to X3D. A project-level intermediate geometry representation (`ModelSpec`) is retained as the semantic source of truth. The initial renderer converts that representation to X3D; future renderers may target mesh formats or a parametric CAD engine.
+
+### 1.1 Product objectives
+
+- Provide a single-page web workspace with **chat on one side and interactive 3D preview on the other**.
+- Allow a user to request a 3D object using natural language.
+- Allow iterative modifications such as “make the legs thicker”, “move the sphere up”, or “change the material to red” without recreating the whole conversation context manually.
+- Use `x3d_mcp` as the authoritative X3D generation, query, validation, conversion, and HTML-rendering tool service.
+- Avoid a mandatory paid LLM API in the MVP.
+- Use a local browser LLM through WebLLM as the default AI runtime, requiring no developer API key and no per-request inference bill.
+- Maintain an AI-provider abstraction so optional remote providers can be added later without changing domain logic.
+- Validate generated X3D structurally and semantically before marking a generation successful.
+- Generate a standalone `.html` artifact that the user can download and open in a modern browser.
+- Allow downloading raw `.x3d` and, where supported, `.x3dj` and `.x3dv` representations.
+- Preserve model intent independently from X3D so future STL/mesh/CAD export does not require rewriting the conversational agent.
+- Establish a safe, testable agent loop in which the LLM produces structured commands rather than arbitrary executable code.
+
+### 1.2 Non-goals for MVP
+
+The first release does **not** promise:
+
+- STEP export.
+- Native SolidWorks/Fusion 360/FreeCAD project generation.
+- Manufacturing tolerances or GD&T.
+- Mechanical simulation, FEA, stress analysis, or CAM.
+- Guaranteed watertight/manifold geometry suitable for manufacturing.
+- True boolean holes/cuts for every shape.
+- Parametric constraint solving comparable to a CAD sketcher.
+- Photorealistic rendering.
+- Multi-user collaboration.
+- Cloud account management.
+- Long-term server-side project persistence.
+- Training or fine-tuning a proprietary LLM.
+
+### 1.3 MVP product statement
+
+> A user can open the web application, describe a 3D object, watch a local AI agent construct a validated X3D representation through controlled tools, view the resulting 3D model next to the chat, request modifications, and download the current model as standalone HTML and X3D.
+
+### 1.4 Success criteria
+
+The MVP is considered successful when:
+
+1. A first-time user can generate a valid primitive-based scene without configuring an AI API key.
+2. The system displays the generated model in the browser without requiring a browser plugin.
+3. At least 90% of the maintained golden prompts produce X3D that passes schema and semantic validation after the automated correction loop.
+4. The user can issue at least one follow-up modification to a named part without resetting the entire project.
+5. Downloaded standalone HTML opens independently and displays the same current scene.
+6. Raw X3D can be downloaded.
+7. AI output cannot execute arbitrary Python, shell, or JavaScript on the backend.
+8. The frontend does not expose server filesystem paths to the remote MCP service.
+9. Provider switching is isolated behind a single `LLMProvider` interface.
+10. The project can later add a second geometry renderer without changing the chat domain contract.
+
+---
+
+## 2. System Context
+
+### 2.1 User problem
+
+Creating even a simple 3D scene normally requires learning a modeling application, scene graph, scripting language, or modeling API. Generative LLMs can produce 3D-related code, but unrestricted code generation is unreliable: models may invent node names, use invalid fields, violate hierarchy rules, or return markup that is syntactically valid but semantically unusable.
+
+The Web3D Consortium `x3d_mcp` project addresses this problem for X3D by exposing structured generation, node metadata, validation, scene manipulation, conversion, rendering, and guided workflows to LLM clients. AI Web3D Modeler turns those capabilities into an end-user web product.
+
+### 2.2 Actors and roles
+
+| Actor / role | Type | Primary capabilities |
+| --- | --- | --- |
+| End user | Human | Describe, inspect, modify, reset, and download a 3D model. |
+| Local AI agent | System actor | Interpret user intent, create structured plans, select tools, inspect tool results, and decide whether correction is required. |
+| WebLLM runtime | System actor | Execute the default local open-source LLM inside the browser through WebGPU. |
+| Orchestrator API | System actor | Own project/session state, validate commands, expose application endpoints, and call `x3d_mcp`. |
+| `x3d_mcp` | External/open-source system dependency | X3D generation, X3DUOM queries, scene state, validation, conversion, manipulation, X3DOM HTML generation, optional PNG rendering. |
+| Browser 3D viewer | System actor | Display the generated X3D interactively in the application. |
+| Optional remote AI provider | Future system actor | Fallback/opt-in inference when local WebLLM is unsupported or insufficient. |
+| Future CAD adapter | Future system actor | Convert semantic model intent to a CAD representation such as CadQuery/OpenCascade. |
+
+### 2.3 Conceptual product modules
+
+| Module | Responsibility | MVP |
+| --- | --- | --- |
+| Conversational Workspace | Chat, request history, status, retry/cancel, modification prompts | Yes |
+| Local AI Runtime | Model load, structured inference, streaming/status | Yes |
+| Agent Orchestrator | Planning, tool loop, validation loop, failure recovery | Yes |
+| ModelSpec Domain | Renderer-independent semantic representation of the current model | Yes |
+| X3D Adapter | Convert ModelSpec operations to X3D tool calls | Yes |
+| X3D Validation | XSD and semantic validation through `x3d_mcp` | Yes |
+| Web3D Viewer | Interactive preview in browser | Yes |
+| Artifact Export | HTML and X3D downloads; JSON/ClassicVRML where supported | Yes |
+| Project Persistence | Local browser persistence of current project metadata | Limited |
+| Cloud Accounts | User authentication/project cloud storage | No |
+| Mesh Export | STL/glTF/GLB pipeline | Roadmap |
+| CAD Adapter | Parametric CAD/STEP generation | Roadmap |
+
+### 2.4 High-level user flow
+
+```mermaid
+flowchart LR
+  U[User prompt] --> UI[Chat UI]
+  UI --> L[Local LLM / WebLLM]
+  L --> P[Structured ModelPlan]
+  P --> O[Agent Orchestrator]
+  O --> M[ModelSpec]
+  M --> X[X3D Adapter]
+  X --> MCP[x3d_mcp]
+  MCP --> V[Schema + semantic validation]
+  V -->|invalid| O
+  V -->|valid| H[X3DOM HTML]
+  H --> VIEW[Interactive viewer]
+  MCP --> A[Downloadable X3D]
+  H --> D[Download standalone HTML]
+```
+
+### 2.5 Why X3D for the MVP
+
+X3D is appropriate for the first release because it is an open, royalty-free 3D standard designed for publishing and interacting with 3D content on the Web. The selected `x3d_mcp` server already exposes structured tools for node creation, field assignment, scene composition, validation, conversion, semantic queries, animation, manipulation, and standalone X3DOM page generation.
+
+The MVP therefore avoids building a 3D standards layer from scratch.
+
+### 2.6 Why the MVP is not CAD yet
+
+The first product validates conversational modeling and interaction, not manufacturing correctness. A visual object composed from X3D primitives may be adequate for browser visualization while still lacking:
+
+- B-rep topology;
+- dimensional constraints;
+- construction history;
+- true parametric features;
+- manufacturing semantics;
+- guaranteed manifold mesh;
+- STEP interoperability.
+
+The architecture preserves the option to introduce those capabilities later through a separate renderer/adapter.
+
+---
+
+## 3. Architecture Overview
+
+### 3.1 Architectural style
+
+- **Frontend:** React + TypeScript + Vite single-page application.
+- **AI inference:** WebLLM in-browser through WebGPU, loaded in a Web Worker when supported.
+- **Agent protocol:** application-defined structured JSON planning/execution; no dependence on unrestricted code generation.
+- **Backend/API:** Python 3.12+ FastAPI application.
+- **X3D service:** `x3d_mcp`, executed as a separate service using Streamable HTTP transport.
+- **3D preview:** X3DOM standalone content rendered inside an isolated iframe; X_ITE may be used for optional validation/render snapshots.
+- **State:** current project state held by backend session plus browser-side persisted metadata; no mandatory database in MVP.
+- **Exports:** generated on demand from the current validated X3D state.
+- **Deployment:** containerized services; frontend can be served statically; API and MCP can run in Docker.
+- **Future rendering:** renderer interface allows X3D, mesh, and CAD adapters.
+
+### 3.2 Proposed solution projects
+
+| Project / directory | Runtime | Responsibility |
+| --- | --- | --- |
+| `apps/web` | React / TypeScript | Chat workspace, WebLLM, viewer, downloads, local project state. |
+| `apps/api` | Python / FastAPI | Session/project orchestration, command validation, MCP client, artifact endpoints. |
+| `packages/domain` | TypeScript/Python schema mirror | Shared ModelSpec/ModelPlan definitions and JSON Schema. |
+| `packages/agent` | TypeScript | Local LLM provider interface, prompts, JSON parsing, repair loop. |
+| `packages/viewer` | TypeScript | Preview iframe, camera reset, scene reload, viewer error handling. |
+| `services/x3d-mcp` | Python 3.12+ | Upstream `x3d_mcp` dependency/service. |
+| `tests/golden` | JSON/Markdown | Golden prompts and expected structural properties. |
+| `docs` | Markdown | Architecture, ADRs, setup, model support, roadmap. |
+
+### 3.3 Frontend architecture
+
+```text
+React SPA
+  ├── WorkspacePage
+  │   ├── ChatPanel
+  │   ├── GenerationStatus
+  │   ├── ViewerPanel
+  │   └── DownloadMenu
+  ├── LocalLLMProvider (WebLLM)
+  │   └── Web Worker / model cache
+  ├── AgentRuntime
+  │   ├── prompt builder
+  │   ├── structured output parser
+  │   ├── tool-result loop
+  │   └── retry/repair policy
+  ├── API Client
+  └── Local Project Cache
+```
+
+The frontend owns AI inference in the default MVP configuration. This keeps the AI path keyless and removes per-request server inference cost.
+
+### 3.4 Backend architecture
+
+```text
+HTTP request
+  → FastAPI endpoint
+  → request/session validation
+  → ProjectService
+  → ModelSpec mutation / command validator
+  → X3DMcpClient
+  → x3d_mcp Streamable HTTP
+  → validation
+  → artifact assembly
+  → JSON / HTML / X3D response
+```
+
+The API must never accept arbitrary Python source from the LLM and execute it. All AI actions are represented as a finite set of typed operations.
+
+### 3.5 `x3d_mcp` integration
+
+The project shall use upstream capabilities where they exist rather than reimplementing them.
+
+Primary tools expected:
+
+- `create_scene`
+- `create_geometry`
+- `compose_scene`
+- `create_node`
+- `set_field`
+- `add_child`
+- `add_route`
+- `def_node`
+- `use_node`
+- `remove_node`
+- `get_scene`
+- `reset_scene`
+- `validate_x3d`
+- `validate_current_scene`
+- `validate_semantic`
+- `autofix_x3d`
+- `convert_x3d`
+- `describe_node`
+- `list_nodes`
+- `x3dom_page`
+- scene manipulation operations
+- optional `render_current_scene`
+
+The integration must prefer `x3d_mcp` Streamable HTTP in development/production so each connected session receives isolated granular scene state.
+
+### 3.6 AI runtime decision
+
+#### Default: WebLLM
+
+WebLLM is selected as the default MVP inference engine because:
+
+- it runs inference directly inside the browser;
+- it uses WebGPU acceleration;
+- no external AI server is required;
+- no API key is required;
+- no per-request inference charge exists;
+- it provides an OpenAI-like chat API;
+- it supports structured JSON generation;
+- model artifacts can be cached in the browser;
+- it supports Web Workers.
+
+Because first-class function calling remains an evolving capability, the MVP shall not require native model tool calls. The agent will request **JSON constrained to the project-defined `ModelPlan` schema** and the application will execute the operations itself.
+
+#### Optional fallback: Puter.js provider
+
+Puter.js may be provided as an opt-in fallback for unsupported hardware. It does not require the developer to manage provider API keys, but it uses a user-pays model and can require user authentication. It is therefore not the zero-cost default.
+
+#### Rejected as default: Pollinations
+
+Pollinations was considered because older/public descriptions emphasized free keyless access. Current API documentation requires authentication for generation endpoints and uses account/Pollen budgets. It therefore does not satisfy the current “100% keyless default” requirement.
+
+### 3.7 LLM provider abstraction
+
+```typescript
+interface LLMProvider {
+  id: string;
+  isAvailable(): Promise<boolean>;
+  initialize(): Promise<void>;
+  generateStructured<T>(
+    messages: AgentMessage[],
+    schema: JsonSchema,
+    options?: GenerationOptions
+  ): Promise<T>;
+  cancel?(): Promise<void>;
+}
+```
+
+Initial providers:
+
+- `WebLLMProvider` — required.
+- `PuterProvider` — optional/future fallback.
+- `OpenAICompatibleProvider` — future BYOK provider for testing/advanced users.
+
+No domain or geometry code may call WebLLM directly outside the provider package.
+
+### 3.8 ModelSpec intermediate representation
+
+The application shall maintain a renderer-independent semantic model.
+
+Example:
+
+```json
+{
+  "version": "1.0",
+  "units": "mm",
+  "scene": {
+    "background": "#f4f5f7"
+  },
+  "objects": [
+    {
+      "id": "seat",
+      "name": "Seat",
+      "kind": "box",
+      "dimensions": {
+        "width": 500,
+        "height": 40,
+        "depth": 500
+      },
+      "transform": {
+        "position": [0, 450, 0],
+        "rotation": [0, 0, 0],
+        "scale": [1, 1, 1]
+      },
+      "material": {
+        "color": "#8b5a2b"
+      }
+    }
+  ]
+}
+```
+
+The unit system is semantic metadata in MVP. X3D itself is unit-agnostic for generic coordinates; the adapter shall apply a configurable display scale to avoid unusably large browser scenes when users express dimensions in millimeters.
+
+### 3.9 ModelPlan command contract
+
+The LLM must produce operations, not code.
+
+Example:
+
+```json
+{
+  "intent": "modify_model",
+  "summary": "Increase the thickness of the four legs.",
+  "operations": [
+    {
+      "op": "set_dimensions",
+      "target": "leg_front_left",
+      "dimensions": {
+        "width": 55,
+        "depth": 55
+      }
+    }
+  ]
+}
+```
+
+Allowed operations for MVP are defined in Section 8.
+
+### 3.10 Generation loop
+
+```text
+User message
+  → LLM produces ModelPlan JSON
+  → JSON Schema validation
+  → semantic command validation
+  → ModelSpec mutation
+  → X3D rebuild/update
+  → validate_current_scene
+  → semantic validation
+  → optional autofix
+  → regenerate/repair if needed
+  → x3dom_page
+  → preview
+  → expose downloads
+```
+
+The maximum automatic repair iterations shall default to 2 to avoid loops.
+
+### 3.11 Preview isolation
+
+Generated standalone HTML may execute X3DOM library code. The preview shall therefore be displayed in a sandboxed iframe using a generated Blob URL or `srcDoc`.
+
+The main application shall not execute LLM-generated JavaScript.
+
+### 3.12 Storage architecture
+
+MVP does not require a database.
+
+Browser persistence:
+
+- selected local LLM model;
+- WebLLM model cache handled by the library/browser;
+- last project metadata;
+- optional last `ModelSpec`;
+- UI preferences.
+
+Server memory:
+
+- temporary project/session ID;
+- current validated scene state;
+- current ModelSpec mirror if backend is authoritative;
+- validation diagnostics;
+- artifact cache.
+
+State may be lost when the backend restarts unless the user downloads the project artifact. Persistent cloud projects are post-MVP.
+
+---
+
+## 4. Functional Requirements: Backend and Domain
+
+### FR-01 Project Session Creation
+
+The system shall create an isolated modeling session when the user opens a new project. The response shall include a non-guessable project/session identifier used to associate ModelSpec state, MCP scene state, validation results, and generated artifacts.
+
+### FR-02 ModelSpec Initialization
+
+A new project shall start from an empty valid ModelSpec with version, unit system, scene metadata, and zero objects. ModelSpec validation shall occur before any renderer call.
+
+### FR-03 Structured ModelPlan Acceptance
+
+The API shall accept only ModelPlan operations matching the current JSON Schema. Unknown operations, unknown fields, malformed numeric values, invalid target IDs, or payloads exceeding configured limits shall be rejected before calling `x3d_mcp`.
+
+### FR-04 Primitive Creation
+
+The MVP shall support at least these primitive object kinds:
+
+- box;
+- sphere;
+- cylinder;
+- cone.
+
+Each primitive shall have a stable internal ID, user-facing name, dimensions, transform, and material.
+
+### FR-05 Object Transform
+
+The system shall support translation, rotation, and scale changes on an existing object. Numeric values shall be finite and bounded to configured safety limits.
+
+### FR-06 Object Dimensions
+
+The system shall allow dimension updates appropriate to each primitive. For example:
+
+- box: width, height, depth;
+- sphere: radius;
+- cylinder: radius, height;
+- cone: bottomRadius, height.
+
+Invalid negative/zero dimensions shall be rejected.
+
+### FR-07 Material Color
+
+The system shall support a base display color for each object. The domain accepts normalized hexadecimal colors; the X3D adapter converts them to the renderer representation.
+
+### FR-08 Object Naming and Stable References
+
+Each created part shall receive an immutable `id` and mutable display `name`. Follow-up instructions shall resolve targets by ID first and by unique display name second. Ambiguous names shall result in a clarification response rather than arbitrary mutation.
+
+### FR-09 Object Deletion
+
+A valid ModelPlan may remove an existing object. Deletion shall update ModelSpec and rebuild or update the X3D scene.
+
+### FR-10 Object Duplication
+
+The system shall support duplicating an existing primitive while assigning a new ID and allowing transform overrides.
+
+### FR-11 Scene Reset
+
+The user may reset the project. Reset shall clear ModelSpec objects, reset the MCP scene, remove generated artifacts, and preserve only project-level UI settings.
+
+### FR-12 X3D Scene Generation
+
+The X3D adapter shall translate current ModelSpec to valid X3D using `x3d_mcp` tools instead of generating unchecked raw XML through the LLM.
+
+### FR-13 X3D Metadata Query
+
+When an adapter requires node/field information that is not hardcoded in the adapter contract, it shall be able to query `describe_node` or related metadata tools rather than invent field semantics.
+
+### FR-14 Schema Validation
+
+Every successful scene generation shall run X3D schema validation before the result becomes downloadable.
+
+### FR-15 Semantic Validation
+
+Every successful scene generation shall run semantic validation for scene-level issues such as invalid hierarchy, field/container relationships, DEF/USE consistency, ROUTE consistency where used, and incomplete scene structures.
+
+### FR-16 Automated X3D Autofix
+
+When validation reports a known fixable issue supported by `autofix_x3d`, the orchestrator may apply the fix and revalidate. Automatic fixes shall be recorded in diagnostics.
+
+### FR-17 Controlled Agent Repair Loop
+
+If X3D generation remains invalid after supported autofix, the system may return diagnostics to the AI agent for up to two structured repair iterations. The LLM may update ModelPlan/ModelSpec but may not directly bypass validators.
+
+### FR-18 Standalone HTML Generation
+
+For every validated scene, the backend shall generate a standalone browser-viewable X3DOM HTML document using the upstream X3D rendering helper or equivalent vetted adapter.
+
+### FR-19 X3D XML Export
+
+For every validated scene, the system shall expose downloadable `.x3d` XML content.
+
+### FR-20 Additional X3D Encoding Export
+
+Where upstream conversion succeeds, the system shall allow `.x3dj` JSON and `.x3dv` ClassicVRML downloads.
+
+### FR-21 Artifact Versioning
+
+Each successful model mutation shall increment a project revision number. Download responses shall include the current revision in metadata and may include it in filenames.
+
+Example:
+
+`chair-r0007.x3d`
+
+### FR-22 Artifact Reproducibility
+
+The artifact shall be generated from the current validated ModelSpec/revision. A download action must never silently return a prior revision.
+
+### FR-23 Validation Diagnostics
+
+The backend shall return structured validation state:
+
+```json
+{
+  "schemaValid": true,
+  "semanticValid": true,
+  "warnings": [],
+  "autofixes": [],
+  "revision": 7
+}
+```
+
+### FR-24 MCP Health
+
+The backend shall expose an internal health check that verifies whether the configured `x3d_mcp` service is reachable before accepting generation work.
+
+### FR-25 MCP Session Isolation
+
+Different application sessions shall never share mutable scene state. The integration shall rely on MCP session isolation or application-level session/client separation.
+
+### FR-26 File Path Restriction
+
+Production integration shall use inline X3D content and remote MCP tools compatible with HTTP mode. User-controlled server file paths shall not be accepted as a modeling command.
+
+### FR-27 LLM Provider Independence
+
+The domain layer shall not depend on a specific LLM SDK. Provider selection shall be made through the frontend provider abstraction.
+
+### FR-28 Local AI Model Selection
+
+The frontend shall expose one recommended default model and may expose additional compatible WebLLM models. Unsupported models shall not be selectable.
+
+### FR-29 AI Structured Output Validation
+
+Model output must pass JSON parsing and the current ModelPlan JSON Schema before it is sent to the backend.
+
+### FR-30 AI Retry for Invalid JSON
+
+If local inference returns malformed structured output, the agent runtime may issue a single format-repair prompt. Persistent failure shall surface an actionable error instead of guessing.
+
+### FR-31 Conversation Context
+
+The agent shall receive:
+
+- relevant recent chat turns;
+- summarized current ModelSpec;
+- current revision;
+- supported operation schema;
+- validation diagnostics from the prior failed attempt when applicable.
+
+It shall not receive unnecessary full HTML artifacts or binary render data.
+
+### FR-32 Model Complexity Guard
+
+The backend shall enforce configurable scene limits for the MVP, including maximum object count and numeric bounds, to prevent accidental browser or service exhaustion.
+
+Initial recommended limit: 100 primitive objects per project.
+
+### FR-33 Generation Cancellation
+
+The frontend shall allow cancellation of an in-progress local inference when supported. If the backend has not yet committed a ModelPlan, cancellation leaves the prior project revision unchanged.
+
+### FR-34 Idempotent Revision Commit
+
+A client shall include the expected current revision when applying a ModelPlan. If another operation already changed the project, the backend shall reject the stale mutation with a conflict response.
+
+### FR-35 Optional Render Snapshot
+
+If the optional X_ITE/Playwright rendering dependency is enabled, the backend may produce a PNG snapshot for test automation and agent evaluation. The core MVP must not depend on this optional capability for normal preview.
+
+### FR-36 Project Manifest Export
+
+The user shall be able to download a project manifest containing the current ModelSpec and metadata as JSON. This file is distinct from X3D and is intended to preserve semantic intent for future migrations.
+
+### FR-37 Project Manifest Import
+
+Post-MVP or late-MVP implementation may allow a previously exported compatible manifest to reconstruct a project. Import shall validate version and schema before mutation.
+
+### FR-38 Future Renderer Contract
+
+The domain shall define a renderer/adapter interface so a future `MeshRenderer` or `CadRenderer` can consume ModelSpec without changing the conversational API.
+
+---
+
+## 5. Functional Requirements: Frontend
+
+### FE-01 Modeling Workspace
+
+The default route shall display the conversational workspace and 3D viewer side by side on desktop.
+
+Recommended layout:
+
+```text
+┌───────────────────────────────────────────────────────────────┐
+│ AI Web3D Modeler                           [New] [Download ▾] │
+├───────────────────────────┬───────────────────────────────────┤
+│ Chat                      │ 3D Preview                        │
+│                           │                                   │
+│ User: create a chair      │            [model]                │
+│ Agent: creating...        │                                   │
+│                           │                                   │
+│ User: thicker legs        │                                   │
+│ Agent: updated            │                                   │
+├───────────────────────────┴───────────────────────────────────┤
+│ Local AI: Ready | X3D: Valid | Revision 7                    │
+└───────────────────────────────────────────────────────────────┘
+```
+
+### FE-02 Chat Input
+
+The chat shall provide:
+
+- multiline text input;
+- submit button;
+- Enter/Shift+Enter behavior;
+- disabled state during initialization where necessary;
+- visible generation state;
+- cancel action while the local model is generating.
+
+### FE-03 Chat History
+
+The panel shall display user and assistant messages chronologically. Tool-level internal events shall not overwhelm the normal chat; detailed diagnostics may be displayed in an expandable technical panel.
+
+### FE-04 Local Model Initialization
+
+On first use, the frontend shall detect WebGPU support and initialize the configured WebLLM model. Model download/loading progress shall be visible.
+
+### FE-05 WebGPU Unsupported State
+
+If WebGPU is unavailable, the UI shall clearly explain that the zero-key local AI mode is not supported in the current browser/device and present configured alternatives, such as an optional Puter.js provider, if enabled.
+
+### FE-06 3D Preview
+
+The right-hand panel shall render the current validated scene and allow normal viewer navigation such as orbit, zoom, and pan according to X3DOM/X_ITE behavior.
+
+### FE-07 Preview Loading State
+
+During first generation or model refresh, the viewer shall show a non-blocking loading state while keeping the last valid scene visible where possible.
+
+### FE-08 Last-Valid-Scene Rule
+
+An invalid new generation shall not replace the last valid model in the viewer. The failed attempt shall be reported in chat/status and the project revision shall remain unchanged unless a valid commit occurs.
+
+### FE-09 Viewer Reset
+
+The UI shall expose a camera/view reset control independent of project reset.
+
+### FE-10 Project Reset
+
+The UI shall expose a clearly separated “New/Reset project” action. If unsaved work exists, the frontend shall warn that the current in-memory session will be replaced.
+
+### FE-11 Download Menu
+
+The download menu shall show only formats currently available for the validated revision.
+
+MVP formats:
+
+- Standalone HTML (`.html`)
+- X3D XML (`.x3d`)
+- Project Manifest (`.json`)
+- X3D JSON (`.x3dj`) when conversion succeeds
+- ClassicVRML (`.x3dv`) when conversion succeeds
+
+### FE-12 Download Filename
+
+The user may assign a project name. Unsafe filename characters shall be normalized. Default name: `untitled-model`.
+
+### FE-13 Validation Status
+
+The workspace shall show concise status:
+
+- `Valid`
+- `Valid with warnings`
+- `Generating`
+- `Validation failed`
+- `MCP unavailable`
+- `Local AI unavailable`
+
+### FE-14 Technical Diagnostics
+
+An expandable diagnostics panel shall display schema/semantic warnings, autofixes, current ModelSpec summary, revision, provider/model, and backend correlation ID.
+
+### FE-15 Responsive Layout
+
+Desktop widths shall use side-by-side chat and viewer. Narrow screens may switch to tabs or vertically stacked panels. The viewer must remain usable and not collapse below a configured minimum height.
+
+### FE-16 No Page Scroll for Primary Desktop Workspace
+
+At standard desktop resolutions, the primary modeling workspace should fit within the viewport, with scrolling confined to the chat history and technical panels rather than the full page.
+
+### FE-17 Provider Settings
+
+A settings dialog shall show:
+
+- active provider;
+- active local model;
+- WebGPU availability;
+- model load/cache status;
+- optional fallback providers;
+- privacy note indicating whether inference is local or remote.
+
+### FE-18 Local Privacy Indicator
+
+When WebLLM is active, the UI shall state that model inference is running locally in the browser. This does not imply that MCP/backend traffic is local; 3D commands still reach the application backend unless the whole stack is run locally.
+
+### FE-19 Error Feedback
+
+Frontend errors shall distinguish at minimum:
+
+- AI model load failure;
+- invalid AI structured output;
+- API unreachable;
+- MCP unreachable;
+- validation failure;
+- stale revision conflict;
+- artifact generation failure;
+- browser viewer failure.
+
+### FE-20 Accessibility
+
+Core controls shall be keyboard reachable, status changes shall have accessible labels, and text contrast shall meet common WCAG AA expectations.
+
+---
+
+## 6. End-to-End Use Cases
+
+### UC-01 Initialize the application
+
+**Primary actors:** End user, local AI runtime  
+**Preconditions:** Modern browser; JavaScript enabled.  
+**Main flow:**
+1. User opens the application.
+2. Frontend checks WebGPU capability.
+3. Frontend creates an empty project session through the API.
+4. WebLLM initializes the recommended model or begins download.
+5. The workspace displays an empty 3D scene and model loading status.
+6. When ready, chat input becomes fully enabled.
+
+**Postconditions:** A project session exists and the local agent is ready.
+
+**Important alternate/error flows:**
+- WebGPU unavailable → show unsupported state and configured fallback.
+- API unavailable → show backend error; no generation begins.
+- MCP unhealthy → allow UI load but disable generation until health recovers.
+
+### UC-02 Create a simple 3D object
+
+**Primary actors:** End user, AI agent, orchestrator, `x3d_mcp`  
+**Preconditions:** Project and AI provider ready.  
+**Main flow:**
+1. User enters “Create a red cube.”
+2. Agent receives current ModelSpec and supported ModelPlan schema.
+3. Agent returns a structured `create_object` operation.
+4. Frontend validates JSON/schema.
+5. API validates the operation and applies it to a candidate ModelSpec.
+6. X3D adapter builds the candidate scene through `x3d_mcp`.
+7. Backend performs schema and semantic validation.
+8. Backend commits revision if valid.
+9. Backend generates standalone X3DOM HTML.
+10. Frontend displays the new model and completion message.
+
+**Postconditions:** Revision 1 exists, is validated, and can be downloaded.
+
+### UC-03 Create a composed object
+
+**Primary actors:** End user, AI agent  
+**Preconditions:** Same as UC-02.  
+**Main flow:**
+1. User asks for a simple table or chair.
+2. Agent decomposes the request into named primitives.
+3. ModelPlan contains multiple create operations with transforms.
+4. Backend validates limits and IDs.
+5. X3D scene is assembled and validated.
+6. Preview is refreshed.
+
+**Postconditions:** A multi-part model exists with stable named components.
+
+### UC-04 Modify an existing part
+
+**Primary actors:** End user, AI agent  
+**Preconditions:** Current ModelSpec has named parts.  
+**Main flow:**
+1. User writes “Make the four legs thicker.”
+2. Agent receives summarized ModelSpec containing leg IDs/names.
+3. Agent produces dimension updates targeting those objects.
+4. Backend validates the targets and expected revision.
+5. Candidate scene is regenerated/updated and validated.
+6. Valid revision is committed.
+7. Viewer refreshes without resetting chat.
+
+**Postconditions:** Model is modified while retaining project history.
+
+### UC-05 Ambiguous modification
+
+**Primary actors:** End user, AI agent  
+**Preconditions:** Two objects share similar display names or prompt target is unclear.  
+**Main flow:**
+1. User asks “Make the support larger.”
+2. Agent detects that more than one object can match “support.”
+3. Agent returns a clarification intent rather than a mutation.
+4. Chat asks the user which part is intended.
+
+**Postconditions:** No project mutation occurs.
+
+### UC-06 Validation failure and repair
+
+**Primary actors:** Orchestrator, `x3d_mcp`, AI agent  
+**Preconditions:** Candidate generation fails validation.  
+**Main flow:**
+1. Candidate X3D is produced.
+2. Schema or semantic validation fails.
+3. Supported autofix is attempted.
+4. Scene is revalidated.
+5. If still invalid, concise diagnostics are supplied to the agent.
+6. Agent produces a corrected structured plan.
+7. Backend retries up to configured limit.
+8. Valid candidate is committed; otherwise the attempt fails.
+
+**Postconditions:** Either a valid revision is committed or the prior valid revision remains authoritative.
+
+### UC-07 Download standalone HTML
+
+**Primary actors:** End user  
+**Preconditions:** At least one valid revision exists.  
+**Main flow:**
+1. User opens Download menu.
+2. User selects HTML.
+3. Backend verifies requested revision equals current revision.
+4. Backend returns standalone X3DOM HTML.
+5. Browser downloads the file.
+
+**Postconditions:** User possesses an HTML file that can be opened independently in a browser with network access to required CDN assets unless a later offline-bundled mode is implemented.
+
+### UC-08 Download X3D
+
+**Primary actors:** End user  
+**Preconditions:** Valid revision.  
+**Main flow:**
+1. User selects X3D.
+2. Backend serializes current validated scene as XML.
+3. File downloads with normalized project name and revision.
+
+**Postconditions:** User possesses a standards-based X3D source artifact.
+
+### UC-09 Download project manifest
+
+**Primary actors:** End user  
+**Preconditions:** Valid or empty project.  
+**Main flow:**
+1. User selects Project Manifest.
+2. Backend exports ModelSpec with schema version and metadata.
+3. File downloads as JSON.
+
+**Postconditions:** Semantic project intent can be preserved independently from X3D.
+
+### UC-10 Reset project
+
+**Primary actors:** End user  
+**Preconditions:** Any active session.  
+**Main flow:**
+1. User selects New/Reset.
+2. UI confirms if current project has modifications.
+3. API resets ModelSpec and MCP scene.
+4. Viewer returns to empty scene.
+5. Chat may be cleared or archived per selected UX.
+
+**Postconditions:** New empty revision baseline exists.
+
+### UC-11 Local model unavailable
+
+**Primary actors:** End user  
+**Preconditions:** WebGPU missing, model fails to load, or insufficient resources.  
+**Main flow:**
+1. WebLLM initialization fails.
+2. Frontend displays reason when detectable.
+3. If optional Puter provider is configured, user may explicitly select it.
+4. Remote provider disclosure is displayed before use.
+
+**Postconditions:** User understands why default local inference is unavailable and can use a supported fallback if enabled.
+
+### UC-12 Stale revision conflict
+
+**Primary actors:** Frontend, backend  
+**Preconditions:** Client attempts mutation from old revision.  
+**Main flow:**
+1. Client sends expected revision.
+2. Backend detects mismatch.
+3. Backend returns HTTP 409 with actual revision.
+4. Frontend refreshes ModelSpec summary and asks agent to re-plan if appropriate.
+
+**Postconditions:** No silent overwriting of newer state.
+
+---
+
+## 7. Non-Functional Requirements
+
+### NFR-01 Runtime Compatibility
+
+The frontend shall target current Chromium-based browsers with WebGPU for the default local AI mode. Firefox/Safari compatibility may be partial depending on WebGPU/WebLLM support. The 3D preview should remain standards-based and degrade independently from local AI availability.
+
+Backend shall target Python 3.12+ to align with `x3d_mcp`.
+
+### NFR-02 Zero-Key Default AI
+
+A new developer checkout must be able to run the default AI flow without obtaining a third-party LLM API key. The default implementation shall use WebLLM locally.
+
+### NFR-03 Cost Baseline
+
+The core MVP shall incur no mandatory per-token AI API cost. Normal hosting/network costs remain outside this requirement.
+
+### NFR-04 Model Load UX
+
+The application shall expose first-load model progress because WebLLM model artifacts can be large. The UI must never appear frozen during initialization.
+
+### NFR-05 UI Responsiveness
+
+LLM inference shall run outside the main UI thread where supported, using a Web Worker/Service Worker strategy, so chat and viewer controls remain responsive.
+
+### NFR-06 Validation Reliability
+
+No artifact may be labeled valid or exposed as the current successful revision until required X3D schema and semantic validation pass.
+
+### NFR-07 Deterministic Domain Mutations
+
+ModelSpec mutations are deterministic application operations. The LLM proposes operations; application code applies them.
+
+### NFR-08 Security by Construction
+
+The system shall not `eval`, `exec`, spawn shell commands, execute LLM-produced Python, or inject LLM-produced JavaScript into the main application context.
+
+### NFR-09 Observability
+
+Every generation attempt shall have a correlation ID and record:
+
+- project ID;
+- base revision;
+- provider/model;
+- duration per stage;
+- ModelPlan parse status;
+- MCP call outcome;
+- validation outcome;
+- artifact generation outcome.
+
+Prompts/content should not be persisted server-side by default in MVP logs.
+
+### NFR-10 Error Handling
+
+Expected domain errors shall be structured and distinguishable from infrastructure failures. A generic server error shall not expose Python stack traces or internal filesystem paths to the browser.
+
+### NFR-11 Performance Budget
+
+For a warmed local model and simple primitive scene, application-side orchestration after LLM completion should target sub-second to low-single-digit-second completion, excluding optional headless PNG rendering.
+
+### NFR-12 Scene Complexity
+
+MVP shall reject unexpectedly large ModelPlans. Initial limits:
+
+- 100 scene objects;
+- 100 operations per request;
+- prompt text: 8,000 characters;
+- bounded numeric coordinates/dimensions;
+- artifact response size limits.
+
+Exact values are configurable.
+
+### NFR-13 Maintainability
+
+Domain schemas, provider adapters, and renderer adapters shall be independently testable. UI components shall not contain geometry conversion logic.
+
+### NFR-14 Testability
+
+The repository shall contain unit, integration, and golden-prompt tests. Tests requiring WebGPU may be separated from regular CI but must have documented local execution.
+
+### NFR-15 Accessibility
+
+Core user workflows shall be keyboard-accessible and provide textual status/error information independent from 3D graphics.
+
+### NFR-16 Privacy
+
+In default WebLLM mode, natural-language prompts are processed locally by the LLM. Structured geometry operations and project state are sent to the application backend for X3D generation unless the entire stack is hosted locally.
+
+### NFR-17 Browser Memory
+
+The application shall expose a reset/unload mechanism for the local model where practical and document recommended hardware. The viewer shall release obsolete Blob URLs and iframe resources.
+
+### NFR-18 Backward Compatibility
+
+ModelSpec includes an explicit schema version. Future migrations must either upgrade known prior versions or reject them with a clear compatibility error.
+
+### NFR-19 Dependency Pinning
+
+Production builds shall pin or lock frontend packages, Python dependencies, and the tested `x3d_mcp` commit/tag rather than floating silently to unverified upstream behavior.
+
+### NFR-20 Licensing
+
+The project shall retain third-party license notices for WebLLM, X3D/X3DOM/X_ITE dependencies, and `x3d_mcp` according to their licenses.
+
+---
+
+## 8. Data Model and Integrity Rules
+
+### 8.1 Core aggregates
+
+| Aggregate | Responsibility |
+| --- | --- |
+| ProjectSession | Current project ID, revision, timestamps, status. |
+| ModelSpec | Renderer-independent semantic description of the current model. |
+| ModelObject | A named primitive/part with dimensions, transform, and material. |
+| ModelPlan | Proposed set of agent operations to mutate ModelSpec. |
+| GenerationAttempt | One user request and its structured-plan/validation outcome. |
+| ValidationResult | X3D schema/semantic status, warnings, autofixes. |
+| ArtifactDescriptor | Available downloadable formats for a committed revision. |
+| LLMRuntimeState | Provider/model availability and initialization status on client. |
+
+### 8.2 ModelSpec schema baseline
+
+```typescript
+type Units = "mm" | "cm" | "m" | "unitless";
+
+interface ModelSpec {
+  schemaVersion: "1.0";
+  projectId: string;
+  revision: number;
+  units: Units;
+  scene: {
+    background?: string;
+    displayScale: number;
+  };
+  objects: ModelObject[];
+}
+
+interface ModelObject {
+  id: string;
+  name: string;
+  kind: "box" | "sphere" | "cylinder" | "cone";
+  dimensions: Record<string, number>;
+  transform: {
+    position: [number, number, number];
+    rotation: [number, number, number];
+    scale: [number, number, number];
+  };
+  material: {
+    color: string;
+    transparency?: number;
+  };
+  tags?: string[];
+}
+```
+
+### 8.3 ModelPlan operations
+
+MVP operations:
+
+| Operation | Purpose |
+| --- | --- |
+| `create_object` | Add primitive. |
+| `delete_object` | Remove part. |
+| `duplicate_object` | Clone part with new identity. |
+| `set_dimensions` | Change primitive dimensions. |
+| `translate_object` | Change position. |
+| `rotate_object` | Change rotation. |
+| `scale_object` | Change scale. |
+| `set_material` | Change display material/color. |
+| `rename_object` | Change display name. |
+| `set_scene` | Change supported scene-level settings. |
+| `clarify` | Ask user for missing/ambiguous information; no mutation. |
+| `no_change` | Respond without modifying geometry. |
+
+### 8.4 Integrity rules
+
+- Object IDs are unique within a project.
+- Object IDs are immutable after creation.
+- Display names need not be globally unique, but ambiguous natural-language targeting must not mutate arbitrarily.
+- Dimensions must be finite and positive where applicable.
+- Scales must be finite and non-zero.
+- Color values must match accepted normalized format.
+- A ModelPlan cannot reference a nonexistent target unless the same atomic plan first creates it and ordering is explicitly supported.
+- A candidate mutation does not alter authoritative state until X3D validation succeeds.
+- Revision increases by exactly one for each successful mutation commit.
+- Downloadable artifacts must identify the committed revision they represent.
+- ModelSpec, not generated HTML, is the semantic source of truth.
+- X3D is the authoritative render/export representation for MVP, but not the future-proof domain model.
+- Backend and frontend schema versions must match or negotiate an explicit supported migration.
+
+### 8.5 State transition
+
+```mermaid
+stateDiagram-v2
+  [*] --> Empty
+  Empty --> Generating: user request
+  Valid --> Generating: modification
+  Generating --> Candidate: ModelPlan accepted
+  Candidate --> Validating: X3D built
+  Validating --> Valid: all required validation passed
+  Validating --> Repairing: fixable/agent repair
+  Repairing --> Validating
+  Repairing --> Failed: retry limit
+  Validating --> Failed: unrecoverable
+  Failed --> Valid: prior valid revision remains
+  Empty --> Failed: first generation failed
+  Valid --> Empty: reset
+```
+
+---
+
+## 9. API Contract and Error Standard
+
+### 9.1 Endpoint baseline
+
+Proposed REST surface:
+
+| Method | Route | Purpose |
+| --- | --- | --- |
+| `POST` | `/api/projects` | Create project session. |
+| `GET` | `/api/projects/{id}` | Get project metadata/current ModelSpec summary. |
+| `DELETE` | `/api/projects/{id}` | Reset/delete temporary session. |
+| `POST` | `/api/projects/{id}/plans` | Validate/apply structured ModelPlan. |
+| `GET` | `/api/projects/{id}/scene` | Current X3D/scene metadata. |
+| `GET` | `/api/projects/{id}/validation` | Current validation result. |
+| `GET` | `/api/projects/{id}/artifacts` | Available artifact descriptors. |
+| `GET` | `/api/projects/{id}/artifacts/html` | Download standalone HTML. |
+| `GET` | `/api/projects/{id}/artifacts/x3d` | Download X3D XML. |
+| `GET` | `/api/projects/{id}/artifacts/x3dj` | Download X3D JSON if supported. |
+| `GET` | `/api/projects/{id}/artifacts/x3dv` | Download ClassicVRML if supported. |
+| `GET` | `/api/projects/{id}/manifest` | Download ModelSpec JSON. |
+| `GET` | `/api/health` | Application health. |
+| `GET` | `/api/health/mcp` | MCP connectivity/dependency health. |
+
+### 9.2 Apply plan request
+
+```json
+{
+  "expectedRevision": 3,
+  "requestId": "client-generated-id",
+  "plan": {
+    "intent": "modify_model",
+    "operations": []
+  }
+}
+```
+
+### 9.3 Apply plan success response
+
+```json
+{
+  "projectId": "prj_...",
+  "revision": 4,
+  "modelSpec": {},
+  "validation": {
+    "schemaValid": true,
+    "semanticValid": true,
+    "warnings": [],
+    "autofixes": []
+  },
+  "preview": {
+    "url": "/api/projects/prj_.../artifacts/html?revision=4"
+  },
+  "artifacts": [
+    {"format": "html", "available": true},
+    {"format": "x3d", "available": true},
+    {"format": "x3dj", "available": true},
+    {"format": "x3dv", "available": true}
+  ]
+}
+```
+
+### 9.4 Error semantics
+
+| Condition | HTTP | Code |
+| --- | ---: | --- |
+| Invalid ModelPlan schema | 400 | `INVALID_PLAN` |
+| Unknown target/object | 422 | `UNKNOWN_TARGET` |
+| Invalid dimensions/operation | 422 | `DOMAIN_VALIDATION_FAILED` |
+| Ambiguous target requiring clarification | 422 | `AMBIGUOUS_TARGET` |
+| Project not found/expired | 404 | `PROJECT_NOT_FOUND` |
+| Revision mismatch | 409 | `REVISION_CONFLICT` |
+| Scene validation failed | 422 | `X3D_VALIDATION_FAILED` |
+| MCP unavailable | 503 | `MCP_UNAVAILABLE` |
+| Artifact unavailable | 404 | `ARTIFACT_UNAVAILABLE` |
+| Project limit exceeded | 413/422 | `COMPLEXITY_LIMIT` |
+| Unexpected server failure | 500 | `INTERNAL_ERROR` |
+
+Standard body:
+
+```json
+{
+  "code": "X3D_VALIDATION_FAILED",
+  "message": "The candidate scene could not be validated.",
+  "details": [],
+  "correlationId": "..."
+}
+```
+
+### 9.5 MCP contract
+
+The API shall encapsulate MCP protocol details inside `X3DMcpClient`. Frontend code shall not need to know MCP tool transport schemas.
+
+### 9.6 Timeouts
+
+Recommended initial limits:
+
+- MCP individual tool call: 30 seconds;
+- full apply-plan orchestration: 60 seconds excluding local LLM inference;
+- optional headless render: 45 seconds;
+- artifact download: 30 seconds.
+
+All values are configurable.
+
+---
+
+## 10. Frontend Component Specification
+
+### 10.1 Application shell
+
+Suggested components:
+
+```text
+App
+└── WorkspacePage
+    ├── TopBar
+    │   ├── ProjectName
+    │   ├── NewProjectButton
+    │   ├── ProviderStatus
+    │   └── DownloadMenu
+    ├── ResizableWorkspace
+    │   ├── ChatPanel
+    │   │   ├── MessageList
+    │   │   ├── GenerationProgress
+    │   │   └── PromptComposer
+    │   └── ViewerPanel
+    │       ├── ViewerToolbar
+    │       ├── X3DPreviewFrame
+    │       └── Empty/ErrorOverlay
+    └── StatusBar
+        ├── LocalAIStatus
+        ├── MCPStatus
+        ├── ValidationBadge
+        └── RevisionBadge
+```
+
+### 10.2 Chat state
+
+Chat UI state is not itself authoritative geometry state. The current ModelSpec returned by the server determines the model.
+
+Chat state:
+
+- messages;
+- local generation status;
+- pending request ID;
+- last diagnostics;
+- clarification state.
+
+### 10.3 Viewer implementation
+
+Preferred MVP:
+
+1. backend produces current validated X3DOM standalone HTML;
+2. frontend retrieves/embeds it as a Blob or `srcDoc`;
+3. iframe is sandboxed;
+4. prior Blob URL is revoked after replacement.
+
+Alternative implementation may directly render X3D with X_ITE/X3DOM components, but downloadable standalone HTML remains a requirement.
+
+### 10.4 Local LLM service
+
+Responsibilities:
+
+- WebGPU check;
+- model selection;
+- model initialization progress;
+- model cache handling;
+- chat completion;
+- structured JSON generation;
+- cancel request;
+- unload/reload where supported;
+- privacy/provider status.
+
+### 10.5 Agent prompt composition
+
+The system prompt shall include:
+
+- role: 3D modeling planner;
+- allowed ModelPlan schema;
+- rule: never emit executable code;
+- rule: never invent unsupported operation names;
+- current ModelSpec summary;
+- unit rules;
+- coordinate convention;
+- ambiguity rule;
+- instruction to prefer simple primitive decomposition in MVP.
+
+### 10.6 Coordinate convention
+
+The application shall document one coordinate convention and preserve it across agent prompts, ModelSpec, and X3D mapping.
+
+Recommended:
+
+- X: left/right;
+- Y: up/down;
+- Z: front/back;
+- positions in semantic project units before `displayScale`.
+
+---
+
+## 11. Security and Access Control
+
+### 11.1 MVP access model
+
+The first release may operate without user accounts. A project session is temporary and identified by a high-entropy opaque ID.
+
+Absence of authentication means the backend must still treat project IDs as untrusted bearer-like identifiers and enforce expiration/complexity limits.
+
+### 11.2 AI execution boundary
+
+LLM output is data, not code.
+
+Prohibited patterns:
+
+- Python `eval` / `exec`;
+- shell execution;
+- Node `eval` / `Function`;
+- user/LLM-defined import paths;
+- arbitrary filesystem path reads;
+- arbitrary URL fetching initiated by ModelPlan;
+- raw script injection into application DOM.
+
+### 11.3 MCP boundary
+
+Under remote HTTP transport:
+
+- use inline content;
+- do not enable user-selected server paths;
+- use isolated MCP sessions;
+- expose MCP only to API service/network where possible;
+- do not expose raw MCP endpoint publicly unless required.
+
+### 11.4 HTML preview security
+
+Standalone/generated HTML is displayed in a sandboxed iframe. The application shall not interpolate raw user/LLM HTML into the parent DOM.
+
+### 11.5 Prompt injection scope
+
+User prompts are expected to control their own model project. Nevertheless, the agent prompt shall enforce that a user instruction cannot expand the application's tool set or override server validation.
+
+### 11.6 Resource abuse controls
+
+Even without accounts, backend shall apply:
+
+- request body limits;
+- object/operation count limits;
+- rate limiting per session/IP where deployed publicly;
+- session TTL;
+- timeout limits;
+- artifact size limits.
+
+### 11.7 Sensitive data
+
+The MVP does not require personal information. Logs should avoid storing full prompts by default. If diagnostic prompt logging is enabled in development, it must be explicit.
+
+---
+
+## 12. Operational and Deployment Requirements
+
+### 12.1 Local development
+
+Prerequisites:
+
+- Node.js current LTS;
+- Python 3.12+;
+- `uv`;
+- Git;
+- browser with WebGPU support;
+- Docker optional but recommended.
+
+Expected development services:
+
+```text
+frontend:  http://localhost:5173
+api:       http://localhost:8001
+x3d_mcp:   http://localhost:8000/mcp
+```
+
+### 12.2 `x3d_mcp` setup
+
+The upstream service shall be pinned to a tested revision and started using Streamable HTTP:
+
+```bash
+MCP_TRANSPORT=streamable-http PORT=8000 uv run python src/server.py
+```
+
+Production should use its container image or a project-owned pinned build.
+
+### 12.3 Frontend deployment
+
+The frontend may be deployed to static hosting/CDN. WebLLM model artifacts may be fetched from configured model hosting and cached client-side.
+
+Cross-origin headers and WebGPU/browser requirements must be tested on the chosen host.
+
+### 12.4 API deployment
+
+FastAPI may run in a small container/service because it does not perform LLM inference. CPU/memory sizing is therefore driven primarily by orchestration, X3D serialization, and concurrent sessions.
+
+### 12.5 MCP deployment
+
+`x3d_mcp` runs as a separate Python service/container in Streamable HTTP mode. Network access should be restricted to the orchestrator where infrastructure allows.
+
+### 12.6 No mandatory database
+
+MVP shall not require PostgreSQL/SQL Server/Redis merely to function. If horizontal scaling is later required, server-side session state may move to a shared store.
+
+### 12.7 CI
+
+CI shall run:
+
+- frontend lint/typecheck;
+- backend lint/typecheck where configured;
+- domain/unit tests;
+- ModelSpec/ModelPlan schema tests;
+- MCP client contract tests using a test instance;
+- X3D golden-scene tests;
+- build verification.
+
+GPU/WebGPU E2E tests may run in a separate environment.
+
+### 12.8 Dependency update policy
+
+Upstream updates to `x3d_mcp` and WebLLM must not be consumed automatically without tests. Dependency renovation may open PRs, but merges require validation.
+
+---
+
+## 13. Requirements Traceability Matrix
+
+| Requirement range | Capability | Primary implementation target | MVP status |
+| --- | --- | --- | --- |
+| FR-01..03 | Project/session + structured plan | FastAPI, JSON Schema | Planned |
+| FR-04..11 | Primitive domain operations | ModelSpec domain | Planned |
+| FR-12..17 | X3D generation/validation/repair | X3D adapter + `x3d_mcp` | Planned |
+| FR-18..22 | HTML/X3D artifact generation | Artifact service + MCP | Planned |
+| FR-23..26 | Diagnostics/health/isolation | API + MCP client | Planned |
+| FR-27..31 | AI provider + structured agent | WebLLM/agent package | Planned |
+| FR-32..35 | Limits/cancel/revision/render | API + frontend | Planned |
+| FR-36..38 | Manifest/future renderer | Domain/export architecture | Planned |
+| FE-01..20 | Web product experience | React SPA | Planned |
+| NFR-01..20 | Cross-cutting quality/security | Whole repository | Planned |
+
+A requirement marked **Planned** represents design intent in this PRD, not existing implementation.
+
+---
+
+## 14. Product Roadmap and Scope Boundaries
+
+### 14.1 Phase 0 — Technical spike
+
+Goal: prove the entire chain once.
+
+Deliver:
+
+- React page;
+- WebLLM model load;
+- prompt → valid ModelPlan JSON;
+- FastAPI project session;
+- one `box` operation;
+- `x3d_mcp` HTTP call;
+- validation;
+- standalone X3DOM HTML;
+- iframe preview;
+- HTML/X3D download.
+
+No polished UX required.
+
+### 14.2 Phase 1 — Reliable MVP
+
+Goal: usable conversational primitive modeler.
+
+Deliver:
+
+- four primitives;
+- multi-part models;
+- stable part names/IDs;
+- iterative modifications;
+- validation/repair;
+- download menu;
+- ModelSpec manifest;
+- diagnostics;
+- golden prompt suite;
+- responsive desktop-first UI;
+- deployment documentation.
+
+### 14.3 Phase 2 — Advanced Web3D modeling
+
+Candidates:
+
+- lights/viewpoints/background control;
+- animation;
+- texturing;
+- reusable groups;
+- richer X3D node access;
+- mesh/IndexedFaceSet generation;
+- import existing X3D;
+- visual selection of a part then conversational edit;
+- undo/redo;
+- project import/export;
+- screenshot evaluation using X_ITE.
+
+### 14.4 Phase 3 — Mesh export
+
+Goal: downloadable 3D asset formats beyond X3D.
+
+Candidates:
+
+- glTF/GLB;
+- OBJ;
+- STL where geometry can be guaranteed as a suitable mesh;
+- mesh validation/manifold checks;
+- conversion service based on a tested open-source pipeline.
+
+This phase must not market STL output as manufacturing-ready without appropriate topology checks.
+
+### 14.5 Phase 4 — CAD adapter
+
+Goal: convert the same conversational/product architecture into a true CAD pipeline.
+
+Introduce:
+
+```text
+ModelSpec / future ParametricModel
+  ├── X3DRenderer
+  └── CadRenderer
+       └── CadQuery / OpenCascade
+            ├── STEP
+            ├── STL/3MF
+            └── CAD-oriented validation
+```
+
+Likely domain additions:
+
+- sketches;
+- dimensional constraints;
+- extrude/revolve;
+- boolean cut/union/intersection;
+- fillet/chamfer;
+- hole feature;
+- patterns/mirrors;
+- feature history;
+- assemblies.
+
+At that stage ModelSpec 1.x may need a migration to a richer `ParametricModel` schema.
+
+### 14.6 Scope rule
+
+A feature must not be added directly to the LLM prompt if it cannot be represented and validated by application-domain operations. Capabilities expand by adding typed domain operations and renderer support, not by permitting arbitrary code.
+
+---
+
+## 15. Implementation Maturity and Exit Criteria
+
+### 15.1 Maturity levels
+
+| Level | Meaning |
+| --- | --- |
+| Designed | Requirement exists only in PRD. |
+| Implemented | Main path exists locally. |
+| Integrated | Works end to end with MCP/viewer. |
+| Tested | Automated tests cover expected behavior and major errors. |
+| MVP-ready | Meets defined acceptance criteria and deployment documentation. |
+
+### 15.2 MVP exit checklist
+
+The MVP may be tagged `v0.1.0` only when:
+
+- [ ] WebLLM loads on supported reference browser/device without API key.
+- [ ] Unsupported WebGPU state is handled.
+- [ ] Four primitive types are supported.
+- [ ] Multi-part object generation works.
+- [ ] Follow-up modifications work against stable IDs.
+- [ ] Invalid structured AI output is rejected/repaired.
+- [ ] Stale revisions are rejected.
+- [ ] X3D schema validation runs for every committed revision.
+- [ ] X3D semantic validation runs for every committed revision.
+- [ ] Last-valid-scene behavior is implemented.
+- [ ] Standalone HTML downloads and opens correctly.
+- [ ] X3D downloads correctly.
+- [ ] ModelSpec manifest downloads correctly.
+- [ ] Viewer and chat coexist in the primary desktop viewport.
+- [ ] No LLM-produced code execution path exists.
+- [ ] Public deployment has resource/rate limits.
+- [ ] Golden prompt suite passes target threshold.
+- [ ] Setup/deployment documentation is complete.
+
+### 15.3 Known risks
+
+#### R-01 Local model capability
+
+Small local models may have weaker spatial planning than hosted frontier models.
+
+**Mitigation:** constrained ModelPlan schema, strong system prompt, deterministic domain operations, golden benchmarks, optional remote provider adapter.
+
+#### R-02 WebGPU availability
+
+Not every device/browser can run WebLLM effectively.
+
+**Mitigation:** capability detection, documented hardware baseline, optional Puter/BYOK fallback.
+
+#### R-03 First model download
+
+Initial model download may be large and slow.
+
+**Mitigation:** progress UI, browser caching, selected small model, clear storage requirements.
+
+#### R-04 Function calling maturity
+
+WebLLM native function calling is not required by MVP.
+
+**Mitigation:** schema-constrained JSON planning and application-owned execution.
+
+#### R-05 X3D is not CAD
+
+Users may interpret “piece” as manufacturing-ready.
+
+**Mitigation:** UI/docs terminology, clear download format labels, separate CAD roadmap, no STEP promise in MVP.
+
+#### R-06 Primitive decomposition limits
+
+Complex curved/mechanical forms may be impossible or visually crude using only four primitives.
+
+**Mitigation:** Phase 2 mesh/X3D node expansion; maintain renderer-independent domain.
+
+#### R-07 Upstream dependency change
+
+`x3d_mcp`, X3DOM, WebLLM, or CDN behavior may change.
+
+**Mitigation:** pin tested revisions, lockfiles, contract tests, optional vendoring for critical browser dependencies.
+
+---
+
+## 16. Appendices
+
+### Appendix A — Reference technology decisions
+
+| Decision | Selected | Rationale |
+| --- | --- | --- |
+| Frontend | React + TypeScript + Vite | Strong WebLLM/JS ecosystem and interactive SPA fit. |
+| Default AI | WebLLM | Real local inference, no key, no per-request API bill, OpenAI-like interface, WebGPU. |
+| Native tool calling | Not required | Use structured JSON schema for stability while function calling evolves. |
+| Backend | FastAPI / Python 3.12+ | Same language/runtime family as `x3d_mcp`, simple typed API. |
+| X3D engine | `x3d_mcp` | Official-standard-oriented tools, validation, conversion, browser page generation. |
+| Viewer | X3DOM page in sandboxed iframe | Direct reuse of upstream standalone page capability. |
+| Database | None for MVP | Reduce initial complexity; sessions are temporary. |
+| Semantic model | ModelSpec | Decouple AI/product logic from X3D and future CAD engine. |
+
+### Appendix B — AI provider evaluation
+
+#### WebLLM
+
+**Role:** default.
+
+Strengths:
+
+- no API key;
+- no cloud inference bill;
+- local privacy for prompt/model inference;
+- browser-native;
+- structured JSON;
+- OpenAI-like API;
+- model caching;
+- worker support.
+
+Tradeoffs:
+
+- requires WebGPU for practical performance;
+- initial model download;
+- device memory/performance variation;
+- native tool calling remains evolving/WIP.
+
+#### Puter.js
+
+**Role:** optional fallback.
+
+Strengths:
+
+- no developer-managed AI key;
+- browser integration;
+- access to many hosted model families.
+
+Tradeoffs:
+
+- user-pays architecture;
+- may require user authentication;
+- not equivalent to “free inference for every end user.”
+
+#### Pollinations
+
+**Role:** not selected as default under current requirements.
+
+Current docs use authenticated generation and account/Pollen budgets. The public model catalogue can be queried anonymously, but generation is not a reliable keyless baseline for this PRD.
+
+### Appendix C — X3D MCP capabilities relied upon
+
+The implementation depends conceptually on these upstream capability groups:
+
+- workflow scene creation;
+- granular node manipulation;
+- X3DUOM node/field queries;
+- XSD validation;
+- semantic validation;
+- autofix;
+- encoding conversion;
+- scene CRUD;
+- X3DOM standalone page generation;
+- optional X_ITE PNG rendering;
+- HTTP MCP transport with isolated session state.
+
+### Appendix D — Example agent system contract
+
+```text
+You are the geometry planner for AI Web3D Modeler.
+
+You do not write HTML, XML, JavaScript, Python, shell commands, or X3D source.
+You produce only JSON matching the supplied ModelPlan schema.
+
+Use only supported operations.
+Use existing object IDs when modifying a model.
+If the user references an ambiguous part, return a clarification intent.
+Prefer simple decompositions using supported primitives.
+Preserve unaffected objects.
+Never claim manufacturing precision or CAD features that the current operation set cannot represent.
+```
+
+### Appendix E — Example golden prompts
+
+1. `Create a red cube.`
+2. `Create a blue sphere above a gray platform.`
+3. `Create a simple table with a top and four legs.`
+4. `Make the four table legs twice as thick.`
+5. `Move the sphere 50 mm upward.`
+6. `Change only the seat to green.`
+7. `Delete the rear-left leg.`
+8. `Duplicate the cylinder and move the copy to the right.`
+9. `Create a chair with a seat, four legs, and a backrest.`
+10. `Make the support bigger.` → must clarify when ambiguous.
+
+### Appendix F — External technical references
+
+- Web3D Consortium x3d_mcp: https://github.com/Web3DConsortium/x3d_mcp
+- WebLLM: https://github.com/mlc-ai/web-llm
+- Puter.js documentation: https://docs.puter.com/
+- Pollinations API docs: https://github.com/pollinations/pollinations/blob/main/APIDOCS.md
+- X3DOM: https://www.x3dom.org/
+- X_ITE: https://github.com/create3000/x_ite
+
+---
+
+## Document Change Policy
+
+This PRD is the authoritative product baseline for the MVP. Implementation discoveries that materially change scope, architecture, operation semantics, security boundaries, or export guarantees shall update this document and the issue plan together. Decisions that are exploratory should be documented as ADRs before silently changing the product contract.

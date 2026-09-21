@@ -1,0 +1,29 @@
+# Node / frontend
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Python / backend
+__pycache__/
+*.py[cod]
+.venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Editors / OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
