@@ -13,6 +13,8 @@ def test_settings_have_expected_defaults() -> None:
     assert str(settings.mcp_base_url) == "http://localhost:8000/"
     assert settings.mcp_request_timeout_seconds == 30.0
     assert settings.session_ttl_seconds == 3600
+    assert settings.default_units == "mm"
+    assert settings.default_display_scale == 0.001
     assert settings.max_objects_per_project == 100
     assert settings.max_operations_per_plan == 100
     assert settings.max_prompt_characters == 8000
@@ -24,6 +26,7 @@ def test_settings_have_expected_defaults() -> None:
     [
         ("mcp_request_timeout_seconds", 0),
         ("session_ttl_seconds", -1),
+        ("default_display_scale", 0),
         ("max_objects_per_project", 0),
         ("max_operations_per_plan", 0),
         ("max_prompt_characters", 0),
@@ -38,3 +41,8 @@ def test_settings_reject_non_positive_limits(field: str, value: int) -> None:
 def test_settings_reject_unknown_environment() -> None:
     with pytest.raises(ValidationError):
         Settings(environment="staging")  # type: ignore[arg-type]
+
+
+def test_settings_reject_unknown_units() -> None:
+    with pytest.raises(ValidationError):
+        Settings(default_units="inches")  # type: ignore[arg-type]

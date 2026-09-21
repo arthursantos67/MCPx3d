@@ -1197,6 +1197,14 @@ Proposed REST surface:
 | `GET` | `/api/health` | Application health. |
 | `GET` | `/api/health/mcp` | MCP connectivity/dependency health. |
 
+**Implementation note (Issue #8, 2026-09-21):** The session/revision half of this table (everything but the artifact/health routes, which are later issues) is backed by `apps/api/src/api/projects.py`'s `ProjectSessionService`, an in-memory `project_id -> ProjectSession` store (no database, per §3.12/CLAUDE.md) with `create_project()`, `get_project(id)`, `delete_project(id)`, and `commit_revision(id, expected_revision, model_spec)`. Concrete decisions this issue made, not yet wired to HTTP (that is Issue #21/#22):
+
+- Project IDs are `prj_<32 url-safe base64 chars>` (`secrets.token_urlsafe(24)`, ~144 bits of entropy) per §11.1's "untrusted bearer-like identifier" requirement.
+- `DELETE /api/projects/{id}` ("Reset/delete temporary session") maps to `delete_project`, which removes the session outright; there is no separate "reset ModelSpec but keep the same ID" operation in this issue's scope (FR-11's full reset flow -- clearing ModelSpec, the MCP scene, and artifacts while preserving UI settings -- is orchestration spanning more than session storage, and is not scoped to Issue #8).
+- Session TTL (`Settings.session_ttl_seconds`) is a **sliding** idle timeout: `get_project` and `commit_revision` both refresh `last_active_at`, so an actively-used project does not expire mid-session; an untouched one does. A missing and an expired project both raise the same `ProjectNotFoundError`, matching the `PROJECT_NOT_FOUND` error code's "not found/expired" wording in §9.4.
+- `commit_revision` is the only way a project's `ModelSpec`/revision changes after creation: it re-checks `expected_revision` against the stored value (raising `RevisionConflictError` on mismatch, UC-12) and, on success, stores the given `ModelSpec` with `revision` overwritten to `expected_revision + 1` -- callers (Issue #7's `apply_plan`, later Issue #22's orchestration endpoint) do not need to manage the revision counter themselves.
+- A new project's empty `ModelSpec` uses configurable defaults (`Settings.default_units = "mm"`, `Settings.default_display_scale = 0.001`) rather than hardcoded ones; `0.001` was chosen because X3D's implicit native unit is meters, so mm-authored scenes render at a sane scale by default without per-project tuning (§3.10).
+
 ### 9.2 Apply plan request
 
 ```json

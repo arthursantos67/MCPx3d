@@ -1,6 +1,7 @@
 from functools import lru_cache
 from typing import Literal
 
+from domain.model_spec import Units
 from pydantic import AnyHttpUrl, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -14,6 +15,11 @@ class Settings(BaseSettings):
     mcp_request_timeout_seconds: float = Field(default=30.0, gt=0)
 
     session_ttl_seconds: int = Field(default=3600, gt=0)
+
+    default_units: Units = "mm"
+    # X3D's implicit native unit is meters; 0.001 keeps mm-authored scenes at a
+    # sane on-screen scale by default (PRD §3.10).
+    default_display_scale: float = Field(default=0.001, gt=0)
 
     max_objects_per_project: int = Field(default=100, gt=0)
     max_operations_per_plan: int = Field(default=100, gt=0)
