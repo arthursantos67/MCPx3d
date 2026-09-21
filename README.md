@@ -49,6 +49,15 @@ uv run uvicorn api.main:app --reload --port 8001
 
 Serves at `http://localhost:8001` (interactive docs at `/docs`).
 
+### 3. `x3d_mcp` (`services/x3d-mcp`)
+
+```bash
+git submodule update --init --recursive services/x3d-mcp/vendor
+./services/x3d-mcp/run.sh
+```
+
+Serves at `http://localhost:8000` (`/pulse` health check, `/mcp` MCP endpoint). See [`services/x3d-mcp/README.md`](services/x3d-mcp/README.md) and [`docs/x3d-mcp.md`](docs/x3d-mcp.md) for the pinned commit and a required dependency pin.
+
 ## Lint and typecheck
 
 | | Lint | Typecheck |

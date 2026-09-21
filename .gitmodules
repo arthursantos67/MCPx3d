@@ -1,0 +1,3 @@
+[submodule "services/x3d-mcp/vendor"]
+	path = services/x3d-mcp/vendor
+	url = https://github.com/Web3DConsortium/x3d_mcp.git
