@@ -38,7 +38,7 @@ npm install
 npm run dev
 ```
 
-Serves at `http://localhost:5173`. [`apps/web/src/ai/webgpu-capability.ts`](apps/web/src/ai/webgpu-capability.ts) detects whether the default local AI mode can run before any model download starts (Issue #15). See [`apps/web/README.md`](apps/web/README.md) for details. Not wired into a chat/workspace UI yet -- that's FE-01, a separate not-yet-implemented issue.
+Serves at `http://localhost:5173`. [`apps/web/src/ai/webgpu-capability.ts`](apps/web/src/ai/webgpu-capability.ts) detects whether the default local AI mode can run before any model download starts (Issue #15); [`apps/web/src/ai/webllm-runtime.ts`](apps/web/src/ai/webllm-runtime.ts) loads and runs WebLLM in a Web Worker so model init/inference never blocks the UI thread, exposing status/progress to React via [`apps/web/src/ai/useWebLlmRuntime.ts`](apps/web/src/ai/useWebLlmRuntime.ts) (Issue #16). See [`apps/web/README.md`](apps/web/README.md) for details. Neither is wired into a chat/workspace UI yet -- that's FE-01, a separate not-yet-implemented issue.
 
 ### 2. API (`apps/api`)
 
