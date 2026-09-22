@@ -36,7 +36,7 @@ import type { ModelPlan, Operation } from "../../domain/ts/src/model-plan.ts";
 import { ModelPlanValidationError, validateModelPlanDomainRules } from "../../domain/ts/src/model-plan.ts";
 import type { ModelSpec } from "../../domain/ts/src/model-spec.ts";
 
-import type { AgentMessage, GenerationOptions, LLMProvider } from "./provider.ts";
+import { ProviderRequestError, type AgentMessage, type GenerationOptions, type LLMProvider } from "./provider.ts";
 import { modelPlanJsonSchema } from "./schemas.ts";
 import { buildSystemPrompt } from "./system-prompt.ts";
 
@@ -119,6 +119,7 @@ async function attempt(
   try {
     raw = await provider.generateStructured<unknown>(messages, modelPlanJsonSchema, options);
   } catch (error) {
+    if (error instanceof ProviderRequestError) throw error;
     return { ok: false, reason: `malformed or unparsable output (${describeError(error)})` };
   }
 

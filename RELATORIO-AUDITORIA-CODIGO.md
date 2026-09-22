@@ -36,6 +36,8 @@ Durante a higienização do Git surgiram alterações concorrentes em `PRD-AI-We
 
 ### 1. [Alta] O frontend não funciona em checkout limpo nem na CI atual
 
+**Status em 2026-09-22:** corrigido com um npm workspace na raiz, lockfile único para a instalação reproduzível e CI executada a partir da raiz. O frontend, o agente e o domínio TypeScript agora recebem suas dependências no mesmo `npm ci`.
+
 **Evidência:** [`apps/web`](apps/web/package.json#L14) importa diretamente arquivos-fonte de [`packages/agent`](packages/agent/package.json#L10), mas não existe workspace npm na raiz nem uma dependência `file:`/workspace entre os pacotes. A CI executa apenas `npm ci` dentro de `apps/web` ([`.github/workflows/ci.yml`](.github/workflows/ci.yml#L22)). O código importado procura `ajv` e `@mlc-ai/web-llm` a partir de `packages/agent/src`; em um checkout limpo, `packages/agent/node_modules` não existe.
 
 **Reprodução confirmada:** ao tornar temporariamente indisponível somente `packages/agent/node_modules`, `npm run typecheck` em `apps/web` falhou com três erros `TS2307`. O sucesso local anterior dependia de instalações manuais existentes em diretórios irmãos.

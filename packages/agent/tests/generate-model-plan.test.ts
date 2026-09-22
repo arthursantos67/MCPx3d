@@ -4,6 +4,7 @@ import { test } from "node:test";
 import type { ModelSpec } from "../../domain/ts/src/model-spec.ts";
 import { MockLLMProvider } from "../src/mock-provider.ts";
 import { ModelPlanGenerationError, generateModelPlan } from "../src/generate-model-plan.ts";
+import { ProviderRequestError, type LLMProvider } from "../src/provider.ts";
 
 const SPEC_WITH_SEAT: ModelSpec = {
   schemaVersion: "1.0",
@@ -161,6 +162,25 @@ test("malformed JSON that persists after one repair throws instead of retrying f
 
   await assert.rejects(() => generateModelPlan({ provider, request: "hello", modelSpec: EMPTY_SPEC }));
   assert.equal(provider.calls.length, 2);
+});
+
+test("a provider request failure is surfaced immediately without a repair retry", async () => {
+  let calls = 0;
+  const provider: LLMProvider = {
+    id: "failing-provider",
+    isAvailable: async () => true,
+    initialize: async () => undefined,
+    generateStructured: async () => {
+      calls += 1;
+      throw new ProviderRequestError("Could not reach the configured AI endpoint.");
+    },
+  };
+
+  await assert.rejects(
+    () => generateModelPlan({ provider, request: "create a table", modelSpec: EMPTY_SPEC }),
+    /Could not reach the configured AI endpoint/,
+  );
+  assert.equal(calls, 1);
 });
 
 test("an extra field on an operation (e.g. an executable-code field) is rejected by the closed schema", async () => {

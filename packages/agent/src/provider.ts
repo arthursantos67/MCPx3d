@@ -21,6 +21,13 @@ export interface GenerationOptions {
   readonly maxTokens?: number;
 }
 
+export class ProviderRequestError extends Error {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options);
+    this.name = "ProviderRequestError";
+  }
+}
+
 export interface LLMProvider {
   readonly id: string;
   isAvailable(): Promise<boolean>;

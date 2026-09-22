@@ -49,6 +49,26 @@ test("strips a trailing slash from baseUrl so the endpoint URL never gets a doub
   assert.equal(receivedUrl, "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions");
 });
 
+test("accepts a full chat completions endpoint without appending the path twice", async () => {
+  let receivedUrl = "";
+  const provider = new OpenAICompatibleProvider(
+    {
+      baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions/",
+      apiKey: "sk-test",
+      model: "test-model",
+    },
+    fakeFetch(async (url) => {
+      receivedUrl = url;
+      return { status: 200, body: { choices: [{ message: { content: "{}" } }] } };
+    }),
+  );
+  await provider.initialize();
+
+  await provider.generateStructured([], {});
+
+  assert.equal(receivedUrl, "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions");
+});
+
 test("a complete config initializes to ready without any network call", async () => {
   const provider = new OpenAICompatibleProvider(CONFIG, fakeFetch(async () => {
     throw new Error("must not fetch during initialize");
@@ -181,6 +201,22 @@ test("a non-2xx response throws a descriptive error without leaking the api key,
     assert.ok(error instanceof Error);
     assert.match(error.message, /401/);
     assert.match(error.message, /invalid api key/);
+    assert.doesNotMatch(error.message, /sk-test/);
+    return true;
+  });
+  assert.deepEqual(provider.getState(), { phase: "ready" });
+});
+
+test("a fetch failure becomes an actionable provider request error without leaking the original browser error", async () => {
+  const provider = new OpenAICompatibleProvider(CONFIG, (async () => {
+    throw new TypeError("NetworkError when attempting to fetch resource.");
+  }) as FetchLike);
+  await provider.initialize();
+
+  await assert.rejects(() => provider.generateStructured([], {}), (error: unknown) => {
+    assert.ok(error instanceof Error);
+    assert.equal(error.name, "ProviderRequestError");
+    assert.match(error.message, /check the Base URL/i);
     assert.doesNotMatch(error.message, /sk-test/);
     return true;
   });

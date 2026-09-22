@@ -18,7 +18,13 @@
  * status/body text only).
  */
 
-import type { AgentMessage, GenerationOptions, JsonSchema, LLMProvider } from "./provider.ts";
+import {
+  ProviderRequestError,
+  type AgentMessage,
+  type GenerationOptions,
+  type JsonSchema,
+  type LLMProvider,
+} from "./provider.ts";
 
 export interface OpenAICompatibleConfig {
   readonly baseUrl: string;
@@ -45,11 +51,18 @@ function isConfigComplete(config: OpenAICompatibleConfig): boolean {
  * without inviting a model's much larger implicit default completion
  * budget to eat into a free-tier tokens-per-minute limit. */
 const DEFAULT_MAX_COMPLETION_TOKENS = 2048;
+const CHAT_COMPLETIONS_PATH = "/chat/completions";
+
+function toChatCompletionsUrl(configuredUrl: string): string {
+  const normalized = configuredUrl.trim().replace(/\/+$/, "");
+  return normalized.endsWith(CHAT_COMPLETIONS_PATH) ? normalized : `${normalized}${CHAT_COMPLETIONS_PATH}`;
+}
 
 export class OpenAICompatibleProvider implements LLMProvider {
   readonly id = "openai-compatible";
 
   private readonly config: OpenAICompatibleConfig;
+  private readonly chatCompletionsUrl: string;
   private readonly fetchImpl: FetchLike;
   private state: OpenAICompatibleProviderState = { phase: "idle" };
   private readonly listeners = new Set<OpenAICompatibleStateListener>();
@@ -62,13 +75,8 @@ export class OpenAICompatibleProvider implements LLMProvider {
   // / "'fetch' called on an object that does not implement interface
   // Window" (Firefox) on the very first request.
   constructor(config: OpenAICompatibleConfig, fetchImpl: FetchLike = fetch.bind(globalThis)) {
-    // Strip a trailing slash: `baseUrl + "/chat/completions"` below assumes
-    // one isn't already there. A provider's own docs (Gemini's, e.g.) can
-    // show the base URL WITH a trailing slash -- a user pasting that
-    // verbatim would otherwise get a double slash, which at least Gemini's
-    // endpoint 404s without CORS headers, surfacing in a browser as an
-    // opaque "NetworkError" with no useful detail (found live).
-    this.config = { ...config, baseUrl: config.baseUrl.replace(/\/+$/, "") };
+    this.config = { ...config, baseUrl: config.baseUrl.trim() };
+    this.chatCompletionsUrl = toChatCompletionsUrl(config.baseUrl);
     this.fetchImpl = fetchImpl;
   }
 
@@ -126,42 +134,51 @@ export class OpenAICompatibleProvider implements LLMProvider {
     const controller = new AbortController();
     this.inFlight = controller;
     try {
-      const response = await this.fetchImpl(`${this.config.baseUrl}/chat/completions`, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          authorization: `Bearer ${this.config.apiKey}`,
-        },
-        body: JSON.stringify({
-          model: this.config.model,
-          messages: toOpenAiMessages(messages),
-          response_format: { type: "json_schema", json_schema: { name: "model_plan", schema: stripDescriptions(schema) } },
-          temperature: options?.temperature,
-          // Only the current-standard field name: some endpoints (Google's
-          // Gemini OpenAI-compat layer, confirmed live) reject a request
-          // that sets both `max_tokens` and `max_completion_tokens` at once
-          // with a 400, rather than ignoring the one they don't recognize.
-          // `max_completion_tokens` is what current OpenAI and Groq expect;
-          // capped at a small default rather than left unset, since a
-          // ModelPlan response is at most a few hundred tokens but some
-          // models reserve a much larger completion budget by default,
-          // which can burn through a free-tier tokens-per-minute limit in a
-          // single request.
-          max_completion_tokens: options?.maxTokens ?? DEFAULT_MAX_COMPLETION_TOKENS,
-          // Reasoning-capable models (e.g. Groq's openai/gpt-oss family) can
-          // reserve a large hidden token budget for chain-of-thought before
-          // ever producing the visible JSON answer, on top of (not capped
-          // by) max_completion_tokens above -- a real driver of hitting a
-          // free-tier tokens-per-minute limit for a task this simple.
-          // Ignored by models/endpoints that don't recognize it.
-          reasoning_effort: "low",
-        }),
-        signal: controller.signal,
-      });
+      let response: Response;
+      try {
+        response = await this.fetchImpl(this.chatCompletionsUrl, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            authorization: `Bearer ${this.config.apiKey}`,
+          },
+          body: JSON.stringify({
+            model: this.config.model,
+            messages: toOpenAiMessages(messages),
+            response_format: { type: "json_schema", json_schema: { name: "model_plan", schema: stripDescriptions(schema) } },
+            temperature: options?.temperature,
+            // Only the current-standard field name: some endpoints (Google's
+            // Gemini OpenAI-compat layer, confirmed live) reject a request
+            // that sets both `max_tokens` and `max_completion_tokens` at once
+            // with a 400, rather than ignoring the one they don't recognize.
+            // `max_completion_tokens` is what current OpenAI and Groq expect;
+            // capped at a small default rather than left unset, since a
+            // ModelPlan response is at most a few hundred tokens but some
+            // models reserve a much larger completion budget by default,
+            // which can burn through a free-tier tokens-per-minute limit in a
+            // single request.
+            max_completion_tokens: options?.maxTokens ?? DEFAULT_MAX_COMPLETION_TOKENS,
+            // Reasoning-capable models (e.g. Groq's openai/gpt-oss family) can
+            // reserve a large hidden token budget for chain-of-thought before
+            // ever producing the visible JSON answer, on top of (not capped
+            // by) max_completion_tokens above -- a real driver of hitting a
+            // free-tier tokens-per-minute limit for a task this simple.
+            // Ignored by models/endpoints that don't recognize it.
+            reasoning_effort: "low",
+          }),
+          signal: controller.signal,
+        });
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") throw error;
+        throw new ProviderRequestError(
+          "Could not reach the configured AI endpoint. Check the Base URL and whether the provider allows browser requests.",
+          { cause: error },
+        );
+      }
 
       if (!response.ok) {
         const bodyText = await response.text().catch(() => "");
-        throw new Error(
+        throw new ProviderRequestError(
           `OpenAI-compatible request failed with status ${response.status}${bodyText ? `: ${bodyText}` : ""}`,
         );
       }

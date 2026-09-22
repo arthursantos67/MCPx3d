@@ -1,0 +1,16 @@
+{
+  "name": "ai-web3d-modeler",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/web",
+    "packages/agent",
+    "packages/domain/ts"
+  ],
+  "scripts": {
+    "dev:web": "npm run dev --workspace web",
+    "lint:web": "npm run lint --workspace web",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present"
+  }
+}

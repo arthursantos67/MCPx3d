@@ -91,12 +91,12 @@ function ProviderSettings({ open, onClose }: ProviderSettingsProps) {
         {form.mode === 'byok' && (
           <div className="provider-settings__fields">
             <label className="provider-settings__field">
-              Base URL
+              Base URL or chat completions endpoint
               <input
                 type="text"
                 value={form.baseUrl}
                 onChange={(event) => setForm({ ...form, baseUrl: event.target.value })}
-                placeholder="https://api.groq.com/openai/v1"
+                placeholder="https://generativelanguage.googleapis.com/v1beta/openai/"
               />
             </label>
             <label className="provider-settings__field">

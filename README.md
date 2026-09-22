@@ -41,9 +41,8 @@ Serves at `http://localhost:8001` (interactive docs at `/docs`).
 ### 3. Frontend (`apps/web`)
 
 ```bash
-cd apps/web
 npm install
-npm run dev
+npm run dev:web
 ```
 
 Serves at `http://localhost:5173`. Open this in a browser to use the app.
