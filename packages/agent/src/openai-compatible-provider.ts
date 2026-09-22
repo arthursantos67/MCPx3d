@@ -40,6 +40,12 @@ function isConfigComplete(config: OpenAICompatibleConfig): boolean {
   return config.baseUrl.trim().length > 0 && config.apiKey.trim().length > 0 && config.model.trim().length > 0;
 }
 
+/** A ModelPlan JSON response is at most a few hundred tokens even for a
+ * plan with several operations; this default leaves generous headroom
+ * without inviting a model's much larger implicit default completion
+ * budget to eat into a free-tier tokens-per-minute limit. */
+const DEFAULT_MAX_COMPLETION_TOKENS = 2048;
+
 export class OpenAICompatibleProvider implements LLMProvider {
   readonly id = "openai-compatible";
 
@@ -125,7 +131,16 @@ export class OpenAICompatibleProvider implements LLMProvider {
           messages: toOpenAiMessages(messages),
           response_format: { type: "json_schema", json_schema: { name: "model_plan", schema } },
           temperature: options?.temperature,
-          max_tokens: options?.maxTokens,
+          // Both names: some OpenAI-compatible endpoints (older proxies) only
+          // recognize the legacy `max_tokens`, others (Groq, current OpenAI)
+          // expect `max_completion_tokens` for reasoning-capable models;
+          // unrecognized fields are ignored, so sending both is safe. Capped
+          // at a small default rather than left unset: a ModelPlan response
+          // is at most a few hundred tokens, but some models reserve a much
+          // larger completion budget by default, which can burn through a
+          // free-tier tokens-per-minute limit in a single request.
+          max_tokens: options?.maxTokens ?? DEFAULT_MAX_COMPLETION_TOKENS,
+          max_completion_tokens: options?.maxTokens ?? DEFAULT_MAX_COMPLETION_TOKENS,
         }),
         signal: controller.signal,
       });

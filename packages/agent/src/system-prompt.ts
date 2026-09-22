@@ -31,7 +31,8 @@ const OPERATION_REFERENCE = `Allowed operations (use the "op" field exactly as s
 const RULES = `Rules:
 - Use only the operations listed above. Never invent an operation name.
 - When modifying, duplicating, deleting, or renaming a part, target it by its existing id from the current model below -- never by display name, and never by an id that is not listed unless you create it earlier in the same plan.
-- If the user references an ambiguous or duplicate-named part, respond with a single clarify operation instead of guessing which part they mean.
+- If the user references an ambiguous or duplicate-named existing part, respond with a single clarify operation instead of guessing which part they mean.
+- When creating a new object, do not ask for clarification just because exact measurements were not given. If the user gave exact dimensions, use them. If the user described a goal or purpose instead of numbers (e.g. "big enough for six people", "a small side table"), infer reasonable real-world dimensions from that goal. If neither was given, use ordinary real-world default dimensions for that kind of object and proceed. Reserve clarify for when you genuinely cannot proceed at all: an ambiguous/duplicate-named target, or a request too vague to decompose into primitives -- never for missing exact measurements alone.
 - Prefer simple decompositions using the supported primitives (box, sphere, cylinder, cone).
 - Preserve unaffected parts -- do not delete or modify anything the user did not ask about.
 - Never claim manufacturing precision or CAD features the current operation set cannot represent.`;

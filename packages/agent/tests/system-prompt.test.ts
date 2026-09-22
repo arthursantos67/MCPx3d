@@ -31,6 +31,14 @@ test("includes the never-emit-code rule, allowed operations, coordinate conventi
   assert.match(prompt, /id=seat/);
 });
 
+test("instructs the model to default/infer dimensions instead of clarifying over missing measurements", () => {
+  const prompt = buildSystemPrompt(BASE_SPEC);
+
+  assert.match(prompt, /do not ask for clarification just because exact measurements were not given/);
+  assert.match(prompt, /infer reasonable real-world dimensions from that goal/);
+  assert.match(prompt, /never for missing exact measurements alone/);
+});
+
 test("never invents operations beyond the fixed v1 set", () => {
   const prompt = buildSystemPrompt(BASE_SPEC);
   const allowedOps = [
