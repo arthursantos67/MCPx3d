@@ -129,7 +129,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
         body: JSON.stringify({
           model: this.config.model,
           messages: toOpenAiMessages(messages),
-          response_format: { type: "json_schema", json_schema: { name: "model_plan", schema } },
+          response_format: { type: "json_schema", json_schema: { name: "model_plan", schema: stripDescriptions(schema) } },
           temperature: options?.temperature,
           // Both names: some OpenAI-compatible endpoints (older proxies) only
           // recognize the legacy `max_tokens`, others (Groq, current OpenAI)
@@ -141,6 +141,13 @@ export class OpenAICompatibleProvider implements LLMProvider {
           // free-tier tokens-per-minute limit in a single request.
           max_tokens: options?.maxTokens ?? DEFAULT_MAX_COMPLETION_TOKENS,
           max_completion_tokens: options?.maxTokens ?? DEFAULT_MAX_COMPLETION_TOKENS,
+          // Reasoning-capable models (e.g. Groq's openai/gpt-oss family) can
+          // reserve a large hidden token budget for chain-of-thought before
+          // ever producing the visible JSON answer, on top of (not capped
+          // by) max_completion_tokens above -- a real driver of hitting a
+          // free-tier tokens-per-minute limit for a task this simple.
+          // Ignored by models/endpoints that don't recognize it.
+          reasoning_effort: "low",
         }),
         signal: controller.signal,
       });
@@ -176,4 +183,26 @@ export class OpenAICompatibleProvider implements LLMProvider {
 
 function toOpenAiMessages(messages: readonly AgentMessage[]): { role: string; content: string }[] {
   return messages.map((message) => ({ role: message.role, content: message.content }));
+}
+
+/** Drops every `description` key from a JSON Schema before it goes into the
+ * request -- pure prose for a human reader, no effect on what the schema
+ * accepts, and a real chunk of `packages/domain`'s `model-plan.v1.schema.json`
+ * (~6.7KB as authored) that a token-metered model has to pay for on every
+ * single request regardless of conversation state. This package's own
+ * `system-prompt.ts` already explains every operation in natural language
+ * separately, so nothing is lost by stripping it from the copy sent here.
+ * Local ajv validation (`generate-model-plan.ts`) still uses the original,
+ * untouched schema -- only this provider's wire payload is trimmed. */
+function stripDescriptions(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stripDescriptions);
+  if (value !== null && typeof value === "object") {
+    const result: Record<string, unknown> = {};
+    for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+      if (key === "description") continue;
+      result[key] = stripDescriptions(entry);
+    }
+    return result;
+  }
+  return value;
 }

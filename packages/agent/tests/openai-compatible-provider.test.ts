@@ -89,7 +89,51 @@ test("generateStructured sends the expected request shape and parses the respons
   assert.equal(sentBody.temperature, 0.2);
   assert.equal(sentBody.max_tokens, 256);
   assert.equal(sentBody.max_completion_tokens, 256);
+  assert.equal(sentBody.reasoning_effort, "low");
   assert.deepEqual(provider.getState(), { phase: "ready" });
+});
+
+test("strips description keys from the schema before sending it, without touching structural keywords", async () => {
+  const schemaWithDescriptions = {
+    type: "object",
+    description: "top-level description",
+    properties: {
+      intent: { type: "string", description: "the intent field" },
+      operations: {
+        type: "array",
+        items: {
+          oneOf: [
+            { type: "object", description: "a create op", properties: { op: { const: "create_object" } } },
+          ],
+        },
+      },
+    },
+  };
+  let receivedInit: RequestInit = {};
+  const provider = new OpenAICompatibleProvider(
+    CONFIG,
+    fakeFetch(async (_url, init) => {
+      receivedInit = init;
+      return { status: 200, body: { choices: [{ message: { content: "{}" } }] } };
+    }),
+  );
+  await provider.initialize();
+
+  await provider.generateStructured([], schemaWithDescriptions);
+
+  const sentBody = JSON.parse(receivedInit.body as string) as { response_format: { json_schema: { schema: unknown } } };
+  const sentSchema = JSON.stringify(sentBody.response_format.json_schema.schema);
+  assert.doesNotMatch(sentSchema, /description/);
+  assert.deepEqual(sentBody.response_format.json_schema.schema, {
+    type: "object",
+    properties: {
+      intent: { type: "string" },
+      operations: {
+        type: "array",
+        items: { oneOf: [{ type: "object", properties: { op: { const: "create_object" } } }] },
+      },
+    },
+  });
 });
 
 test("defaults max_tokens/max_completion_tokens to a small cap when the caller doesn't specify one", async () => {
