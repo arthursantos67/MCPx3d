@@ -49,7 +49,13 @@ export class OpenAICompatibleProvider implements LLMProvider {
   private readonly listeners = new Set<OpenAICompatibleStateListener>();
   private inFlight: AbortController | null = null;
 
-  constructor(config: OpenAICompatibleConfig, fetchImpl: FetchLike = fetch) {
+  // `fetch.bind(globalThis)`, not bare `fetch`: native fetch requires its
+  // receiver to be `window`/`globalThis`, and storing the bare reference on
+  // `this.fetchImpl` then calling it as `this.fetchImpl(...)` rebinds `this`
+  // to the provider instance instead, throwing "Illegal invocation" (Chrome)
+  // / "'fetch' called on an object that does not implement interface
+  // Window" (Firefox) on the very first request.
+  constructor(config: OpenAICompatibleConfig, fetchImpl: FetchLike = fetch.bind(globalThis)) {
     this.config = config;
     this.fetchImpl = fetchImpl;
   }
