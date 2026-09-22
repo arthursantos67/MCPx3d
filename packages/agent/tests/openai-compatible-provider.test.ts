@@ -85,7 +85,7 @@ test("generateStructured sends the expected request shape and parses the respons
     { role: "system", content: "system prompt" },
     { role: "user", content: "create a red cube" },
   ]);
-  assert.deepEqual(sentBody.response_format, { type: "json_object" });
+  assert.deepEqual(sentBody.response_format, { type: "json_schema", json_schema: { name: "model_plan", schema } });
   assert.equal(sentBody.temperature, 0.2);
   assert.equal(sentBody.max_tokens, 256);
   assert.deepEqual(provider.getState(), { phase: "ready" });

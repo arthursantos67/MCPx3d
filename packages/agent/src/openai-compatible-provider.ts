@@ -87,15 +87,23 @@ export class OpenAICompatibleProvider implements LLMProvider {
   }
 
   /** `_schema` is part of the `LLMProvider` contract but unused here: unlike
-   * `WebLLMProvider`'s JSON mode, this provider's `response_format: {type:
-   * "json_object"}` isn't schema-aware (broader OpenAI-compatible-endpoint
-   * support than the newer `json_schema` mode, which not every provider
-   * implements). `generateModelPlan`'s own ajv validation against this same
-   * schema, plus its one-shot repair retry, is what actually enforces shape
-   * here. */
+   * `response_format: {type: "json_schema", json_schema: {name, schema}}` is
+   * the standard OpenAI "Structured Outputs" shape (best-effort, not
+   * `strict: true`): `strict` mode requires every property to be listed in
+   * `required` with optionality expressed as nullable unions, a stricter
+   * shape than `packages/domain`'s schemas use, so this passes the schema as
+   * a strong hint without demanding hard compliance. Without this, a model
+   * only had this package's natural-language system prompt to go on and
+   * regularly produced JSON that didn't match at all (missing `intent`,
+   * wrong operation fields) -- `generateModelPlan`'s ajv validation plus its
+   * one-shot repair retry remain the actual enforcement boundary either way,
+   * this just gives the model a much better chance of passing it the first
+   * time. Not every OpenAI-compatible endpoint supports `json_schema` mode
+   * (it is however what Groq, this project's documented recommendation,
+   * supports for exactly this purpose). */
   async generateStructured<T>(
     messages: readonly AgentMessage[],
-    _schema: JsonSchema,
+    schema: JsonSchema,
     options?: GenerationOptions,
   ): Promise<T> {
     if (this.state.phase !== "ready") {
@@ -115,7 +123,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
         body: JSON.stringify({
           model: this.config.model,
           messages: toOpenAiMessages(messages),
-          response_format: { type: "json_object" },
+          response_format: { type: "json_schema", json_schema: { name: "model_plan", schema } },
           temperature: options?.temperature,
           max_tokens: options?.maxTokens,
         }),
