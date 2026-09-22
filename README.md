@@ -54,6 +54,8 @@ Serves at `http://localhost:8001` (interactive docs at `/docs`). Configuration (
 
 [`apps/api/src/api/routes/plans.py`](apps/api/src/api/routes/plans.py)'s `POST /api/projects/{id}/plans` is the central mutation transaction (PRD §9.2/§9.3, Issue #22): validate the request → reject a `clarify`-containing plan as `422 AMBIGUOUS_TARGET` before touching MCP → check the expected revision → `apply_plan` → build/validate the candidate as X3D → commit → describe available artifacts, all through the modules above.
 
+[`apps/api/src/api/error_handlers.py`](apps/api/src/api/error_handlers.py) centralizes the exception-to-response mapping PRD §9.4 defines (Issue #23): every route now lets the right exception type propagate (or raises directly for `AMBIGUOUS_TARGET`, the one case with no domain exception of its own) and FastAPI dispatches to the most specific registered handler, replacing the per-route `try`/`except` blocks Issues #21/#22 used.
+
 ### 3. `x3d_mcp` (`services/x3d-mcp`)
 
 ```bash

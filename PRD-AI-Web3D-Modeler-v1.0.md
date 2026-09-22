@@ -5,7 +5,7 @@
 **Project:** AI Web3D Modeler  
 **Document type:** Product Requirements Document (PRD): Full-Stack  
 **Version:** 1.0  
-**Last update:** 2026-09-21  
+**Last update:** 2026-09-22  
 **Status:** Initial implementation specification / MVP baseline  
 **Primary reference architecture:** Web3D Consortium `x3d_mcp`  
 **Primary AI runtime (MVP):** WebLLM, local in-browser inference via WebGPU  
@@ -1314,6 +1314,14 @@ Standard body:
   "correlationId": "..."
 }
 ```
+
+**Implementation note (Issue #23, 2026-09-22):** Centralizes the exception-to-response mapping this table describes into `apps/api/src/api/error_handlers.py::register_error_handlers`, called once from `main.py`. Before this issue, `routes/plans.py` re-derived the mapping inline with a `try`/`except` around every call (Issue #22), and `routes/projects.py`'s `get_project` had its own one-off `try`/`except` for `PROJECT_NOT_FOUND` with no catch-all -- an unexpected exception there would have surfaced FastAPI/Starlette's default error body instead of this section's `{code, message, details, correlationId}` shape. Now every route lets the right exception type propagate (or raises it directly for the one case with no natural exception type, `AMBIGUOUS_TARGET`'s clarify short-circuit, still `api.errors.api_error`) and FastAPI dispatches to the most specific registered handler via the exception's MRO -- e.g. `UnknownTargetError` before its `MutationError` base, so a subclass needing a distinct code still gets one without a dedicated `try`/`except` at every call site. Concrete decisions:
+
+- `X3DMcpError` (the common base of `McpUnavailableError` and `McpToolError`, `api.mcp_client`) maps to `503 MCP_UNAVAILABLE` for both -- previously only `McpUnavailableError` was ever caught in `routes/plans.py`, so a reachable-but-erroring MCP tool call (`McpToolError`) fell through to `500 INTERNAL_ERROR`. This table's "MCP unavailable" is read as "MCP failure" generally: both are the same infrastructure-dependency failure from the caller's perspective.
+- `ArtifactError` and its subclasses (`StaleArtifactRequestError`, `ArtifactConversionError`, `ArtifactTooLargeError`, Issues #11-14/#24) map to `404 ARTIFACT_UNAVAILABLE`, ready for the `GET /artifacts/*` routes once they exist (not yet wired to HTTP as of this issue) -- registering the mapping now means that work only has to raise the right exception, not add its own error handling.
+- A bare `Exception` handler (mapped last, broadest) returns `500 INTERNAL_ERROR` with a fixed message, never `str(exc)` -- this is what makes NFR-10 hold everywhere, not just in routes that remembered to wrap themselves. Starlette dispatches a registered `Exception`/500 handler through `ServerErrorMiddleware`, which sends the response and then re-raises the original exception for server-side logging (Starlette's own documented behavior) -- harmless for real clients, but it means `TestClient` must be constructed with `raise_server_exceptions=False` to observe the 500 response in a test rather than have the exception propagate into the test itself.
+- Correlation ID resolution for a handler is `request.state.correlation_id` (set by `routes/plans.py` from the request body's `requestId`, matching §9.1's existing correlation-ID note) falling back to a freshly generated one, so every error response carries a correlation ID even for routes with no such request field (e.g. `routes/projects.py`).
+- `pydantic.ValidationError` (raised by `ApplyPlanRequest.model_validate(body)`) and FastAPI's own `RequestValidationError` (malformed JSON body, or any future route using FastAPI's automatic body validation) both map to `400 INVALID_PLAN` with per-field `details` -- previously only the former was handled, and only inline in `routes/plans.py`.
 
 ### 9.5 MCP contract
 

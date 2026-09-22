@@ -16,7 +16,7 @@ from pydantic import AnyHttpUrl
 
 from api.config import Settings, get_settings
 from api.main import app
-from api.mcp_client import X3DMcpClient
+from api.mcp_client import McpToolError, X3DMcpClient
 from api.projects import ProjectSessionService, get_project_service
 
 _CLOSED_PORT_URL = AnyHttpUrl("http://127.0.0.1:1")
@@ -186,6 +186,47 @@ def test_valid_plan_commits_and_returns_validation_and_artifacts(
     assert all(a["available"] for a in payload["artifacts"])
 
     assert project_service.get_project(session.project_id).revision == 1
+
+
+def test_mcp_tool_error_maps_to_503_and_does_not_mutate(
+    x3d_mcp_server: str, project_service: ProjectSessionService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def _raise_mcp_tool_error(client: X3DMcpClient, spec: object) -> dict[str, str]:
+        raise McpToolError("create_node", "boom")
+
+    monkeypatch.setattr("api.x3d_validation.apply_model_spec", _raise_mcp_tool_error)
+
+    app.dependency_overrides[get_settings] = lambda: Settings(mcp_base_url=AnyHttpUrl(x3d_mcp_server))
+    client = TestClient(app)
+    session = project_service.create_project()
+    body = {"expectedRevision": 0, "plan": _CREATE_CUBE_PLAN}
+
+    response = client.post(f"/api/projects/{session.project_id}/plans", json=body)
+
+    assert response.status_code == 503
+    assert response.json()["detail"]["code"] == "MCP_UNAVAILABLE"
+    assert project_service.get_project(session.project_id).revision == 0
+
+
+def test_unexpected_error_maps_to_500_without_leaking_exception_text(
+    project_service: ProjectSessionService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def _explode(*args: object, **kwargs: object) -> object:
+        raise RuntimeError("super secret internal detail")
+
+    monkeypatch.setattr("api.routes.plans.apply_plan", _explode)
+
+    app.dependency_overrides[get_settings] = lambda: Settings(mcp_base_url=_CLOSED_PORT_URL)
+    client = TestClient(app, raise_server_exceptions=False)
+    session = project_service.create_project()
+    body = {"expectedRevision": 0, "plan": _CREATE_CUBE_PLAN}
+
+    response = client.post(f"/api/projects/{session.project_id}/plans", json=body)
+
+    assert response.status_code == 500
+    detail = response.json()["detail"]
+    assert detail["code"] == "INTERNAL_ERROR"
+    assert "super secret internal detail" not in response.text
 
 
 async def _broken_route_scene(client: X3DMcpClient) -> None:

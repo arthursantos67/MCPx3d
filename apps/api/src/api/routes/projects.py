@@ -8,17 +8,11 @@ directly rather than a separate wrapper shape.
 from __future__ import annotations
 
 from typing import Annotated
-from uuid import uuid4
 
 from domain.model_spec import ModelSpec
 from fastapi import APIRouter, Depends, Response
 
-from api.errors import api_error
-from api.projects import (
-    ProjectNotFoundError,
-    ProjectSessionService,
-    get_project_service,
-)
+from api.projects import ProjectSessionService, get_project_service
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
 
@@ -36,15 +30,9 @@ async def get_project(
     project_id: str,
     project_service: Annotated[ProjectSessionService, Depends(get_project_service)],
 ) -> ModelSpec:
-    try:
-        session = project_service.get_project(project_id)
-    except ProjectNotFoundError as exc:
-        raise api_error(
-            404,
-            "PROJECT_NOT_FOUND",
-            f"Project '{project_id}' was not found or has expired.",
-            correlation_id=str(uuid4()),
-        ) from exc
+    # ProjectNotFoundError propagates to the PROJECT_NOT_FOUND handler
+    # (api.error_handlers, Issue #23).
+    session = project_service.get_project(project_id)
     return session.model_spec
 
 

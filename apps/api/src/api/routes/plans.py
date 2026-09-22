@@ -19,7 +19,11 @@ here as the authoritative boundary, consistent with `apply_plan`'s own
 note explicitly leaving this case to a higher layer (§8.4, Issue #7). The
 clarify question(s) are surfaced in the error body's `details` so a caller
 that always POSTs whatever plan the agent produced still gets an actionable
-message to show the user.
+message to show the user. This is the one error case still raised directly
+as an `HTTPException` (via `api.errors.api_error`) rather than left to
+`api.error_handlers` (Issue #23): it is route-specific business logic with
+no domain exception type of its own, and FastAPI's built-in `HTTPException`
+handling already renders `api_error`'s body exactly as PRD §9.4 requires.
 """
 
 from __future__ import annotations
@@ -30,24 +34,19 @@ from uuid import uuid4
 
 from domain.model_plan import Clarify, ModelPlan
 from domain.model_spec import ModelSpec
-from fastapi import APIRouter, Body, Depends, HTTPException, Response
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from fastapi import APIRouter, Body, Depends, Request, Response
+from pydantic import BaseModel, ConfigDict, Field
 
 from api.config import Settings, get_settings
 from api.errors import api_error
-from api.mcp_client import McpUnavailableError, X3DMcpClient
-from api.mutation import MutationError, UnknownTargetError, apply_plan
+from api.mcp_client import X3DMcpClient
+from api.mutation import apply_plan
 from api.projects import (
-    ProjectNotFoundError,
     ProjectSessionService,
     RevisionConflictError,
     get_project_service,
 )
-from api.x3d_validation import (
-    ValidationResult,
-    X3DValidationError,
-    build_and_validate_candidate,
-)
+from api.x3d_validation import build_and_validate_candidate
 
 logger = logging.getLogger(__name__)
 
@@ -99,136 +98,76 @@ def _request_id(body: dict[str, object]) -> str:
     return raw if isinstance(raw, str) and raw else str(uuid4())
 
 
-def _pydantic_error_details(exc: ValidationError) -> list[object]:
-    return [{"loc": list(error["loc"]), "message": error["msg"]} for error in exc.errors()]
-
-
-def _x3d_validation_details(result: ValidationResult) -> list[object]:
-    details: list[object] = [{"schemaError": error} for error in result.schema_errors]
-    details += [{"check": d.check, "message": d.message} for d in result.errors]
-    return details
-
-
 @router.post("/{project_id}/plans", response_model=ApplyPlanResponse)
 async def apply_plan_endpoint(
     project_id: str,
     body: Annotated[dict[str, object], Body(...)],
+    http_request: Request,
     response: Response,
     project_service: Annotated[ProjectSessionService, Depends(get_project_service)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> ApplyPlanResponse:
     correlation_id = _request_id(body)
     response.headers["X-Correlation-Id"] = correlation_id
+    # So api.error_handlers can echo the same correlation id on any error
+    # raised below, including ones this endpoint never explicitly catches.
+    http_request.state.correlation_id = correlation_id
 
-    try:
-        try:
-            request = ApplyPlanRequest.model_validate(body)
-        except ValidationError as exc:
-            raise api_error(
-                400,
-                "INVALID_PLAN",
-                "The request body is not a valid apply-plan request.",
-                details=_pydantic_error_details(exc),
-                correlation_id=correlation_id,
-            ) from exc
+    # ValidationError propagates to the INVALID_PLAN handler (api.error_handlers, Issue #23).
+    plan_request = ApplyPlanRequest.model_validate(body)
 
-        logger.info(
-            "apply_plan.start correlation_id=%s project_id=%s expected_revision=%s",
-            correlation_id,
-            project_id,
-            request.expectedRevision,
-        )
+    logger.info(
+        "apply_plan.start correlation_id=%s project_id=%s expected_revision=%s",
+        correlation_id,
+        project_id,
+        plan_request.expectedRevision,
+    )
 
-        clarify_questions = [op.question for op in request.plan.operations if isinstance(op, Clarify)]
-        if clarify_questions:
-            raise api_error(
-                422,
-                "AMBIGUOUS_TARGET",
-                clarify_questions[0],
-                details=list(clarify_questions),
-                correlation_id=correlation_id,
-            )
-
-        try:
-            session = project_service.get_project(project_id)
-        except ProjectNotFoundError as exc:
-            raise api_error(
-                404,
-                "PROJECT_NOT_FOUND",
-                f"Project '{project_id}' was not found or has expired.",
-                correlation_id=correlation_id,
-            ) from exc
-
-        if request.expectedRevision != session.revision:
-            raise api_error(
-                409,
-                "REVISION_CONFLICT",
-                f"Expected revision {request.expectedRevision}, current revision is {session.revision}.",
-                correlation_id=correlation_id,
-            )
-
-        try:
-            candidate = apply_plan(session.model_spec, request.plan)
-        except UnknownTargetError as exc:
-            raise api_error(422, "UNKNOWN_TARGET", str(exc), correlation_id=correlation_id) from exc
-        except MutationError as exc:
-            raise api_error(422, "DOMAIN_VALIDATION_FAILED", str(exc), correlation_id=correlation_id) from exc
-
-        try:
-            async with X3DMcpClient.connect(
-                str(settings.mcp_base_url), settings.mcp_request_timeout_seconds
-            ) as client:
-                _def_names, validation = await build_and_validate_candidate(client, candidate)
-        except McpUnavailableError as exc:
-            raise api_error(503, "MCP_UNAVAILABLE", str(exc), correlation_id=correlation_id) from exc
-        except X3DValidationError as exc:
-            raise api_error(
-                422,
-                "X3D_VALIDATION_FAILED",
-                "The candidate scene could not be validated.",
-                details=_x3d_validation_details(exc.result),
-                correlation_id=correlation_id,
-            ) from exc
-
-        try:
-            updated_session = project_service.commit_revision(
-                project_id, request.expectedRevision, candidate
-            )
-        except RevisionConflictError as exc:
-            raise api_error(
-                409,
-                "REVISION_CONFLICT",
-                f"Expected revision {exc.expected_revision}, current revision is {exc.current_revision}.",
-                correlation_id=correlation_id,
-            ) from exc
-        except ProjectNotFoundError as exc:
-            raise api_error(
-                404,
-                "PROJECT_NOT_FOUND",
-                f"Project '{project_id}' was not found or has expired.",
-                correlation_id=correlation_id,
-            ) from exc
-
-        logger.info(
-            "apply_plan.committed correlation_id=%s project_id=%s revision=%s",
-            correlation_id,
-            project_id,
-            updated_session.revision,
-        )
-
-        return ApplyPlanResponse(
-            projectId=project_id,
-            revision=updated_session.revision,
-            modelSpec=updated_session.model_spec,
-            validation=ValidationSummary.model_validate(validation.to_summary()),
-            preview=PreviewInfo(
-                url=f"/api/projects/{project_id}/artifacts/html?revision={updated_session.revision}"
-            ),
-            artifacts=[ArtifactDescriptor(format=fmt, available=True) for fmt in _ARTIFACT_FORMATS],
-        )
-    except HTTPException:
-        raise
-    except Exception as exc:
+    clarify_questions = [op.question for op in plan_request.plan.operations if isinstance(op, Clarify)]
+    if clarify_questions:
         raise api_error(
-            500, "INTERNAL_ERROR", "Unexpected server failure.", correlation_id=correlation_id
-        ) from exc
+            422,
+            "AMBIGUOUS_TARGET",
+            clarify_questions[0],
+            details=list(clarify_questions),
+            correlation_id=correlation_id,
+        )
+
+    # ProjectNotFoundError propagates to the PROJECT_NOT_FOUND handler.
+    session = project_service.get_project(project_id)
+
+    if plan_request.expectedRevision != session.revision:
+        raise RevisionConflictError(project_id, plan_request.expectedRevision, session.revision)
+
+    # UnknownTargetError/MutationError propagate to their handlers.
+    candidate = apply_plan(session.model_spec, plan_request.plan)
+
+    # McpUnavailableError/McpToolError/X3DValidationError propagate to their handlers.
+    async with X3DMcpClient.connect(
+        str(settings.mcp_base_url), settings.mcp_request_timeout_seconds
+    ) as client:
+        _def_names, validation = await build_and_validate_candidate(client, candidate)
+
+    # RevisionConflictError/ProjectNotFoundError propagate to their handlers (a race
+    # with another request between the pre-check above and this commit).
+    updated_session = project_service.commit_revision(
+        project_id, plan_request.expectedRevision, candidate
+    )
+
+    logger.info(
+        "apply_plan.committed correlation_id=%s project_id=%s revision=%s",
+        correlation_id,
+        project_id,
+        updated_session.revision,
+    )
+
+    return ApplyPlanResponse(
+        projectId=project_id,
+        revision=updated_session.revision,
+        modelSpec=updated_session.model_spec,
+        validation=ValidationSummary.model_validate(validation.to_summary()),
+        preview=PreviewInfo(
+            url=f"/api/projects/{project_id}/artifacts/html?revision={updated_session.revision}"
+        ),
+        artifacts=[ArtifactDescriptor(format=fmt, available=True) for fmt in _ARTIFACT_FORMATS],
+    )
