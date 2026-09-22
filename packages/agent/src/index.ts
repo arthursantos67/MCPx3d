@@ -1,6 +1,7 @@
 export * from "./provider.ts";
 export * from "./mock-provider.ts";
 export * from "./webllm-provider.ts";
+export * from "./openai-compatible-provider.ts";
 export * from "./model-config.ts";
 export * from "./schemas.ts";
 export * from "./model-spec-summary.ts";
