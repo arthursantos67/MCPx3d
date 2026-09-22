@@ -6,6 +6,7 @@ import {
   validateModelPlanDomainRules,
   type ModelPlan,
 } from "../src/model-plan.ts";
+import type { PrimitiveKind } from "../src/model-spec.ts";
 import { FIXTURES_DIR, loadJson } from "./support.ts";
 
 test("valid create plan passes domain validation", () => {
@@ -39,4 +40,37 @@ test("scale_object factor of zero is rejected", () => {
   };
 
   assert.throws(() => validateModelPlanDomainRules(plan), ModelPlanValidationError);
+});
+
+test("create_object with the wrong dimension keys for its kind is rejected", () => {
+  const plan: ModelPlan = {
+    intent: "create_model",
+    operations: [
+      { op: "create_object", name: "Table", kind: "box", dimensions: { x: 1200, y: 750, z: 700 } },
+    ],
+  };
+
+  assert.throws(() => validateModelPlanDomainRules(plan), (error: unknown) => {
+    assert.ok(error instanceof ModelPlanValidationError);
+    assert.match(error.message, /box requires dimensions/);
+    assert.match(error.message, /"depth","height","width"/);
+    return true;
+  });
+});
+
+test("create_object with correct dimension keys for every primitive kind passes", () => {
+  const cases: { kind: PrimitiveKind; dimensions: Record<string, number> }[] = [
+    { kind: "box", dimensions: { width: 10, height: 10, depth: 10 } },
+    { kind: "sphere", dimensions: { radius: 5 } },
+    { kind: "cylinder", dimensions: { radius: 5, height: 10 } },
+    { kind: "cone", dimensions: { bottomRadius: 5, height: 10 } },
+  ];
+
+  for (const { kind, dimensions } of cases) {
+    const plan: ModelPlan = {
+      intent: "create_model",
+      operations: [{ op: "create_object", name: "Thing", kind, dimensions }],
+    };
+    assert.doesNotThrow(() => validateModelPlanDomainRules(plan), `kind ${kind} should pass`);
+  }
 });

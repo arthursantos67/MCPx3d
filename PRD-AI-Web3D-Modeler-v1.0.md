@@ -1177,6 +1177,8 @@ MVP operations:
 - `create_object.id` is optional: omitted, the mutation engine (Issue #7) generates one; provided, it lets a later operation in the same plan target the new object before commit, per §8.4's "same atomic plan first creates it" rule.
 - `set_material` and `set_scene` each require at least one of their optional fields (schema `anyOf`, plus a matching domain validator), since an operation with neither is a no-op that should have been `no_change`.
 
+**Revision (2026-09-22):** `packages/domain/ts/src/model-plan.ts`'s `validateModelPlanDomainRules` now also checks `create_object.dimensions`' keys against the kind-specific set §8.4/Issue #7's `apps/api/src/api/mutation.py` already enforces authoritatively (`box` → `width`/`height`/`depth`, etc. -- see `packages/domain/README.md`). Found live: a real BYOK-provider model (`openai/gpt-oss-120b` via Groq) emitted `{x, y, z}` for a box, which passed this schema (dimensions stays a generic `Record<string, number>` here, deliberately, to keep the schema renderer-independent) but was always going to be rejected by the backend -- and `generateModelPlan`'s one-shot repair retry (Issue #19) had no way to catch or correct it beforehand, since nothing client-side knew this rule existed. Adding the same check here lets that existing repair retry actually fix this failure mode locally instead of spending the user's only retry on a request that could never have succeeded. Scoped to `create_object` only -- `set_dimensions` targets an existing object whose `kind` isn't available from the plan alone, so it still relies on the backend alone, unchanged from before.
+
 ### 8.4 Integrity rules
 
 - Object IDs are unique within a project.

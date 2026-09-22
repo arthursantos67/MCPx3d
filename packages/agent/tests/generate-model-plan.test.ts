@@ -106,6 +106,22 @@ test("a create_object may target its own caller-proposed id later in the same pl
   assert.equal(provider.calls.length, 1);
 });
 
+test("a create_object with the wrong dimension keys for its kind is repaired once, then accepted if corrected", async () => {
+  const provider = new MockLLMProvider([
+    { intent: "create_model", operations: [{ op: "create_object", name: "Table", kind: "box", dimensions: { x: 1200, y: 750, z: 700 } }] },
+    { intent: "create_model", operations: [{ op: "create_object", name: "Table", kind: "box", dimensions: { width: 1200, height: 750, depth: 700 } }] },
+  ]);
+
+  const plan = await generateModelPlan({ provider, request: "create a table", modelSpec: EMPTY_SPEC });
+
+  assert.equal(provider.calls.length, 2);
+  assert.equal(plan.operations[0]?.op, "create_object");
+  if (plan.operations[0]?.op === "create_object") {
+    assert.deepEqual(plan.operations[0].dimensions, { width: 1200, height: 750, depth: 700 });
+  }
+  assert.match(provider.calls[1]?.messages.at(-1)?.content ?? "", /box requires dimensions/);
+});
+
 test("an unknown operation name is rejected by the schema and repaired once", async () => {
   const provider = new MockLLMProvider([
     { intent: "modify_model", operations: [{ op: "explode_object", target: "seat" }] },

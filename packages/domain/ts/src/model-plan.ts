@@ -136,6 +136,33 @@ function checkDimensions(dimensions: Record<string, number>): void {
   }
 }
 
+/** Mirrors `apps/api/src/api/mutation.py`'s `_DIMENSION_KEYS`/`_check_dimension_keys`
+ * (packages/domain/README.md "Conventions not obvious from the schema") --
+ * that Python engine remains the authoritative boundary (§8.4's
+ * implementation note), this is a client-side pre-check so `generateModelPlan`'s
+ * one-shot repair retry can catch and correct a wrong key set (e.g. a model
+ * emitting `{x,y,z}` for a box) before ever reaching the backend, instead of
+ * spending the user's only retry on a request that was always going to be
+ * rejected. Only `create_object` is checked here (it is the only operation
+ * with `kind` directly on it); `set_dimensions` targets an existing object
+ * whose kind isn't known from the plan alone, so it still relies on the
+ * backend catching a wrong key set, same as before this check existed. */
+const DIMENSION_KEYS: Record<PrimitiveKind, ReadonlySet<string>> = {
+  box: new Set(["width", "height", "depth"]),
+  sphere: new Set(["radius"]),
+  cylinder: new Set(["radius", "height"]),
+  cone: new Set(["bottomRadius", "height"]),
+};
+
+function checkDimensionKeys(kind: PrimitiveKind, dimensions: Record<string, number>): void {
+  const expected = DIMENSION_KEYS[kind];
+  const actual = Object.keys(dimensions);
+  const matches = actual.length === expected.size && actual.every((key) => expected.has(key));
+  if (!matches) {
+    fail(`${kind} requires dimensions ${JSON.stringify([...expected].sort())}, got ${JSON.stringify([...actual].sort())}`);
+  }
+}
+
 /** Assumes `plan` already matches the ModelPlan shape (e.g. schema-validated JSON). */
 export function validateModelPlanDomainRules(plan: ModelPlan): void {
   for (const op of plan.operations) {
@@ -143,6 +170,7 @@ export function validateModelPlanDomainRules(plan: ModelPlan): void {
       case "create_object":
         if (op.id !== undefined) checkId(op.id);
         checkDimensions(op.dimensions);
+        checkDimensionKeys(op.kind, op.dimensions);
         if (op.color !== undefined) checkColor(op.color);
         break;
       case "delete_object":
