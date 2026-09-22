@@ -685,6 +685,13 @@ Recommended layout:
 └───────────────────────────────────────────────────────────────┘
 ```
 
+**Implementation note (Issue #25, 2026-09-22):** Implemented as `apps/web/src/workspace/WorkspaceShell.tsx`/`.css`, rendered directly by `App.tsx` (replacing the unmodified Vite+React template that occupied that slot until now). Every region in the diagram above is a structural placeholder only -- no chat logic, agent wiring, viewer iframe, or live status data yet, since those are Issues #26/#27/#28/#32 respectively; this issue is the layout skeleton they get built into. Concrete decisions:
+
+- The page itself does not scroll: `html`/`body`/`#root` (`index.css`) are pinned to `100%` height with `overflow: hidden`, and `.workspace` fills that via a column flexbox with every child using `min-height: 0` (the standard fix for flex children otherwise refusing to shrink below their content size and forcing the ancestor to overflow). Only `.workspace-chat__history` scrolls (`overflow-y: auto`), independent of the fixed-position composer below it, the viewer, and the top/status bars -- verified with Playwright by injecting 200 messages and confirming `document.documentElement.scrollHeight` never exceeds the viewport while the history region's own `scrollTop` moves.
+- The chat column is a fixed `360px` (`flex: 0 0 360px`) and the viewer is `flex: 1 1 auto` with `min-width: 320px`/`min-height: 240px` -- a floor, not a target size, so the viewer always gets whatever space remains beside the fixed-width chat column.
+- No responsive/narrow-screen behavior (tabs or stacked panels, the second half of this requirement's own follow-on layout note at §5's viewer-minimum-height line) was added -- that is Issue #33's explicit acceptance criteria, not this issue's; adding it here would have duplicated work Issue #33 is scoped to do.
+- The prior Vite+React template's demo-specific CSS (`App.css`) and `#root`-centering/typography rules in `index.css` were removed as part of this change (they actively conflicted with a fixed-viewport app shell, e.g. a centered `max-width: 1126px` `#root`); the color-scheme design tokens (light/dark CSS custom properties) were kept and are what `WorkspaceShell.css` styles against.
+
 ### FE-02 Chat Input
 
 The chat shall provide:
