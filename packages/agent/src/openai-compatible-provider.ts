@@ -62,7 +62,13 @@ export class OpenAICompatibleProvider implements LLMProvider {
   // / "'fetch' called on an object that does not implement interface
   // Window" (Firefox) on the very first request.
   constructor(config: OpenAICompatibleConfig, fetchImpl: FetchLike = fetch.bind(globalThis)) {
-    this.config = config;
+    // Strip a trailing slash: `baseUrl + "/chat/completions"` below assumes
+    // one isn't already there. A provider's own docs (Gemini's, e.g.) can
+    // show the base URL WITH a trailing slash -- a user pasting that
+    // verbatim would otherwise get a double slash, which at least Gemini's
+    // endpoint 404s without CORS headers, surfacing in a browser as an
+    // opaque "NetworkError" with no useful detail (found live).
+    this.config = { ...config, baseUrl: config.baseUrl.replace(/\/+$/, "") };
     this.fetchImpl = fetchImpl;
   }
 

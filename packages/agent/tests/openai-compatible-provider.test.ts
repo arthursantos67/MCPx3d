@@ -33,6 +33,22 @@ test("isAvailable/initialize reflect config completeness", async () => {
   assert.deepEqual(incomplete.getState(), { phase: "error", message: "Missing base URL, API key, or model." });
 });
 
+test("strips a trailing slash from baseUrl so the endpoint URL never gets a double slash", async () => {
+  let receivedUrl = "";
+  const provider = new OpenAICompatibleProvider(
+    { baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai/", apiKey: "sk-test", model: "test-model" },
+    fakeFetch(async (url) => {
+      receivedUrl = url;
+      return { status: 200, body: { choices: [{ message: { content: "{}" } }] } };
+    }),
+  );
+  await provider.initialize();
+
+  await provider.generateStructured([], {});
+
+  assert.equal(receivedUrl, "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions");
+});
+
 test("a complete config initializes to ready without any network call", async () => {
   const provider = new OpenAICompatibleProvider(CONFIG, fakeFetch(async () => {
     throw new Error("must not fetch during initialize");
