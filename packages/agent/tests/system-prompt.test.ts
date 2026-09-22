@@ -31,6 +31,12 @@ test("includes the never-emit-code rule, allowed operations, coordinate conventi
   assert.match(prompt, /id=seat/);
 });
 
+test("instructs the model to answer in the user's own language", () => {
+  const prompt = buildSystemPrompt(BASE_SPEC);
+
+  assert.match(prompt, /same language the user's most recent message is written in/);
+});
+
 test("instructs the model to default/infer dimensions instead of clarifying over missing measurements", () => {
   const prompt = buildSystemPrompt(BASE_SPEC);
 

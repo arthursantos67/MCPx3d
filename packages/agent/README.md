@@ -35,6 +35,8 @@ The unknown-target check in step 3 is a heuristic, non-order-sensitive pre-check
 
 **Revision (2026-09-22), from testing a real model:** `system-prompt.ts`'s ambiguity rule was written for *targeting* an existing ambiguous/duplicate-named part, but a real model (the BYOK provider, live against Groq) over-applied it to plain "create a table" with no dimensions given, asking `clarify` instead of just picking sensible defaults. `RULES` now says explicitly: exact dimensions if given, infer from a stated goal if one is given, otherwise use ordinary real-world defaults and proceed -- `clarify` stays reserved for genuinely-can't-proceed cases (ambiguous target, or a request too vague to decompose), never for missing measurements alone.
 
+**Revision (2026-09-22), language matching:** `RULES` also now says to write any free text it produces (a `clarify` question, a `no_change` reason) in the same language the user's own message was written in, per a direct user request. Only `Clarify.question` currently reaches the chat UI at all (`apps/web` doesn't surface `no_change.reason` anywhere yet); `apps/web`'s own static UI strings are unaffected -- they're not LLM output, and localizing them is a separate, unstarted piece of work (real i18n infrastructure, not asked for here).
+
 ## Ambiguity/clarification handling (Issue #20)
 
 §8.4's implementation note (Issue #7) explicitly left "keeping `clarify` apart from mutating operations" as prompt/agent-layer policy rather than a mutation-engine invariant. This package is that policy layer (FR-08, UC-05):
