@@ -38,9 +38,15 @@ npm install
 npm run dev
 ```
 
-Serves at `http://localhost:5173`. [`apps/web/src/ai/webgpu-capability.ts`](apps/web/src/ai/webgpu-capability.ts) detects whether the default local AI mode can run before any model download starts (Issue #15); [`apps/web/src/ai/webllm-runtime.ts`](apps/web/src/ai/webllm-runtime.ts) loads and runs WebLLM in a Web Worker so model init/inference never blocks the UI thread, exposing status/progress to React via [`apps/web/src/ai/useWebLlmRuntime.ts`](apps/web/src/ai/useWebLlmRuntime.ts) (Issue #16). See [`apps/web/README.md`](apps/web/README.md) for details. Neither is wired into a chat/workspace UI yet.
+Serves at `http://localhost:5173`. Copy `apps/web/.env.example` to `.env` to point it at a non-default `apps/api` URL (`VITE_API_BASE_URL`, defaults to `http://localhost:8001`).
 
-[`apps/web/src/workspace/WorkspaceShell.tsx`](apps/web/src/workspace/WorkspaceShell.tsx) is the desktop modeling workspace shell (PRD FE-01, Issue #25): a top bar, side-by-side chat (independently-scrolling history + composer placeholders) and 3D viewer, and a status bar, replacing the unmodified Vite+React template. Chat logic, the viewer iframe, and live status data are separate not-yet-implemented issues (#26/#28/#32).
+[`apps/web/src/ai/webgpu-capability.ts`](apps/web/src/ai/webgpu-capability.ts) and [`apps/web/src/ai/webllm-runtime.ts`](apps/web/src/ai/webllm-runtime.ts) (Issues #15/#16) remain unused Phase-0 spike code -- the real chat integration (Issue #27) depends on `packages/agent`'s `WebLLMProvider` instead (PRD §3.7's "no domain or geometry code may call WebLLM directly outside the provider package"). See [`apps/web/README.md`](apps/web/README.md) for details on both.
+
+[`apps/web/src/workspace/WorkspaceShell.tsx`](apps/web/src/workspace/WorkspaceShell.tsx) is the desktop modeling workspace shell (PRD FE-01, Issue #25): a top bar, side-by-side chat and 3D viewer, and a status bar, replacing the unmodified Vite+React template. The viewer (Issue #28) and status bar (Issue #32) remain placeholders; the chat column is now real:
+
+- [`apps/web/src/chat/`](apps/web/src/chat/) (Issues #26/#27): `ChatPanel`/`MessageList`/`GenerationProgress`/`PromptComposer` (multiline input, Enter/Shift+Enter, duplicate-submit guarded) render `ChatController`'s state -- a framework-agnostic state machine (`useChatController.ts` is its `useSyncExternalStore` React wrapper) that calls `packages/agent`'s `generateModelPlan`/`WebLLMProvider`, POSTs the result to `apps/api` via [`apps/web/src/api/client.ts`](apps/web/src/api/client.ts), and only updates `modelSpec`/`revision`/`previewUrl` on a successful commit.
+
+Since this repository has no npm-workspaces root, it imports `packages/agent`/`packages/domain` by relative path, the same convention `packages/agent` already uses for `packages/domain` (see `packages/agent/README.md`); `apps/web/vite.config.ts` sets `server.fs.allow` to the repo root so the dev server can serve those source files.
 
 ### 2. API (`apps/api`)
 
@@ -75,7 +81,7 @@ Not a running service — the `ModelSpec`/`ModelPlan` v1 JSON Schemas and their 
 
 ### 5. Agent runtime (`packages/agent`)
 
-Not a running service — the `LLMProvider` abstraction (`isAvailable`/`initialize`/`generateStructured`/`cancel`, PRD §3.7, FR-27, Issue #18), its required `WebLLMProvider` implementation, and `generateModelPlan` (Issue #19), which turns a user request + the current `ModelSpec` into a schema-validated `ModelPlan` with a one-shot repair retry on invalid output (FR-29/FR-30). `generateModelPlan` also rejects (and retries) a plan that combines a `clarify` with any other operation, and `buildClarificationFollowUp` threads a clarify question and the user's answer into the next call's `recentMessages` (PRD FR-08/UC-05, Issue #20). See [`packages/agent/README.md`](packages/agent/README.md). Not wired into a chat UI yet -- that's Issue #27. **Issue #17** (benchmarking candidate WebLLM models and picking a real default) **was explicitly skipped for this pass**, at the user's request, since this environment has no browser with WebGPU to run a real benchmark on; see `packages/agent/README.md` for what that leaves open.
+Not a running service — the `LLMProvider` abstraction (`isAvailable`/`initialize`/`generateStructured`/`cancel`, PRD §3.7, FR-27, Issue #18), its required `WebLLMProvider` implementation, and `generateModelPlan` (Issue #19), which turns a user request + the current `ModelSpec` into a schema-validated `ModelPlan` with a one-shot repair retry on invalid output (FR-29/FR-30). `generateModelPlan` also rejects (and retries) a plan that combines a `clarify` with any other operation, and `buildClarificationFollowUp` threads a clarify question and the user's answer into the next call's `recentMessages` (PRD FR-08/UC-05, Issue #20). See [`packages/agent/README.md`](packages/agent/README.md). Wired into the chat UI as of Issue #27 (`apps/web/src/chat/`, above) -- `apps/web` imports this package by relative path (no npm-workspaces root exists in this repository). `schemas.ts` loads the ModelPlan JSON Schema via a static JSON import rather than `node:fs` as of that same issue, so this package's own code stays Vite/browser-bundleable, not just `node --test`-runnable. **Issue #17** (benchmarking candidate WebLLM models and picking a real default) **was explicitly skipped for this pass**, at the user's request, since this environment has no browser with WebGPU to run a real benchmark on; see `packages/agent/README.md` for what that leaves open.
 
 ## Lint and typecheck
 
@@ -90,7 +96,7 @@ Not a running service — the `LLMProvider` abstraction (`isAvailable`/`initiali
 ## Tests
 
 - `apps/api`: `uv run pytest` (includes an `X3DMcpClient` integration test that runs the real `services/x3d-mcp` server as a subprocess; skipped automatically if `uv` or the vendor submodule isn't available)
-- `apps/web`: `npm test` (`src/ai`'s WebGPU/WebLLM logic against injected fakes -- no browser, GPU, or model download involved; see `apps/web/README.md`)
+- `apps/web`: `npm test` (`src/ai`'s WebGPU/WebLLM logic and `chat/ChatController` against a fake `AgentProvider`/`ChatApi` -- all against injected fakes, no browser, GPU, or model download involved; see `apps/web/README.md`)
 - `packages/domain/ts`: `npm test`
 - `packages/domain/python`: `uv run pytest`
 - `packages/agent`: `npm test` (provider/generation logic against injected fakes and a `MockLLMProvider` -- no browser, GPU, or model download involved; see `packages/agent/README.md`)

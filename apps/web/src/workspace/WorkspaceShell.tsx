@@ -1,12 +1,17 @@
 import './WorkspaceShell.css'
 
+import ChatPanel from '../chat/ChatPanel.tsx'
+import { useChatController } from '../chat/useChatController.ts'
+
 /**
  * Desktop modeling workspace shell (PRD §3.1, Issue #25): top bar, a
- * side-by-side chat + viewer main area, and a status bar. Every region here
- * is a placeholder -- ChatPanel (#26), the X3D preview iframe (#28), and the
- * diagnostics status bar (#32) fill them in later.
+ * side-by-side chat + viewer main area, and a status bar. The chat panel
+ * (#26/#27) is wired here; the X3D preview iframe (#28) and status bar
+ * (#32) remain placeholders.
  */
 function WorkspaceShell() {
+  const { state, sendMessage, canSend } = useChatController()
+
   return (
     <div className="workspace">
       <header className="workspace-topbar">
@@ -15,12 +20,7 @@ function WorkspaceShell() {
 
       <div className="workspace-main">
         <section className="workspace-chat" aria-label="Chat">
-          <div className="workspace-chat__history">
-            <p className="workspace-placeholder">Chat history will appear here.</p>
-          </div>
-          <div className="workspace-chat__composer">
-            <p className="workspace-placeholder">Prompt composer will appear here.</p>
-          </div>
+          <ChatPanel state={state} sendMessage={sendMessage} canSend={canSend} />
         </section>
 
         <section className="workspace-viewer" aria-label="3D viewer">
