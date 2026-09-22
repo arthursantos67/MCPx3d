@@ -86,6 +86,8 @@ Not a running service — the `ModelSpec`/`ModelPlan` v1 JSON Schemas and their 
 
 Not a running service — the `LLMProvider` abstraction (`isAvailable`/`initialize`/`generateStructured`/`cancel`, PRD §3.7, FR-27, Issue #18), its required `WebLLMProvider` implementation, and `generateModelPlan` (Issue #19), which turns a user request + the current `ModelSpec` into a schema-validated `ModelPlan` with a one-shot repair retry on invalid output (FR-29/FR-30). `generateModelPlan` also rejects (and retries) a plan that combines a `clarify` with any other operation, and `buildClarificationFollowUp` threads a clarify question and the user's answer into the next call's `recentMessages` (PRD FR-08/UC-05, Issue #20). See [`packages/agent/README.md`](packages/agent/README.md). Wired into the chat UI as of Issue #27 (`apps/web/src/chat/`, above) -- `apps/web` imports this package by relative path (no npm-workspaces root exists in this repository). `schemas.ts` loads the ModelPlan JSON Schema via a static JSON import rather than `node:fs` as of that same issue, so this package's own code stays Vite/browser-bundleable, not just `node --test`-runnable. **Issue #17** (benchmarking candidate WebLLM models and picking a real default) **was explicitly skipped for this pass**, at the user's request, since this environment has no browser with WebGPU to run a real benchmark on; see `packages/agent/README.md` for what that leaves open.
 
+`packages/agent/src/openai-compatible-provider.ts` (`OpenAICompatibleProvider`) is the optional BYOK alternative to `WebLLMProvider`, added after verifying #27 surfaced a real gap: a device with no WebGPU-capable GPU has no path forward otherwise. `WebLLMProvider` stays the required default; a user opts into BYOK explicitly via `apps/web/src/settings/ProviderSettings.tsx` (own API key + endpoint, e.g. a free tier like Groq). See `packages/agent/README.md` and PRD §3.7/§11.7 for the full detail, including the privacy boundary this adds (prompt + key go straight from the browser to the endpoint the user configured, never through `apps/api`). No numbered issue in `ISSUES-AI-Web3D-Modeler-v1.0.md` covers this addition.
+
 ## Lint and typecheck
 
 | | Lint | Typecheck |
@@ -99,7 +101,7 @@ Not a running service — the `LLMProvider` abstraction (`isAvailable`/`initiali
 ## Tests
 
 - `apps/api`: `uv run pytest` (includes integration tests that run the real `services/x3d-mcp` server as a subprocess -- `X3DMcpClient`, the apply-plan endpoint's happy path, and the artifacts/html endpoint's happy/stale-revision paths; skipped automatically if `uv` or the vendor submodule isn't available)
-- `apps/web`: `npm test` (`src/ai`'s WebGPU/WebLLM logic, `chat/ChatController` against a fake `AgentProvider`/`ChatApi`, and `viewer/objectUrl`'s Blob-URL lifecycle -- all against injected fakes, no browser, GPU, or model download involved; see `apps/web/README.md`)
+- `apps/web`: `npm test` (`src/ai`'s WebGPU/WebLLM logic, `chat/ChatController` against a fake `AgentProvider`/`ChatApi`, `viewer/objectUrl`'s Blob-URL lifecycle, and `settings/providerConfig`'s persistence -- all against injected fakes, no browser, GPU, or model download involved; see `apps/web/README.md`)
 - `packages/domain/ts`: `npm test`
 - `packages/domain/python`: `uv run pytest`
 - `packages/agent`: `npm test` (provider/generation logic against injected fakes and a `MockLLMProvider` -- no browser, GPU, or model download involved; see `packages/agent/README.md`)

@@ -1,0 +1,113 @@
+.provider-settings {
+  position: absolute;
+  top: 48px;
+  right: 16px;
+  z-index: 10;
+  width: 320px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+}
+
+.provider-settings__form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+}
+
+.provider-settings__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.provider-settings__title {
+  font-weight: 600;
+  color: var(--text-h);
+}
+
+.provider-settings__close {
+  border: none;
+  background: none;
+  font-size: 18px;
+  line-height: 1;
+  color: var(--text);
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.provider-settings__hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text);
+}
+
+.provider-settings__radio {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-h);
+}
+
+.provider-settings__fields {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 6px;
+  background: var(--code-bg);
+}
+
+.provider-settings__field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 12px;
+  color: var(--text);
+}
+
+.provider-settings__field input {
+  font: inherit;
+  color: var(--text-h);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 5px 7px;
+}
+
+.provider-settings__footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.provider-settings__saved-note {
+  margin-right: auto;
+  font-size: 12px;
+  color: var(--text);
+}
+
+.provider-settings__clear,
+.provider-settings__submit {
+  font: inherit;
+  border-radius: 6px;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+
+.provider-settings__clear {
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+}
+
+.provider-settings__submit {
+  font-weight: 600;
+  color: var(--text-h);
+  background: var(--accent-bg);
+  border: 1px solid var(--accent-border);
+}

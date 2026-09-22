@@ -6,9 +6,11 @@
 }
 
 .workspace-topbar {
+  position: relative;
   flex: 0 0 auto;
   display: flex;
   align-items: center;
+  gap: 12px;
   height: 48px;
   padding: 0 16px;
   border-bottom: 1px solid var(--border);
@@ -17,6 +19,18 @@
 .workspace-topbar__title {
   font-weight: 600;
   color: var(--text-h);
+}
+
+.workspace-topbar__settings-button {
+  margin-left: auto;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text-h);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 10px;
+  cursor: pointer;
 }
 
 .workspace-main {

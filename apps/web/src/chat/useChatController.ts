@@ -7,21 +7,33 @@
  * (`apps/web/src/api/client.ts`) plus the production `createWebLLMProvider()`
  * factory (`packages/agent`) -- the concrete instances a test would swap out.
  *
- * `toAgentProvider` adapts the real `WebLLMProvider`'s status
- * (`WebLLMProviderState`) into `ChatController`'s own `AgentStatus` shape;
- * see `ChatController.ts`'s doc comment for why that mapping lives here
- * (this file compiles under `tsconfig.app.json`'s `"bundler"` module
+ * `toAgentProvider`/`toOpenAiCompatibleAgentProvider` adapt each real
+ * provider's own status shape (`WebLLMProviderState`/
+ * `OpenAICompatibleProviderState`) into `ChatController`'s own `AgentStatus`
+ * shape; see `ChatController.ts`'s doc comment for why that mapping lives
+ * here (this file compiles under `tsconfig.app.json`'s `"bundler"` module
  * resolution, where `packages/agent`'s `@mlc-ai/web-llm` type imports
  * resolve fine) rather than in `ChatController.ts` itself.
+ *
+ * Which provider gets constructed is decided once here, from
+ * `loadProviderConfig()` (`../settings/providerConfig.ts`): `WebLLMProvider`
+ * unless the user has explicitly saved a complete BYOK config. There is no
+ * live hot-swap -- changing the setting takes effect on next reload, the
+ * same way this controller itself is only ever constructed once per page load.
  */
 import { useCallback, useEffect, useMemo, useSyncExternalStore } from "react";
 
+import {
+  OpenAICompatibleProvider,
+  type OpenAICompatibleProviderState,
+} from "../../../../packages/agent/src/openai-compatible-provider.ts";
 import {
   createWebLLMProvider,
   type WebLLMProvider,
   type WebLLMProviderState,
 } from "../../../../packages/agent/src/webllm-provider.ts";
 import * as apiClient from "../api/client.ts";
+import { isUsableByokConfig, loadProviderConfig } from "../settings/providerConfig.ts";
 
 import { ChatController, type AgentProvider, type ChatControllerState } from "./ChatController.ts";
 import type { AgentStatus, SendGate } from "./types.ts";
@@ -55,6 +67,32 @@ function toAgentProvider(webllm: WebLLMProvider): AgentProvider {
   };
 }
 
+function toOpenAiCompatibleStatus(state: OpenAICompatibleProviderState): AgentStatus {
+  return state.phase === "error" ? { phase: "error", reason: state.message } : { phase: state.phase };
+}
+
+function toOpenAiCompatibleAgentProvider(provider: OpenAICompatibleProvider): AgentProvider {
+  return {
+    id: provider.id,
+    isAvailable: () => provider.isAvailable(),
+    initialize: () => provider.initialize(),
+    generateStructured: (messages, schema, options) => provider.generateStructured(messages, schema, options),
+    cancel: () => provider.cancel(),
+    getState: () => toOpenAiCompatibleStatus(provider.getState()),
+    onStateChange: (listener) => provider.onStateChange((next) => listener(toOpenAiCompatibleStatus(next))),
+  };
+}
+
+function createConfiguredProvider(): AgentProvider {
+  const config = loadProviderConfig();
+  if (isUsableByokConfig(config)) {
+    return toOpenAiCompatibleAgentProvider(
+      new OpenAICompatibleProvider({ baseUrl: config.baseUrl, apiKey: config.apiKey, model: config.model }),
+    );
+  }
+  return toAgentProvider(createWebLLMProvider());
+}
+
 export interface UseChatController {
   readonly state: ChatControllerState;
   readonly canSend: () => SendGate;
@@ -63,7 +101,7 @@ export interface UseChatController {
 
 export function useChatController(): UseChatController {
   const controller = useMemo(
-    () => new ChatController(toAgentProvider(createWebLLMProvider()), apiClient),
+    () => new ChatController(createConfiguredProvider(), apiClient),
     [],
   );
 

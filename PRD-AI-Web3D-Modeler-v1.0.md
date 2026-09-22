@@ -1575,6 +1575,12 @@ Even without accounts, backend shall apply:
 
 The MVP does not require personal information. Logs should avoid storing full prompts by default. If diagnostic prompt logging is enabled in development, it must be explicit.
 
+**Implementation note (`OpenAICompatibleProvider`, 2026-09-22):** When a user opts into the BYOK provider (§3.7), a new privacy boundary applies that NFR-16's WebLLM-only wording didn't anticipate: the user's prompt **and their own API key** leave the browser directly for the third-party endpoint they configured (`apps/web/src/settings/ProviderSettings.tsx`) -- never through `apps/api`. Concrete decisions:
+
+- The key is only ever placed in that one request's `Authorization` header (`OpenAICompatibleProvider.generateStructured`); it is never sent to `apps/api`, never logged, and deliberately excluded from thrown error messages (a non-2xx response's error includes the response status/body text only).
+- The key is persisted client-side only (`apps/web/src/settings/providerConfig.ts`, browser `localStorage`, PRD §3.12's "UI preferences"), never synced to any backend.
+- `ProviderSettings`'s own copy states this plainly before the user opts in ("Custom sends your prompts and your API key directly to the endpoint you configure below"), satisfying this section's spirit even though the settings panel itself is `apps/web`-only surface, not a numbered PRD requirement.
+
 ---
 
 ## 12. Operational and Deployment Requirements

@@ -5,11 +5,15 @@ import type { SendGate } from "./types.ts";
 interface PromptComposerProps {
   readonly gate: SendGate;
   readonly onSend: (text: string) => void;
+  /** True when the agent is `unsupported`/`error` (e.g. no WebGPU) -- the
+   * exact moment a "configure a different provider instead" link is useful. */
+  readonly showProviderLink: boolean;
+  readonly onOpenProviderSettings: () => void;
 }
 
 /** FE-02: multiline input, Enter submits / Shift+Enter inserts a newline,
  * disabled while a request is in flight or local AI isn't ready yet. */
-function PromptComposer({ gate, onSend }: PromptComposerProps) {
+function PromptComposer({ gate, onSend, showProviderLink, onOpenProviderSettings }: PromptComposerProps) {
   const [value, setValue] = useState("");
 
   function submit(): void {
@@ -40,7 +44,17 @@ function PromptComposer({ gate, onSend }: PromptComposerProps) {
         aria-label="Message"
       />
       <div className="chat-composer__footer">
-        <span className="chat-composer__hint">{gate.canSend ? "" : gate.reason}</span>
+        <span className="chat-composer__hint">
+          {gate.canSend ? "" : gate.reason}
+          {!gate.canSend && showProviderLink && (
+            <>
+              {" "}
+              <button type="button" className="chat-composer__provider-link" onClick={onOpenProviderSettings}>
+                Configure a custom provider instead
+              </button>
+            </>
+          )}
+        </span>
         <button
           type="button"
           className="chat-composer__submit"
