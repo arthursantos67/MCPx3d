@@ -229,6 +229,105 @@ def test_unexpected_error_maps_to_500_without_leaking_exception_text(
     assert "super secret internal detail" not in response.text
 
 
+def test_oversized_intent_is_rejected_as_complexity_limit_before_touching_mcp(
+    project_service: ProjectSessionService,
+) -> None:
+    app.dependency_overrides[get_settings] = lambda: Settings(
+        mcp_base_url=_CLOSED_PORT_URL, max_prompt_characters=5
+    )
+    client = TestClient(app)
+    session = project_service.create_project()
+    body = {"expectedRevision": 0, "plan": {**_CREATE_CUBE_PLAN, "intent": "way too long"}}
+
+    response = client.post(f"/api/projects/{session.project_id}/plans", json=body)
+
+    assert response.status_code == 413
+    assert response.json()["detail"]["code"] == "COMPLEXITY_LIMIT"
+    assert project_service.get_project(session.project_id).revision == 0
+
+
+def test_too_many_operations_is_rejected_as_complexity_limit_before_touching_mcp(
+    project_service: ProjectSessionService,
+) -> None:
+    app.dependency_overrides[get_settings] = lambda: Settings(
+        mcp_base_url=_CLOSED_PORT_URL, max_operations_per_plan=1
+    )
+    client = TestClient(app)
+    session = project_service.create_project()
+    body = {
+        "expectedRevision": 0,
+        "plan": {
+            "intent": "create_model",
+            "operations": [
+                _CREATE_CUBE_PLAN["operations"][0],
+                {"op": "rename_object", "target": "obj_1", "name": "Renamed"},
+            ],
+        },
+    }
+
+    response = client.post(f"/api/projects/{session.project_id}/plans", json=body)
+
+    assert response.status_code == 413
+    assert response.json()["detail"]["code"] == "COMPLEXITY_LIMIT"
+    assert project_service.get_project(session.project_id).revision == 0
+
+
+def test_object_count_limit_rejects_the_101st_object_before_touching_mcp(
+    project_service: ProjectSessionService,
+) -> None:
+    app.dependency_overrides[get_settings] = lambda: Settings(
+        mcp_base_url=_CLOSED_PORT_URL, max_objects_per_project=1
+    )
+    client = TestClient(app)
+    session = project_service.create_project()
+    body = {
+        "expectedRevision": 0,
+        "plan": {
+            "intent": "create_model",
+            "operations": [
+                _CREATE_CUBE_PLAN["operations"][0],
+                {
+                    "op": "create_object",
+                    "name": "Second",
+                    "kind": "box",
+                    "dimensions": {"width": 1, "height": 1, "depth": 1},
+                },
+            ],
+        },
+    }
+
+    response = client.post(f"/api/projects/{session.project_id}/plans", json=body)
+
+    assert response.status_code == 413
+    assert response.json()["detail"]["code"] == "COMPLEXITY_LIMIT"
+    assert project_service.get_project(session.project_id).revision == 0
+
+
+def test_infinite_dimension_is_rejected_as_invalid_plan_before_touching_mcp(
+    client_unreachable_mcp: TestClient, project_service: ProjectSessionService
+) -> None:
+    """`httpx`'s own JSON encoder refuses non-finite floats outright (`allow_nan=False`),
+    so this posts a raw body containing a literal `Infinity` token -- valid input to
+    Python's (permissive) `json.loads`, which is what the server actually parses with --
+    to prove the domain layer's finiteness check (Issue #24), not just the transport
+    client, is what rejects it."""
+    session = project_service.create_project()
+    raw_body = (
+        '{"expectedRevision": 0, "plan": {"intent": "create_model", "operations": '
+        '[{"op": "create_object", "name": "Cube", "kind": "box", '
+        '"dimensions": {"width": Infinity, "height": 10, "depth": 10}}]}}'
+    )
+
+    response = client_unreachable_mcp.post(
+        f"/api/projects/{session.project_id}/plans",
+        content=raw_body,
+        headers={"content-type": "application/json"},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"]["code"] == "INVALID_PLAN"
+
+
 async def _broken_route_scene(client: X3DMcpClient) -> None:
     await client.reset_scene()
     a = await client._create_node("Transform")

@@ -16,6 +16,7 @@ from domain.model_plan import (
 )
 from domain.model_spec import Material, ModelObject, ModelSpec, Scene, Transform
 
+from api.limits import ComplexityLimitError
 from api.mutation import (
     DuplicateObjectIdError,
     InvalidDimensionsError,
@@ -378,3 +379,48 @@ def test_same_plan_can_target_object_it_just_created() -> None:
     obj = result.objects[0]
     assert obj.name == "Renamed"
     assert obj.transform.position == (5.0, 0.0, 0.0)
+
+
+def test_max_objects_limit_rejects_the_101st_object() -> None:
+    spec = _spec(*(_box(f"obj_{i}") for i in range(100)))
+    plan = _plan(
+        CreateObject(
+            name="One Too Many",
+            kind="box",
+            dimensions={"width": 1.0, "height": 1.0, "depth": 1.0},
+        )
+    )
+
+    with pytest.raises(ComplexityLimitError):
+        apply_plan(spec, plan, max_objects=100)
+
+
+def test_max_objects_limit_does_not_reject_when_net_effect_stays_within_limit() -> None:
+    spec = _spec(*(_box(f"obj_{i}") for i in range(100)))
+    plan = _plan(
+        DeleteObject(target="obj_0"),
+        CreateObject(
+            name="Replacement",
+            kind="box",
+            dimensions={"width": 1.0, "height": 1.0, "depth": 1.0},
+        ),
+    )
+
+    result = apply_plan(spec, plan, max_objects=100)
+
+    assert len(result.objects) == 100
+
+
+def test_max_objects_limit_is_not_enforced_when_omitted() -> None:
+    spec = _spec(*(_box(f"obj_{i}") for i in range(100)))
+    plan = _plan(
+        CreateObject(
+            name="Unbounded",
+            kind="box",
+            dimensions={"width": 1.0, "height": 1.0, "depth": 1.0},
+        )
+    )
+
+    result = apply_plan(spec, plan)
+
+    assert len(result.objects) == 101

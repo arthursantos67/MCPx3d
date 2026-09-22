@@ -41,6 +41,8 @@ from domain.model_spec import (
     Transform,
 )
 
+from api.limits import ComplexityLimitError
+
 _DEFAULT_POSITION: Vec3 = (0.0, 0.0, 0.0)
 _DEFAULT_ROTATION: Vec3 = (0.0, 0.0, 0.0)
 _DEFAULT_SCALE: Vec3 = (1.0, 1.0, 1.0)
@@ -91,12 +93,21 @@ class InvalidDimensionsError(MutationError):
         self.dimensions = dimensions
 
 
-def apply_plan(spec: ModelSpec, plan: ModelPlan) -> ModelSpec:
+def apply_plan(
+    spec: ModelSpec, plan: ModelPlan, *, max_objects: int | None = None
+) -> ModelSpec:
     """Applies every operation in `plan` to `spec`, in order, returning a new candidate.
 
     `create_object` operations earlier in `plan` may be targeted by later
     operations in the same plan (PRD §8.4), since both read and write go
     through the same working `objects` map as operations are processed.
+
+    `max_objects`, when given, is checked once against the final object
+    count (PRD FR-32/NFR-12, Issue #24) -- not after each operation -- so a
+    plan that both deletes and creates objects is judged by its net effect,
+    consistent with `apply_plan`'s whole-plan rollback contract: a limit
+    violation raises `ComplexityLimitError` and returns nothing, leaving the
+    caller's original `spec` untouched.
     """
     objects: dict[str, ModelObject] = {obj.id: obj for obj in spec.objects}
     scene = spec.scene
@@ -125,6 +136,9 @@ def apply_plan(spec: ModelSpec, plan: ModelPlan) -> ModelSpec:
                 scene = _apply_set_scene(operation, scene)
             case Clarify() | NoChange():
                 pass  # No ModelSpec mutation by definition.
+
+    if max_objects is not None and len(objects) > max_objects:
+        raise ComplexityLimitError("objects", limit=max_objects, actual=len(objects))
 
     return spec.model_copy(update={"objects": list(objects.values()), "scene": scene})
 

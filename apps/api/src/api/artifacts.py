@@ -61,6 +61,16 @@ class StaleArtifactRequestError(ArtifactError):
         self.current_revision = current_revision
 
 
+class ArtifactTooLargeError(ArtifactError):
+    """Generated artifact content exceeds the configured size limit (PRD NFR-12, Issue #24)."""
+
+    def __init__(self, format: str, *, size: int, limit: int) -> None:
+        super().__init__(f"{format} artifact too large: {size} bytes > {limit} byte limit")
+        self.format = format
+        self.size = size
+        self.limit = limit
+
+
 class ArtifactConversionError(ArtifactError):
     """`convert_x3d` reported success but its output does not hold up.
 
@@ -97,6 +107,14 @@ def _check_revision(project_id: str, requested_revision: int, current_revision: 
         raise StaleArtifactRequestError(project_id, requested_revision, current_revision)
 
 
+def _check_size(format: str, content: str, max_bytes: int | None) -> None:
+    if max_bytes is None:
+        return
+    size = len(content.encode("utf-8"))
+    if size > max_bytes:
+        raise ArtifactTooLargeError(format, size=size, limit=max_bytes)
+
+
 async def build_html_artifact(
     client: X3DMcpClient,
     *,
@@ -104,10 +122,12 @@ async def build_html_artifact(
     revision: int,
     x3d_content: str,
     requested_revision: int,
+    max_bytes: int | None = None,
 ) -> Artifact:
     """Standalone X3DOM HTML for `x3d_content` (FR-18, UC-07)."""
     _check_revision(project_id, requested_revision, revision)
     html = await client.generate_x3dom_page(x3d_content, title=project_id)
+    _check_size("html", html, max_bytes)
     return Artifact(
         filename=normalized_artifact_filename(project_id, revision, "html"),
         media_type=_HTML_MEDIA_TYPE,
@@ -121,9 +141,11 @@ def build_x3d_artifact(
     revision: int,
     x3d_content: str,
     requested_revision: int,
+    max_bytes: int | None = None,
 ) -> Artifact:
     """The validated revision's X3D XML, ready for download (FR-19, UC-08)."""
     _check_revision(project_id, requested_revision, revision)
+    _check_size("x3d", x3d_content, max_bytes)
     return Artifact(
         filename=normalized_artifact_filename(project_id, revision, "x3d"),
         media_type=_X3D_MEDIA_TYPE,
@@ -139,6 +161,7 @@ async def build_converted_artifact(
     revision: int,
     x3d_content: str,
     requested_revision: int,
+    max_bytes: int | None = None,
 ) -> Artifact:
     """The validated revision converted to `format` (`x3dj` or `x3dv`), via
     the upstream `convert_x3d` tool (FR-20). Raises whatever `convert_x3d`
@@ -155,6 +178,7 @@ async def build_converted_artifact(
             json.loads(converted)
         except json.JSONDecodeError as exc:
             raise ArtifactConversionError(format, str(exc)) from exc
+    _check_size(format, converted, max_bytes)
     return Artifact(
         filename=normalized_artifact_filename(project_id, revision, format),
         media_type=_CONVERSION_MEDIA_TYPES[format],
@@ -168,6 +192,7 @@ def build_model_spec_artifact(
     revision: int,
     model_spec: ModelSpec,
     requested_revision: int,
+    max_bytes: int | None = None,
 ) -> Artifact:
     """The current `ModelSpec` as a downloadable JSON manifest (FR-36, UC-09).
 
@@ -182,8 +207,10 @@ def build_model_spec_artifact(
     fail validation where omitting the key entirely passes.
     """
     _check_revision(project_id, requested_revision, revision)
+    content = model_spec.model_dump_json(indent=2, exclude_none=True)
+    _check_size("json", content, max_bytes)
     return Artifact(
         filename=normalized_artifact_filename(project_id, revision, "json"),
         media_type=_MANIFEST_MEDIA_TYPE,
-        content=model_spec.model_dump_json(indent=2, exclude_none=True),
+        content=content,
     )

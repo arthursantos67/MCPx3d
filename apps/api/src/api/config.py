@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     max_objects_per_project: int = Field(default=100, gt=0)
     max_operations_per_plan: int = Field(default=100, gt=0)
     max_prompt_characters: int = Field(default=8000, gt=0)
+    max_artifact_bytes: int = Field(default=10_000_000, gt=0)
 
     cors_allow_origins: list[str] = Field(default_factory=lambda: ["http://localhost:5173"])
 

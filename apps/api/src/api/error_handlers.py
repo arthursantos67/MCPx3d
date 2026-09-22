@@ -11,10 +11,10 @@ correlationId}` shape.
 `register_error_handlers` fixes both: a route now only needs to let the
 right exception type propagate (or raise it directly), and FastAPI finds the
 most specific handler registered for that exception's MRO -- e.g.
-`UnknownTargetError` before its `MutationError` base -- so subclasses that
-need a distinct code still get one without a dedicated line, and any
-exception type this module doesn't know about still resolves to the base
-class it does.
+`UnknownTargetError` before its `MutationError` base, `ArtifactTooLargeError`
+before its `ArtifactError` base (Issue #24) -- so subclasses that need a
+distinct code still get one without a dedicated line, and any exception type
+this module doesn't know about still resolves to the base class it does.
 
 The final `Exception` handler is what makes NFR-10 ("a generic server error
 shall not expose Python stack traces...") hold for every route, not just
@@ -37,9 +37,11 @@ from pydantic import ValidationError
 from api.artifacts import (
     ArtifactConversionError,
     ArtifactError,
+    ArtifactTooLargeError,
     StaleArtifactRequestError,
 )
 from api.errors import error_response
+from api.limits import ComplexityLimitError
 from api.mcp_client import X3DMcpError
 from api.mutation import MutationError, UnknownTargetError
 from api.projects import ProjectNotFoundError, RevisionConflictError
@@ -97,6 +99,12 @@ def register_error_handlers(app: FastAPI) -> None:
             422, "DOMAIN_VALIDATION_FAILED", str(exc), correlation_id=_correlation_id(request)
         )
 
+    @app.exception_handler(ComplexityLimitError)
+    async def _complexity_limit(request: Request, exc: ComplexityLimitError) -> JSONResponse:
+        return error_response(
+            413, "COMPLEXITY_LIMIT", str(exc), correlation_id=_correlation_id(request)
+        )
+
     @app.exception_handler(X3DMcpError)
     async def _mcp_unavailable(request: Request, exc: X3DMcpError) -> JSONResponse:
         return error_response(
@@ -111,6 +119,12 @@ def register_error_handlers(app: FastAPI) -> None:
             "The candidate scene could not be validated.",
             details=_x3d_validation_details(exc),
             correlation_id=_correlation_id(request),
+        )
+
+    @app.exception_handler(ArtifactTooLargeError)
+    async def _artifact_too_large(request: Request, exc: ArtifactTooLargeError) -> JSONResponse:
+        return error_response(
+            413, "COMPLEXITY_LIMIT", str(exc), correlation_id=_correlation_id(request)
         )
 
     @app.exception_handler(StaleArtifactRequestError)

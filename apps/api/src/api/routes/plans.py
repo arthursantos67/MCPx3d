@@ -24,6 +24,17 @@ as an `HTTPException` (via `api.errors.api_error`) rather than left to
 `api.error_handlers` (Issue #23): it is route-specific business logic with
 no domain exception type of its own, and FastAPI's built-in `HTTPException`
 handling already renders `api_error`'s body exactly as PRD §9.4 requires.
+
+Complexity limits (PRD FR-32, NFR-12, Issue #24) are checked as early as
+possible, before the revision/MCP round trip: `request.plan.intent` length
+is the only free-text field this request shape carries that stands in for
+NFR-12's "prompt text" limit (the raw user prompt itself is never sent to
+this backend -- WebLLM inference is client-side, per PRD §3.6 -- so
+`intent`, the agent's own short summary of what the user asked for, is the
+closest thing to it that reaches this endpoint), and the operation count is
+checked directly against the parsed plan. The object-count limit is
+enforced inside `apply_plan` itself (Issue #7/#24), since only it knows the
+plan's net effect on the object count.
 """
 
 from __future__ import annotations
@@ -39,6 +50,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from api.config import Settings, get_settings
 from api.errors import api_error
+from api.limits import ComplexityLimitError
 from api.mcp_client import X3DMcpClient
 from api.mutation import apply_plan
 from api.projects import (
@@ -123,6 +135,17 @@ async def apply_plan_endpoint(
         plan_request.expectedRevision,
     )
 
+    if len(plan_request.plan.intent) > settings.max_prompt_characters:
+        raise ComplexityLimitError(
+            "prompt", limit=settings.max_prompt_characters, actual=len(plan_request.plan.intent)
+        )
+    if len(plan_request.plan.operations) > settings.max_operations_per_plan:
+        raise ComplexityLimitError(
+            "operations",
+            limit=settings.max_operations_per_plan,
+            actual=len(plan_request.plan.operations),
+        )
+
     clarify_questions = [op.question for op in plan_request.plan.operations if isinstance(op, Clarify)]
     if clarify_questions:
         raise api_error(
@@ -139,8 +162,10 @@ async def apply_plan_endpoint(
     if plan_request.expectedRevision != session.revision:
         raise RevisionConflictError(project_id, plan_request.expectedRevision, session.revision)
 
-    # UnknownTargetError/MutationError propagate to their handlers.
-    candidate = apply_plan(session.model_spec, plan_request.plan)
+    # UnknownTargetError/MutationError/ComplexityLimitError propagate to their handlers.
+    candidate = apply_plan(
+        session.model_spec, plan_request.plan, max_objects=settings.max_objects_per_project
+    )
 
     # McpUnavailableError/McpToolError/X3DValidationError propagate to their handlers.
     async with X3DMcpClient.connect(

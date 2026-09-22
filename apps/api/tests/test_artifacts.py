@@ -7,6 +7,7 @@ from jsonschema import Draft202012Validator
 
 from api.artifacts import (
     ArtifactConversionError,
+    ArtifactTooLargeError,
     StaleArtifactRequestError,
     build_converted_artifact,
     build_html_artifact,
@@ -75,6 +76,28 @@ def test_build_x3d_artifact_rejects_a_stale_requested_revision() -> None:
         build_x3d_artifact(
             project_id="prj_test", revision=3, x3d_content=_OPAQUE_CONTENT, requested_revision=2
         )
+
+
+def test_build_x3d_artifact_rejects_content_over_the_byte_limit() -> None:
+    with pytest.raises(ArtifactTooLargeError):
+        build_x3d_artifact(
+            project_id="prj_test",
+            revision=3,
+            x3d_content=_OPAQUE_CONTENT,
+            requested_revision=3,
+            max_bytes=len(_OPAQUE_CONTENT) - 1,
+        )
+
+
+def test_build_x3d_artifact_allows_content_within_the_byte_limit() -> None:
+    artifact = build_x3d_artifact(
+        project_id="prj_test",
+        revision=3,
+        x3d_content=_OPAQUE_CONTENT,
+        requested_revision=3,
+        max_bytes=len(_OPAQUE_CONTENT),
+    )
+    assert artifact.content == _OPAQUE_CONTENT
 
 
 async def test_build_html_artifact_renders_a_known_scene(x3d_mcp_server: str) -> None:

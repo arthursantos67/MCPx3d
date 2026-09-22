@@ -50,3 +50,35 @@ def test_nonzero_scale_required(fixtures_dir: Path) -> None:
 
     with pytest.raises(ValidationError):
         ModelSpec.model_validate(payload)
+
+
+def test_infinite_dimension_is_rejected(fixtures_dir: Path) -> None:
+    payload = _load(fixtures_dir / "model-spec" / "valid.json")
+    payload["objects"][0]["dimensions"]["width"] = float("inf")
+
+    with pytest.raises(ValidationError):
+        ModelSpec.model_validate(payload)
+
+
+def test_nan_dimension_is_rejected(fixtures_dir: Path) -> None:
+    payload = _load(fixtures_dir / "model-spec" / "valid.json")
+    payload["objects"][0]["dimensions"]["width"] = float("nan")
+
+    with pytest.raises(ValidationError):
+        ModelSpec.model_validate(payload)
+
+
+def test_infinite_position_is_rejected(fixtures_dir: Path) -> None:
+    payload = _load(fixtures_dir / "model-spec" / "valid.json")
+    payload["objects"][0]["transform"]["position"] = [float("inf"), 0, 0]
+
+    with pytest.raises(ValidationError):
+        ModelSpec.model_validate(payload)
+
+
+def test_nan_display_scale_is_rejected(fixtures_dir: Path) -> None:
+    payload = _load(fixtures_dir / "model-spec" / "valid.json")
+    payload["scene"]["displayScale"] = float("nan")
+
+    with pytest.raises(ValidationError):
+        ModelSpec.model_validate(payload)

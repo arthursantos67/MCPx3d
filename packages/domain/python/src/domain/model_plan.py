@@ -8,6 +8,7 @@ so no executable-code field can ever reach an accepted ModelPlan.
 
 from __future__ import annotations
 
+import math
 import re
 from typing import Annotated, Literal
 
@@ -35,8 +36,14 @@ def _check_dimensions(value: dict[str, float]) -> dict[str, float]:
     if not value:
         raise ValueError("dimensions must not be empty")
     for key, amount in value.items():
-        if not (amount > 0):
+        if not (math.isfinite(amount) and amount > 0):
             raise ValueError(f"dimension '{key}' must be a positive, finite number")
+    return value
+
+
+def _check_finite_vec3(value: tuple[float, float, float]) -> tuple[float, float, float]:
+    if not all(math.isfinite(component) for component in value):
+        raise ValueError("components must be finite numbers")
     return value
 
 
@@ -46,7 +53,7 @@ def _check_nonzero_vec3(value: tuple[float, float, float]) -> tuple[float, float
     return value
 
 
-Vec3 = tuple[float, float, float]
+Vec3 = Annotated[tuple[float, float, float], AfterValidator(_check_finite_vec3)]
 ObjectId = Annotated[str, AfterValidator(_check_id)]
 Color = Annotated[str, AfterValidator(_check_color)]
 Dimensions = Annotated[dict[str, float], AfterValidator(_check_dimensions)]
@@ -149,7 +156,7 @@ class SetScene(BaseModel):
 
     op: Literal["set_scene"] = "set_scene"
     background: str | None = None
-    displayScale: float | None = Field(default=None, gt=0)
+    displayScale: float | None = Field(default=None, gt=0, allow_inf_nan=False)
 
     @model_validator(mode="after")
     def _at_least_one_field(self) -> SetScene:

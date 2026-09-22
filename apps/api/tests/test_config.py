@@ -18,6 +18,7 @@ def test_settings_have_expected_defaults() -> None:
     assert settings.max_objects_per_project == 100
     assert settings.max_operations_per_plan == 100
     assert settings.max_prompt_characters == 8000
+    assert settings.max_artifact_bytes == 10_000_000
     assert settings.cors_allow_origins == ["http://localhost:5173"]
 
 
@@ -30,6 +31,7 @@ def test_settings_have_expected_defaults() -> None:
         ("max_objects_per_project", 0),
         ("max_operations_per_plan", 0),
         ("max_prompt_characters", 0),
+        ("max_artifact_bytes", 0),
     ],
 )
 def test_settings_reject_non_positive_limits(field: str, value: int) -> None:

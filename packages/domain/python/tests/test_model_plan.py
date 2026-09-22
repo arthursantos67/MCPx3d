@@ -53,6 +53,53 @@ def test_operation_specific_target_requirements(operation: dict) -> None:
         ModelPlan.model_validate({"intent": "modify_model", "operations": [operation]})
 
 
+def test_infinite_position_is_rejected() -> None:
+    with pytest.raises(ValidationError):
+        ModelPlan.model_validate(
+            {
+                "intent": "create_model",
+                "operations": [
+                    {
+                        "op": "create_object",
+                        "name": "Cube",
+                        "kind": "box",
+                        "dimensions": {"width": 10, "height": 10, "depth": 10},
+                        "position": [float("inf"), 0, 0],
+                    }
+                ],
+            }
+        )
+
+
+def test_nan_dimension_is_rejected() -> None:
+    with pytest.raises(ValidationError):
+        ModelPlan.model_validate(
+            {
+                "intent": "create_model",
+                "operations": [
+                    {
+                        "op": "create_object",
+                        "name": "Cube",
+                        "kind": "box",
+                        "dimensions": {"width": float("nan"), "height": 10, "depth": 10},
+                    }
+                ],
+            }
+        )
+
+
+def test_infinite_translate_delta_is_rejected() -> None:
+    with pytest.raises(ValidationError):
+        ModelPlan.model_validate(
+            {
+                "intent": "modify_model",
+                "operations": [
+                    {"op": "translate_object", "target": "obj_1", "delta": [float("inf"), 0, 0]}
+                ],
+            }
+        )
+
+
 def test_clarify_and_no_change_do_not_require_a_target() -> None:
     plan = ModelPlan.model_validate(
         {

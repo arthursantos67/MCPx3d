@@ -7,6 +7,7 @@ here as a model validator instead.
 
 from __future__ import annotations
 
+import math
 import re
 from typing import Literal
 
@@ -25,7 +26,7 @@ class Scene(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     background: str | None = None
-    displayScale: float = Field(gt=0)
+    displayScale: float = Field(gt=0, allow_inf_nan=False)
 
 
 class Transform(BaseModel):
@@ -34,6 +35,13 @@ class Transform(BaseModel):
     position: Vec3
     rotation: Vec3
     scale: Vec3
+
+    @field_validator("position", "rotation", "scale")
+    @classmethod
+    def _components_finite(cls, value: Vec3) -> Vec3:
+        if not all(math.isfinite(component) for component in value):
+            raise ValueError("components must be finite numbers")
+        return value
 
     @field_validator("scale")
     @classmethod
@@ -81,7 +89,7 @@ class ModelObject(BaseModel):
         if not value:
             raise ValueError("dimensions must not be empty")
         for key, amount in value.items():
-            if not (amount > 0):
+            if not (math.isfinite(amount) and amount > 0):
                 raise ValueError(f"dimension '{key}' must be a positive, finite number")
         return value
 
