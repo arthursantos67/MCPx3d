@@ -131,15 +131,16 @@ export class OpenAICompatibleProvider implements LLMProvider {
           messages: toOpenAiMessages(messages),
           response_format: { type: "json_schema", json_schema: { name: "model_plan", schema: stripDescriptions(schema) } },
           temperature: options?.temperature,
-          // Both names: some OpenAI-compatible endpoints (older proxies) only
-          // recognize the legacy `max_tokens`, others (Groq, current OpenAI)
-          // expect `max_completion_tokens` for reasoning-capable models;
-          // unrecognized fields are ignored, so sending both is safe. Capped
-          // at a small default rather than left unset: a ModelPlan response
-          // is at most a few hundred tokens, but some models reserve a much
-          // larger completion budget by default, which can burn through a
-          // free-tier tokens-per-minute limit in a single request.
-          max_tokens: options?.maxTokens ?? DEFAULT_MAX_COMPLETION_TOKENS,
+          // Only the current-standard field name: some endpoints (Google's
+          // Gemini OpenAI-compat layer, confirmed live) reject a request
+          // that sets both `max_tokens` and `max_completion_tokens` at once
+          // with a 400, rather than ignoring the one they don't recognize.
+          // `max_completion_tokens` is what current OpenAI and Groq expect;
+          // capped at a small default rather than left unset, since a
+          // ModelPlan response is at most a few hundred tokens but some
+          // models reserve a much larger completion budget by default,
+          // which can burn through a free-tier tokens-per-minute limit in a
+          // single request.
           max_completion_tokens: options?.maxTokens ?? DEFAULT_MAX_COMPLETION_TOKENS,
           // Reasoning-capable models (e.g. Groq's openai/gpt-oss family) can
           // reserve a large hidden token budget for chain-of-thought before

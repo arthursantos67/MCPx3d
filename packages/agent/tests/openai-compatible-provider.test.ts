@@ -87,7 +87,7 @@ test("generateStructured sends the expected request shape and parses the respons
   ]);
   assert.deepEqual(sentBody.response_format, { type: "json_schema", json_schema: { name: "model_plan", schema } });
   assert.equal(sentBody.temperature, 0.2);
-  assert.equal(sentBody.max_tokens, 256);
+  assert.equal("max_tokens" in sentBody, false);
   assert.equal(sentBody.max_completion_tokens, 256);
   assert.equal(sentBody.reasoning_effort, "low");
   assert.deepEqual(provider.getState(), { phase: "ready" });
@@ -136,7 +136,7 @@ test("strips description keys from the schema before sending it, without touchin
   });
 });
 
-test("defaults max_tokens/max_completion_tokens to a small cap when the caller doesn't specify one", async () => {
+test("defaults max_completion_tokens to a small cap when the caller doesn't specify one, and never sends max_tokens", async () => {
   let receivedInit: RequestInit = {};
   const provider = new OpenAICompatibleProvider(
     CONFIG,
@@ -150,7 +150,7 @@ test("defaults max_tokens/max_completion_tokens to a small cap when the caller d
   await provider.generateStructured([], {});
 
   const sentBody = JSON.parse(receivedInit.body as string) as Record<string, unknown>;
-  assert.equal(sentBody.max_tokens, 2048);
+  assert.equal("max_tokens" in sentBody, false);
   assert.equal(sentBody.max_completion_tokens, 2048);
 });
 
