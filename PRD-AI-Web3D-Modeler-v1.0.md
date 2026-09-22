@@ -1400,6 +1400,13 @@ App
         └── RevisionBadge
 ```
 
+**Implementation note (Issue #26, 2026-09-22):** Implemented as `apps/web/src/chat/ChatPanel.tsx`, `MessageList.tsx`, `GenerationProgress.tsx`, and `PromptComposer.tsx` (plus `ChatPanel.css`), filling the `WorkspaceShell` (Issue #25) chat column. These are presentational components: `ChatPanel` takes chat state/actions as props (`state: ChatControllerState`, `sendMessage`, `canSend`, from `apps/web/src/chat/types.ts`) rather than owning them or calling any agent/network code itself -- wiring a real controller to these props is Issue #27's scope, not this one's; `WorkspaceShell` is not yet updated to render `ChatPanel` (still Issue #25's placeholders) until that issue lands. Concrete decisions:
+
+- `PromptComposer` is a plain `<textarea>`: Enter submits, Shift+Enter inserts a newline (FE-02), and it (and its submit button) are disabled whenever a `SendGate` says `canSend: false`, with the concrete reason shown as a hint below the input.
+- `GenerationProgress` is a single status line placed above the composer (not inside the scrolling history), so it stays visible during generation regardless of scroll position.
+- `MessageList` distinguishes `user`/`assistant`/`error` roles visually (FE-03); tool-level MCP/validation diagnostics are not surfaced here at all (no expandable technical panel exists yet -- that remains FE-14/a later issue).
+- "Submit is protected against accidental duplicate sends" is only partly this issue's concern: the composer disables itself while `canSend().canSend` is `false`, but the authoritative guard (re-checking synchronously so two racing calls can't both go through) lives in the state machine Issue #27 adds -- see that issue's implementation note.
+
 ### 10.2 Chat state
 
 Chat UI state is not itself authoritative geometry state. The current ModelSpec returned by the server determines the model.
