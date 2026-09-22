@@ -42,11 +42,12 @@ Serves at `http://localhost:5173`. Copy `apps/web/.env.example` to `.env` to poi
 
 [`apps/web/src/ai/webgpu-capability.ts`](apps/web/src/ai/webgpu-capability.ts) and [`apps/web/src/ai/webllm-runtime.ts`](apps/web/src/ai/webllm-runtime.ts) (Issues #15/#16) remain unused Phase-0 spike code -- the real chat integration (Issue #27) depends on `packages/agent`'s `WebLLMProvider` instead (PRD §3.7's "no domain or geometry code may call WebLLM directly outside the provider package"). See [`apps/web/README.md`](apps/web/README.md) for details on both.
 
-[`apps/web/src/workspace/WorkspaceShell.tsx`](apps/web/src/workspace/WorkspaceShell.tsx) is the desktop modeling workspace shell (PRD FE-01, Issue #25): a top bar, side-by-side chat and 3D viewer, and a status bar, replacing the unmodified Vite+React template. The viewer (Issue #28) and status bar (Issue #32) remain placeholders; the chat column is now real:
+[`apps/web/src/workspace/WorkspaceShell.tsx`](apps/web/src/workspace/WorkspaceShell.tsx) is the desktop modeling workspace shell (PRD FE-01, Issue #25): a top bar, side-by-side chat and 3D viewer, and a status bar, replacing the unmodified Vite+React template. The status bar remains a placeholder (Issue #32); the chat column and viewer are now real:
 
 - [`apps/web/src/chat/`](apps/web/src/chat/) (Issues #26/#27): `ChatPanel`/`MessageList`/`GenerationProgress`/`PromptComposer` (multiline input, Enter/Shift+Enter, duplicate-submit guarded) render `ChatController`'s state -- a framework-agnostic state machine (`useChatController.ts` is its `useSyncExternalStore` React wrapper) that calls `packages/agent`'s `generateModelPlan`/`WebLLMProvider`, POSTs the result to `apps/api` via [`apps/web/src/api/client.ts`](apps/web/src/api/client.ts), and only updates `modelSpec`/`revision`/`previewUrl` on a successful commit.
+- [`apps/web/src/viewer/X3DPreviewFrame.tsx`](apps/web/src/viewer/X3DPreviewFrame.tsx) (Issue #28): fetches the current revision's standalone HTML and embeds it via a Blob URL in a sandboxed `<iframe sandbox="allow-scripts">` (never `srcDoc`/`dangerouslySetInnerHTML` with raw HTML), revoking the previous Blob URL only after the new one replaces it.
 
-Since this repository has no npm-workspaces root, it imports `packages/agent`/`packages/domain` by relative path, the same convention `packages/agent` already uses for `packages/domain` (see `packages/agent/README.md`); `apps/web/vite.config.ts` sets `server.fs.allow` to the repo root so the dev server can serve those source files.
+Since this repository has no npm-workspaces root, both import `packages/agent`/`packages/domain` by relative path, the same convention `packages/agent` already uses for `packages/domain` (see `packages/agent/README.md`); `apps/web/vite.config.ts` sets `server.fs.allow` to the repo root so the dev server can serve those source files.
 
 ### 2. API (`apps/api`)
 
@@ -61,6 +62,8 @@ Serves at `http://localhost:8001` (interactive docs at `/docs`). Configuration (
 [`apps/api/src/api/routes/projects.py`](apps/api/src/api/routes/projects.py) wires `ProjectSessionService` to HTTP: `POST /api/projects`, `GET /api/projects/{id}`, `DELETE /api/projects/{id}` (PRD §9.1, Issue #21). Error responses across routes follow PRD §9.4's standardized `{code, message, details, correlationId}` body via [`apps/api/src/api/errors.py`](apps/api/src/api/errors.py)'s `api_error` helper.
 
 [`apps/api/src/api/routes/plans.py`](apps/api/src/api/routes/plans.py)'s `POST /api/projects/{id}/plans` is the central mutation transaction (PRD §9.2/§9.3, Issue #22): validate the request → reject a `clarify`-containing plan as `422 AMBIGUOUS_TARGET` before touching MCP → check the expected revision → `apply_plan` → build/validate the candidate as X3D → commit → describe available artifacts, all through the modules above.
+
+[`apps/api/src/api/routes/artifacts.py`](apps/api/src/api/routes/artifacts.py)'s `GET /api/projects/{id}/artifacts/html` (PRD §9.1/§10.3, Issue #11's HTTP wiring, added for Issue #28's preview iframe) rebuilds and validates X3D from the project's current `ModelSpec` and returns `build_html_artifact`'s standalone HTML; the other artifact/manifest routes in PRD §9.1's table remain unwired (Issue #30's scope).
 
 [`apps/api/src/api/error_handlers.py`](apps/api/src/api/error_handlers.py) centralizes the exception-to-response mapping PRD §9.4 defines (Issue #23): every route now lets the right exception type propagate (or raises directly for `AMBIGUOUS_TARGET`, the one case with no domain exception of its own) and FastAPI dispatches to the most specific registered handler, replacing the per-route `try`/`except` blocks Issues #21/#22 used.
 
@@ -95,8 +98,8 @@ Not a running service — the `LLMProvider` abstraction (`isAvailable`/`initiali
 
 ## Tests
 
-- `apps/api`: `uv run pytest` (includes an `X3DMcpClient` integration test that runs the real `services/x3d-mcp` server as a subprocess; skipped automatically if `uv` or the vendor submodule isn't available)
-- `apps/web`: `npm test` (`src/ai`'s WebGPU/WebLLM logic and `chat/ChatController` against a fake `AgentProvider`/`ChatApi` -- all against injected fakes, no browser, GPU, or model download involved; see `apps/web/README.md`)
+- `apps/api`: `uv run pytest` (includes integration tests that run the real `services/x3d-mcp` server as a subprocess -- `X3DMcpClient`, the apply-plan endpoint's happy path, and the artifacts/html endpoint's happy/stale-revision paths; skipped automatically if `uv` or the vendor submodule isn't available)
+- `apps/web`: `npm test` (`src/ai`'s WebGPU/WebLLM logic, `chat/ChatController` against a fake `AgentProvider`/`ChatApi`, and `viewer/objectUrl`'s Blob-URL lifecycle -- all against injected fakes, no browser, GPU, or model download involved; see `apps/web/README.md`)
 - `packages/domain/ts`: `npm test`
 - `packages/domain/python`: `uv run pytest`
 - `packages/agent`: `npm test` (provider/generation logic against injected fakes and a `MockLLMProvider` -- no browser, GPU, or model download involved; see `packages/agent/README.md`)

@@ -2,12 +2,18 @@ import './WorkspaceShell.css'
 
 import ChatPanel from '../chat/ChatPanel.tsx'
 import { useChatController } from '../chat/useChatController.ts'
+import X3DPreviewFrame from '../viewer/X3DPreviewFrame.tsx'
 
 /**
  * Desktop modeling workspace shell (PRD §3.1, Issue #25): top bar, a
  * side-by-side chat + viewer main area, and a status bar. The chat panel
- * (#26/#27) is wired here; the X3D preview iframe (#28) and status bar
- * (#32) remain placeholders.
+ * (#26/#27) and X3D preview iframe (#28) are wired here; the status bar
+ * remains a placeholder (#32).
+ *
+ * `useChatController` is called once, here, rather than inside `ChatPanel`:
+ * it owns the single `WebLLMProvider`/project session for the whole
+ * workspace, and `X3DPreviewFrame` needs that same controller's
+ * `previewUrl` -- a second instance would double-initialize WebLLM.
  */
 function WorkspaceShell() {
   const { state, sendMessage, canSend } = useChatController()
@@ -24,7 +30,7 @@ function WorkspaceShell() {
         </section>
 
         <section className="workspace-viewer" aria-label="3D viewer">
-          <p className="workspace-placeholder">The 3D viewer will appear here.</p>
+          <X3DPreviewFrame previewUrl={state.previewUrl} />
         </section>
       </div>
 
