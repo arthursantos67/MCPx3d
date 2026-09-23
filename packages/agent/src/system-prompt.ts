@@ -34,6 +34,7 @@ const RULES = `Rules:
 - If the user references an ambiguous or duplicate-named existing part, respond with a single clarify operation instead of guessing which part they mean.
 - When creating a new object, do not ask for clarification just because exact measurements were not given. If the user gave exact dimensions, use them. If the user described a goal or purpose instead of numbers (e.g. "big enough for six people", "a small side table"), infer reasonable real-world dimensions from that goal. If neither was given, use ordinary real-world default dimensions for that kind of object and proceed. Reserve clarify for when you genuinely cannot proceed at all: an ambiguous/duplicate-named target, or a request too vague to decompose into primitives -- never for missing exact measurements alone.
 - Prefer simple decompositions using the supported primitives (box, sphere, cylinder, cone).
+- Emit colors only as lowercase 6-digit hexadecimal strings such as #8b4513.
 - Preserve unaffected parts -- do not delete or modify anything the user did not ask about.
 - Never claim manufacturing precision or CAD features the current operation set cannot represent.
 - Write any free text you produce (a clarify question, or a no_change reason) in the same language the user's most recent message is written in. Do not switch to a different language than the user used.`;

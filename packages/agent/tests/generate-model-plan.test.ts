@@ -46,6 +46,55 @@ test('"create a red cube" returns a valid create operation', async () => {
   assert.equal(provider.calls.length, 1);
 });
 
+test("normalizes an uppercase hexadecimal color without spending the repair retry", async () => {
+  const provider = new MockLLMProvider([
+    {
+      intent: "create_model",
+      operations: [
+        { op: "create_object", name: "Table top", kind: "box", dimensions: { width: 1200, height: 40, depth: 700 }, color: "#8B4513" },
+      ],
+    },
+  ]);
+
+  const plan = await generateModelPlan({ provider, request: "crie uma mesa", modelSpec: EMPTY_SPEC });
+
+  assert.equal(provider.calls.length, 1);
+  assert.equal(plan.operations[0]?.op, "create_object");
+  if (plan.operations[0]?.op === "create_object") assert.equal(plan.operations[0].color, "#8b4513");
+});
+
+test("expands a shorthand hexadecimal material color before validation", async () => {
+  const provider = new MockLLMProvider([
+    { intent: "modify_model", operations: [{ op: "set_material", target: "seat", color: "ABC" }] },
+  ]);
+
+  const plan = await generateModelPlan({ provider, request: "change the color", modelSpec: SPEC_WITH_SEAT });
+
+  assert.equal(provider.calls.length, 1);
+  assert.equal(plan.operations[0]?.op, "set_material");
+  if (plan.operations[0]?.op === "set_material") assert.equal(plan.operations[0].color, "#aabbcc");
+});
+
+test("reports an invalid non-hex color without unrelated oneOf branch errors", async () => {
+  const invalid = {
+    intent: "create_model",
+    operations: [
+      { op: "create_object", name: "Table top", kind: "box", dimensions: { width: 1200, height: 40, depth: 700 }, color: "brown" },
+    ],
+  };
+  const provider = new MockLLMProvider([invalid, invalid]);
+
+  await assert.rejects(
+    () => generateModelPlan({ provider, request: "crie uma mesa", modelSpec: EMPTY_SPEC }),
+    (error: unknown) => {
+      assert.ok(error instanceof ModelPlanGenerationError);
+      assert.match(error.message, /color must be a 6-digit hexadecimal color/);
+      assert.doesNotMatch(error.message, /required property 'target'/);
+      return true;
+    },
+  );
+});
+
 test("a modification targeting an existing id succeeds on the first attempt", async () => {
   const provider = new MockLLMProvider([
     { intent: "modify_model", operations: [{ op: "set_dimensions", target: "seat", dimensions: { width: 600 } }] },

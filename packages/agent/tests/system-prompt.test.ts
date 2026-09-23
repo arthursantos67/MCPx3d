@@ -45,6 +45,12 @@ test("instructs the model to default/infer dimensions instead of clarifying over
   assert.match(prompt, /never for missing exact measurements alone/);
 });
 
+test("requires colors in the canonical lowercase hexadecimal format", () => {
+  const prompt = buildSystemPrompt(BASE_SPEC);
+
+  assert.match(prompt, /lowercase 6-digit hexadecimal strings such as #8b4513/);
+});
+
 test("never invents operations beyond the fixed v1 set", () => {
   const prompt = buildSystemPrompt(BASE_SPEC);
   const allowedOps = [

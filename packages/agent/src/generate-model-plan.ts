@@ -123,8 +123,10 @@ async function attempt(
     return { ok: false, reason: `malformed or unparsable output (${describeError(error)})` };
   }
 
+  raw = normalizeModelPlanCandidate(raw);
+
   if (!validateModelPlanSchema(raw)) {
-    return { ok: false, reason: `schema violation: ${ajv.errorsText(validateModelPlanSchema.errors)}` };
+    return { ok: false, reason: describeSchemaViolation(raw) };
   }
   const plan = raw as ModelPlan;
 
@@ -154,6 +156,44 @@ async function attempt(
 
 function hasMixedClarify(operations: readonly Operation[]): boolean {
   return operations.some((op) => op.op === "clarify") && operations.length > 1;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function normalizeHexColor(value: string): string {
+  const digits = value.trim().replace(/^#/, "");
+  if (/^[0-9a-f]{6}$/i.test(digits)) return `#${digits.toLowerCase()}`;
+  if (/^[0-9a-f]{3}$/i.test(digits)) {
+    return `#${[...digits.toLowerCase()].map((digit) => digit.repeat(2)).join("")}`;
+  }
+  return value;
+}
+
+function normalizeModelPlanCandidate(value: unknown): unknown {
+  if (!isRecord(value) || !Array.isArray(value.operations)) return value;
+  let changed = false;
+  const operations = value.operations.map((operation) => {
+    if (!isRecord(operation) || typeof operation.color !== "string") return operation;
+    const color = normalizeHexColor(operation.color);
+    if (color === operation.color) return operation;
+    changed = true;
+    return { ...operation, color };
+  });
+  return changed ? { ...value, operations } : value;
+}
+
+function describeSchemaViolation(value: unknown): string {
+  if (isRecord(value) && Array.isArray(value.operations)) {
+    for (const [index, operation] of value.operations.entries()) {
+      if (isRecord(operation) && typeof operation.color === "string" && !/^#[0-9a-f]{6}$/.test(operation.color)) {
+        return `schema violation: data/operations/${index}/color must be a 6-digit hexadecimal color such as #8b4513`;
+      }
+    }
+  }
+  const details = ajv.errorsText(validateModelPlanSchema.errors);
+  return `schema violation: ${details.length <= 800 ? details : `${details.slice(0, 799)}…`}`;
 }
 
 function collectKnownIds(modelSpec: ModelSpec, operations: readonly Operation[]): Set<string> {
