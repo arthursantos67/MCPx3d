@@ -6,6 +6,7 @@
  * shape, not on the controller implementation (Issue #27) that produces it. */
 
 import type { ModelSpec } from "../../../../packages/domain/ts/src/model-spec.ts";
+import type { ArtifactDescriptor, ValidationSummary } from "../api/client.ts";
 
 export type ChatMessageRole = "user" | "assistant" | "error";
 
@@ -17,6 +18,18 @@ export interface ChatMessage {
 }
 
 export type AgentPhase = "idle" | "unsupported" | "loading" | "ready" | "generating" | "error";
+export type RequestStatus = "idle" | "working" | "succeeded" | "no-change" | "failed" | "session-expired";
+export type PipelineStage =
+  | "idle"
+  | "provider-request"
+  | "plan-validation"
+  | "api-mcp-build"
+  | "x3d-validation"
+  | "artifact-generation"
+  | "viewer-loading"
+  | "ready"
+  | "failed";
+export type FailureSource = "provider" | "modeling" | "mcp" | "session" | null;
 
 export interface AgentStatus {
   readonly phase: AgentPhase;
@@ -40,4 +53,12 @@ export interface ChatControllerState {
   readonly isBusy: boolean;
   readonly projectId: string | null;
   readonly projectError: string | null;
+  readonly projectName: string;
+  readonly artifacts: readonly ArtifactDescriptor[];
+  readonly validation: ValidationSummary | null;
+  readonly correlationId: string | null;
+  readonly requestStatus: RequestStatus;
+  readonly failureSource: FailureSource;
+  readonly pipelineStage: PipelineStage;
+  readonly pipelineStartedAt: number | null;
 }

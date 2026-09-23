@@ -43,7 +43,7 @@ import logging
 from typing import Annotated, Literal
 from uuid import uuid4
 
-from domain.model_plan import Clarify, ModelPlan
+from domain.model_plan import Clarify, ModelPlan, NoChange
 from domain.model_spec import ModelSpec
 from fastapi import APIRouter, Body, Depends, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
@@ -65,13 +65,18 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/projects", tags=["plans"])
 
 ArtifactFormat = Literal["html", "x3d", "x3dj", "x3dv"]
-_ARTIFACT_FORMATS: tuple[ArtifactFormat, ...] = ("html", "x3d", "x3dj", "x3dv")
+_ARTIFACT_AVAILABILITY: tuple[tuple[ArtifactFormat, bool, str | None], ...] = (
+    ("html", True, None),
+    ("x3d", True, None),
+    ("x3dj", False, "X3DJ conversion is unavailable for this X3D toolchain."),
+    ("x3dv", True, None),
+)
 
 
 class ApplyPlanRequest(BaseModel):
     """PRD §9.2."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", strict=True)
 
     expectedRevision: int = Field(ge=0)
     requestId: str | None = None
@@ -88,6 +93,7 @@ class ValidationSummary(BaseModel):
 class ArtifactDescriptor(BaseModel):
     format: ArtifactFormat
     available: bool
+    reason: str | None = None
 
 
 class PreviewInfo(BaseModel):
@@ -101,7 +107,7 @@ class ApplyPlanResponse(BaseModel):
     revision: int
     modelSpec: ModelSpec
     validation: ValidationSummary
-    preview: PreviewInfo
+    preview: PreviewInfo | None
     artifacts: list[ArtifactDescriptor]
 
 
@@ -167,6 +173,25 @@ async def apply_plan_endpoint(
         session.model_spec, plan_request.plan, max_objects=settings.max_objects_per_project
     )
 
+    if all(isinstance(operation, NoChange) for operation in plan_request.plan.operations):
+        return ApplyPlanResponse(
+            projectId=project_id,
+            revision=session.revision,
+            modelSpec=session.model_spec,
+            validation=ValidationSummary(
+                schemaValid=True, semanticValid=True, warnings=[], autofixes=[]
+            ),
+            preview=(
+                PreviewInfo(url=f"/api/projects/{project_id}/artifacts/html?revision={session.revision}")
+                if session.revision in session.validated_x3d
+                else None
+            ),
+            artifacts=[
+                ArtifactDescriptor(format=fmt, available=available, reason=reason)
+                for fmt, available, reason in _ARTIFACT_AVAILABILITY
+            ],
+        )
+
     # McpUnavailableError/McpToolError/X3DValidationError propagate to their handlers.
     async with X3DMcpClient.connect(
         str(settings.mcp_base_url), settings.mcp_request_timeout_seconds
@@ -176,7 +201,10 @@ async def apply_plan_endpoint(
     # RevisionConflictError/ProjectNotFoundError propagate to their handlers (a race
     # with another request between the pre-check above and this commit).
     updated_session = project_service.commit_revision(
-        project_id, plan_request.expectedRevision, candidate
+        project_id,
+        plan_request.expectedRevision,
+        candidate,
+        validation.content,
     )
 
     logger.info(
@@ -194,5 +222,8 @@ async def apply_plan_endpoint(
         preview=PreviewInfo(
             url=f"/api/projects/{project_id}/artifacts/html?revision={updated_session.revision}"
         ),
-        artifacts=[ArtifactDescriptor(format=fmt, available=True) for fmt in _ARTIFACT_FORMATS],
+        artifacts=[
+            ArtifactDescriptor(format=fmt, available=available, reason=reason)
+            for fmt, available, reason in _ARTIFACT_AVAILABILITY
+        ],
     )

@@ -33,7 +33,6 @@ import { ApiError } from "../api/client.ts";
 import type { AgentMessage, LLMProvider } from "../../../../packages/agent/src/provider.ts";
 import {
   ModelPlanGenerationError,
-  buildClarificationFollowUp,
   generateModelPlan,
 } from "../../../../packages/agent/src/generate-model-plan.ts";
 import type { ModelPlan } from "../../../../packages/domain/ts/src/model-plan.ts";
@@ -55,6 +54,7 @@ export interface AgentProvider extends LLMProvider {
 export interface ChatApi {
   createProject(): Promise<ModelSpec>;
   applyPlan(projectId: string, body: ApplyPlanRequestBody): Promise<ApplyPlanResponse>;
+  deleteProject(projectId: string): Promise<void>;
   resolveArtifactUrl(relativeUrl: string): string;
 }
 
@@ -95,6 +95,13 @@ function summarizeApplyResult(response: ApplyPlanResponse): string {
   return `Updated the model to revision ${response.revision}${warningNote}.`;
 }
 
+function failureSource(error: unknown): "provider" | "modeling" | "mcp" | "session" {
+  if (error instanceof ModelPlanGenerationError) return "provider";
+  if (error instanceof ApiError && error.code === "MCP_UNAVAILABLE") return "mcp";
+  if (error instanceof ApiError && error.code === "PROJECT_NOT_FOUND") return "session";
+  return "modeling";
+}
+
 export class ChatController {
   private state: ChatControllerState;
   private readonly listeners = new Set<() => void>();
@@ -102,7 +109,8 @@ export class ChatController {
   private readonly api: ChatApi;
   private readonly now: () => number;
   private readonly makeId: () => string;
-  private pendingClarifyQuestion: string | null = null;
+  private initialization: Promise<void> | null = null;
+  private readonly unsubscribeProvider: () => void;
 
   constructor(provider: AgentProvider, api: ChatApi, options?: ChatControllerOptions) {
     this.provider = provider;
@@ -120,9 +128,17 @@ export class ChatController {
       isBusy: false,
       projectId: null,
       projectError: null,
+      projectName: "Untitled model",
+      artifacts: [],
+      validation: null,
+      correlationId: null,
+      requestStatus: "idle",
+      failureSource: null,
+      pipelineStage: "idle",
+      pipelineStartedAt: null,
     };
 
-    provider.onStateChange((next) => {
+    this.unsubscribeProvider = provider.onStateChange((next) => {
       this.patch({ agentPhase: next.phase, agentDetail: describeProviderState(next) });
     });
   }
@@ -138,6 +154,84 @@ export class ChatController {
 
   /** Starts WebLLM initialization and creates a project session; both run independently. */
   async initialize(): Promise<void> {
+    this.initialization ??= this.startInitialization();
+    await this.initialization;
+  }
+
+  dispose(): void {
+    this.unsubscribeProvider();
+    void this.provider.cancel?.();
+  }
+
+  async retryProject(): Promise<void> {
+    try {
+      const modelSpec = await this.api.createProject();
+      const recreatingExpiredProject = this.state.requestStatus === "session-expired";
+      this.patch({
+        modelSpec,
+        projectId: modelSpec.projectId,
+        projectError: null,
+        messages: recreatingExpiredProject ? [] : this.state.messages,
+        previewUrl: recreatingExpiredProject ? null : this.state.previewUrl,
+        artifacts: recreatingExpiredProject ? [] : this.state.artifacts,
+        validation: recreatingExpiredProject ? null : this.state.validation,
+        correlationId: recreatingExpiredProject ? null : this.state.correlationId,
+        requestStatus: "idle",
+        failureSource: null,
+        pipelineStage: "idle",
+        pipelineStartedAt: null,
+      });
+    } catch (error) {
+      this.patch({ projectError: describeError(error) });
+    }
+  }
+
+  renameProject(name: string): void {
+    this.patch({ projectName: name.trim().slice(0, 80) || "Untitled model" });
+  }
+
+  async resetProject(): Promise<void> {
+    const projectId = this.state.projectId;
+    this.patch({
+      messages: [],
+      modelSpec: null,
+      previewUrl: null,
+      projectId: null,
+      projectError: null,
+      artifacts: [],
+      validation: null,
+      correlationId: null,
+      requestStatus: "idle",
+      failureSource: null,
+      pipelineStage: "idle",
+      pipelineStartedAt: null,
+      projectName: "Untitled model",
+    });
+    if (projectId) {
+      try {
+        await this.api.deleteProject(projectId);
+      } catch (error) {
+        if (!(error instanceof ApiError && error.code === "PROJECT_NOT_FOUND")) {
+          this.appendMessage("error", describeError(error));
+        }
+      }
+    }
+    await this.retryProject();
+  }
+
+  setViewerStatus(status: "artifact-generation" | "loading" | "ready" | "failed"): void {
+    if (status === "artifact-generation") {
+      this.patch({ pipelineStage: "artifact-generation" });
+      return;
+    }
+    if (status === "loading") {
+      this.patch({ pipelineStage: "viewer-loading" });
+      return;
+    }
+    this.patch({ pipelineStage: status === "ready" ? "ready" : "failed" });
+  }
+
+  private async startInitialization(): Promise<void> {
     this.provider.initialize().catch(() => {
       // WebLLMProvider's own contract is "never throws: failures land in state"
       // (see its onStateChange subscription above); this catch only guards
@@ -145,8 +239,7 @@ export class ChatController {
     });
 
     try {
-      const modelSpec = await this.api.createProject();
-      this.patch({ modelSpec, projectId: modelSpec.projectId, projectError: null });
+      await this.retryProject();
     } catch (error) {
       this.patch({ projectError: describeError(error) });
     }
@@ -177,45 +270,75 @@ export class ChatController {
     const projectId = this.state.projectId;
     if (!modelSpec || !projectId) return;
 
+    const recentMessages = this.recentAgentMessages();
     this.appendMessage("user", trimmed);
 
-    const recentMessages: readonly AgentMessage[] = this.pendingClarifyQuestion
-      ? buildClarificationFollowUp(this.pendingClarifyQuestion, trimmed)
-      : [];
-    this.pendingClarifyQuestion = null;
-
-    this.patch({ isBusy: true });
+    this.patch({
+      isBusy: true,
+      requestStatus: "working",
+      failureSource: null,
+      pipelineStage: "provider-request",
+      pipelineStartedAt: this.now(),
+    });
 
     let plan: ModelPlan;
     try {
       plan = await generateModelPlan({ provider: this.provider, request: trimmed, modelSpec, recentMessages });
     } catch (error) {
-      this.patch({ isBusy: false });
+      this.patch({
+        isBusy: false,
+        requestStatus: "failed",
+        failureSource: failureSource(error),
+        pipelineStage: "failed",
+      });
       this.appendMessage("error", describeError(error));
       return;
     }
 
     if (isPureClarify(plan)) {
-      this.pendingClarifyQuestion = plan.operations[0].question;
-      this.patch({ isBusy: false });
+      this.patch({ isBusy: false, requestStatus: "succeeded", pipelineStage: "ready" });
       this.appendMessage("assistant", plan.operations[0].question);
       return;
     }
 
+    this.patch({ pipelineStage: "plan-validation" });
+
     try {
+      this.patch({ pipelineStage: "api-mcp-build" });
       const response = await this.api.applyPlan(projectId, {
         expectedRevision: modelSpec.revision,
         requestId: this.makeId(),
         plan,
       });
+      const unchanged = response.revision === modelSpec.revision;
       this.patch({
         isBusy: false,
-        modelSpec: response.modelSpec,
-        previewUrl: this.api.resolveArtifactUrl(response.preview.url),
+        modelSpec: unchanged ? this.state.modelSpec : response.modelSpec,
+        previewUrl: unchanged
+          ? this.state.previewUrl
+          : response.preview
+            ? this.api.resolveArtifactUrl(response.preview.url)
+            : this.state.previewUrl,
+        artifacts: response.artifacts,
+        validation: response.validation,
+        correlationId: response.correlationId,
+        requestStatus: unchanged ? "no-change" : "succeeded",
+        pipelineStage: unchanged ? "ready" : "x3d-validation",
       });
-      this.appendMessage("assistant", summarizeApplyResult(response));
+      this.appendMessage(
+        "assistant",
+        unchanged ? "No model changes were needed; the current revision remains active." : summarizeApplyResult(response),
+      );
     } catch (error) {
-      this.patch({ isBusy: false });
+      const source = failureSource(error);
+      this.patch({
+        isBusy: false,
+        projectError: source === "session" ? describeError(error) : this.state.projectError,
+        correlationId: error instanceof ApiError ? error.correlationId : this.state.correlationId,
+        requestStatus: source === "session" ? "session-expired" : "failed",
+        failureSource: source,
+        pipelineStage: "failed",
+      });
       this.appendMessage("error", describeError(error));
     }
   }
@@ -223,6 +346,16 @@ export class ChatController {
   private appendMessage(role: ChatMessageRole, text: string): void {
     const message: ChatMessage = { id: this.makeId(), role, text, createdAt: this.now() };
     this.patch({ messages: [...this.state.messages, message] });
+  }
+
+  private recentAgentMessages(): readonly AgentMessage[] {
+    return this.state.messages
+      .filter(
+        (message): message is ChatMessage & { role: "user" | "assistant" } =>
+          message.role === "user" || message.role === "assistant",
+      )
+      .slice(-12)
+      .map((message) => ({ role: message.role, content: message.text }));
   }
 
   private patch(partial: Partial<ChatControllerState>): void {

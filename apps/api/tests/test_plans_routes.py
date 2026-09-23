@@ -68,7 +68,7 @@ def test_ambiguous_clarify_plan_is_rejected_before_touching_mcp(
     response = client_unreachable_mcp.post(f"/api/projects/{session.project_id}/plans", json=body)
 
     assert response.status_code == 422
-    detail = response.json()["detail"]
+    detail = response.json()
     assert detail["code"] == "AMBIGUOUS_TARGET"
     assert detail["message"] == "Which support?"
     assert detail["correlationId"]
@@ -93,7 +93,7 @@ def test_unknown_target_fails_before_touching_mcp_and_does_not_mutate(
     response = client_unreachable_mcp.post(f"/api/projects/{session.project_id}/plans", json=body)
 
     assert response.status_code == 422
-    assert response.json()["detail"]["code"] == "UNKNOWN_TARGET"
+    assert response.json()["code"] == "UNKNOWN_TARGET"
     assert project_service.get_project(session.project_id).revision == 0
 
 
@@ -114,7 +114,7 @@ def test_invalid_dimension_keys_for_kind_is_a_domain_validation_failure(
     response = client_unreachable_mcp.post(f"/api/projects/{session.project_id}/plans", json=body)
 
     assert response.status_code == 422
-    assert response.json()["detail"]["code"] == "DOMAIN_VALIDATION_FAILED"
+    assert response.json()["code"] == "DOMAIN_VALIDATION_FAILED"
     assert project_service.get_project(session.project_id).revision == 0
 
 
@@ -127,7 +127,7 @@ def test_revision_conflict_fails_before_touching_mcp(
     response = client_unreachable_mcp.post(f"/api/projects/{session.project_id}/plans", json=body)
 
     assert response.status_code == 409
-    assert response.json()["detail"]["code"] == "REVISION_CONFLICT"
+    assert response.json()["code"] == "REVISION_CONFLICT"
 
 
 def test_unknown_project_returns_standardized_404(client_unreachable_mcp: TestClient) -> None:
@@ -136,7 +136,7 @@ def test_unknown_project_returns_standardized_404(client_unreachable_mcp: TestCl
     response = client_unreachable_mcp.post("/api/projects/prj_does_not_exist/plans", json=body)
 
     assert response.status_code == 404
-    assert response.json()["detail"]["code"] == "PROJECT_NOT_FOUND"
+    assert response.json()["code"] == "PROJECT_NOT_FOUND"
 
 
 def test_malformed_plan_body_is_rejected_with_400_before_touching_mcp(
@@ -148,7 +148,38 @@ def test_malformed_plan_body_is_rejected_with_400_before_touching_mcp(
     response = client_unreachable_mcp.post(f"/api/projects/{session.project_id}/plans", json=body)
 
     assert response.status_code == 400
-    assert response.json()["detail"]["code"] == "INVALID_PLAN"
+    assert response.json()["code"] == "INVALID_PLAN"
+
+
+def test_string_revision_is_rejected_without_coercion(
+    client_unreachable_mcp: TestClient, project_service: ProjectSessionService
+) -> None:
+    session = project_service.create_project()
+    response = client_unreachable_mcp.post(
+        f"/api/projects/{session.project_id}/plans",
+        json={"expectedRevision": "0", "plan": _CREATE_CUBE_PLAN},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["code"] == "INVALID_PLAN"
+
+
+def test_no_change_does_not_call_mcp_or_create_a_revision(
+    client_unreachable_mcp: TestClient, project_service: ProjectSessionService
+) -> None:
+    session = project_service.create_project()
+    response = client_unreachable_mcp.post(
+        f"/api/projects/{session.project_id}/plans",
+        json={
+            "expectedRevision": 0,
+            "plan": {"intent": "answer", "operations": [{"op": "no_change", "reason": "already correct"}]},
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["revision"] == 0
+    assert response.json()["preview"] is None
+    assert project_service.get_project(session.project_id).revision == 0
 
 
 def test_mcp_unavailable_maps_to_503_and_does_not_mutate(
@@ -160,7 +191,7 @@ def test_mcp_unavailable_maps_to_503_and_does_not_mutate(
     response = client_unreachable_mcp.post(f"/api/projects/{session.project_id}/plans", json=body)
 
     assert response.status_code == 503
-    assert response.json()["detail"]["code"] == "MCP_UNAVAILABLE"
+    assert response.json()["code"] == "MCP_UNAVAILABLE"
     assert project_service.get_project(session.project_id).revision == 0
 
 
@@ -183,7 +214,7 @@ def test_valid_plan_commits_and_returns_validation_and_artifacts(
     assert payload["validation"]["semanticValid"] is True
     assert payload["preview"]["url"] == f"/api/projects/{session.project_id}/artifacts/html?revision=1"
     assert {a["format"] for a in payload["artifacts"]} == {"html", "x3d", "x3dj", "x3dv"}
-    assert all(a["available"] for a in payload["artifacts"])
+    assert {a["format"] for a in payload["artifacts"] if a["available"]} == {"html", "x3d", "x3dv"}
 
     assert project_service.get_project(session.project_id).revision == 1
 
@@ -204,7 +235,7 @@ def test_mcp_tool_error_maps_to_503_and_does_not_mutate(
     response = client.post(f"/api/projects/{session.project_id}/plans", json=body)
 
     assert response.status_code == 503
-    assert response.json()["detail"]["code"] == "MCP_UNAVAILABLE"
+    assert response.json()["code"] == "MCP_UNAVAILABLE"
     assert project_service.get_project(session.project_id).revision == 0
 
 
@@ -224,7 +255,7 @@ def test_unexpected_error_maps_to_500_without_leaking_exception_text(
     response = client.post(f"/api/projects/{session.project_id}/plans", json=body)
 
     assert response.status_code == 500
-    detail = response.json()["detail"]
+    detail = response.json()
     assert detail["code"] == "INTERNAL_ERROR"
     assert "super secret internal detail" not in response.text
 
@@ -242,7 +273,7 @@ def test_oversized_intent_is_rejected_as_complexity_limit_before_touching_mcp(
     response = client.post(f"/api/projects/{session.project_id}/plans", json=body)
 
     assert response.status_code == 413
-    assert response.json()["detail"]["code"] == "COMPLEXITY_LIMIT"
+    assert response.json()["code"] == "COMPLEXITY_LIMIT"
     assert project_service.get_project(session.project_id).revision == 0
 
 
@@ -268,7 +299,7 @@ def test_too_many_operations_is_rejected_as_complexity_limit_before_touching_mcp
     response = client.post(f"/api/projects/{session.project_id}/plans", json=body)
 
     assert response.status_code == 413
-    assert response.json()["detail"]["code"] == "COMPLEXITY_LIMIT"
+    assert response.json()["code"] == "COMPLEXITY_LIMIT"
     assert project_service.get_project(session.project_id).revision == 0
 
 
@@ -299,7 +330,7 @@ def test_object_count_limit_rejects_the_101st_object_before_touching_mcp(
     response = client.post(f"/api/projects/{session.project_id}/plans", json=body)
 
     assert response.status_code == 413
-    assert response.json()["detail"]["code"] == "COMPLEXITY_LIMIT"
+    assert response.json()["code"] == "COMPLEXITY_LIMIT"
     assert project_service.get_project(session.project_id).revision == 0
 
 
@@ -325,7 +356,7 @@ def test_infinite_dimension_is_rejected_as_invalid_plan_before_touching_mcp(
     )
 
     assert response.status_code == 400
-    assert response.json()["detail"]["code"] == "INVALID_PLAN"
+    assert response.json()["code"] == "INVALID_PLAN"
 
 
 async def _broken_route_scene(client: X3DMcpClient) -> None:
@@ -367,7 +398,7 @@ def test_invalid_x3d_does_not_commit(
     response = client.post(f"/api/projects/{session.project_id}/plans", json=body)
 
     assert response.status_code == 422
-    detail = response.json()["detail"]
+    detail = response.json()
     assert detail["code"] == "X3D_VALIDATION_FAILED"
     assert detail["details"]
 

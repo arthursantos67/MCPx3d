@@ -48,12 +48,18 @@ class RevisionConflictError(ProjectServiceError):
         self.current_revision = current_revision
 
 
+class SessionCapacityError(ProjectServiceError):
+    """The in-memory session limit has been reached."""
+
+
 @dataclass
 class ProjectSession:
     project_id: str
     model_spec: ModelSpec
     created_at: float
     last_active_at: float
+    validated_x3d: dict[int, str]
+    html_artifacts: dict[int, str]
 
     @property
     def revision(self) -> int:
@@ -82,15 +88,20 @@ class ProjectSessionService:
         ttl_seconds: float,
         default_units: Units = "mm",
         default_display_scale: float = 1.0,
+        max_sessions: int = 1_000,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self._ttl_seconds = ttl_seconds
         self._default_units = default_units
         self._default_display_scale = default_display_scale
         self._clock = clock
+        self._max_sessions = max_sessions
         self._sessions: dict[str, ProjectSession] = {}
 
     def create_project(self) -> ProjectSession:
+        self.collect_expired()
+        if len(self._sessions) >= self._max_sessions:
+            raise SessionCapacityError("project session limit reached")
         project_id = f"{_PROJECT_ID_PREFIX}{secrets.token_urlsafe(24)}"
         now = self._clock()
         session = ProjectSession(
@@ -102,11 +113,14 @@ class ProjectSessionService:
             ),
             created_at=now,
             last_active_at=now,
+            validated_x3d={},
+            html_artifacts={},
         )
         self._sessions[project_id] = session
         return session
 
     def get_project(self, project_id: str) -> ProjectSession:
+        self.collect_expired()
         session = self._sessions.get(project_id)
         if session is None or self._is_expired(session):
             self._sessions.pop(project_id, None)
@@ -118,7 +132,11 @@ class ProjectSessionService:
         self._sessions.pop(project_id, None)
 
     def commit_revision(
-        self, project_id: str, expected_revision: int, model_spec: ModelSpec
+        self,
+        project_id: str,
+        expected_revision: int,
+        model_spec: ModelSpec,
+        validated_x3d: str | None = None,
     ) -> ProjectSession:
         """Replaces the project's ModelSpec if `expected_revision` is still current.
 
@@ -132,7 +150,24 @@ class ProjectSessionService:
         session.model_spec = model_spec.model_copy(
             update={"revision": expected_revision + 1}
         )
+        session.validated_x3d = {session.revision: validated_x3d} if validated_x3d else {}
+        session.html_artifacts = {}
         return session
+
+    def cache_html_artifact(self, project_id: str, revision: int, content: str) -> None:
+        session = self.get_project(project_id)
+        if session.revision == revision:
+            session.html_artifacts[revision] = content
+
+    def collect_expired(self) -> int:
+        expired = [
+            project_id
+            for project_id, session in self._sessions.items()
+            if self._is_expired(session)
+        ]
+        for project_id in expired:
+            self._sessions.pop(project_id, None)
+        return len(expired)
 
     def _is_expired(self, session: ProjectSession) -> bool:
         return (self._clock() - session.last_active_at) > self._ttl_seconds
@@ -151,4 +186,5 @@ def get_project_service() -> ProjectSessionService:
         ttl_seconds=settings.session_ttl_seconds,
         default_units=settings.default_units,
         default_display_scale=settings.default_display_scale,
+        max_sessions=settings.max_sessions,
     )

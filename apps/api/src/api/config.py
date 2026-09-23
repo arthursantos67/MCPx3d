@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     mcp_request_timeout_seconds: float = Field(default=30.0, gt=0)
 
     session_ttl_seconds: int = Field(default=3600, gt=0)
+    max_sessions: int = Field(default=1_000, gt=0)
 
     default_units: Units = "mm"
     # X3D's implicit native unit is meters; 0.001 keeps mm-authored scenes at a

@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import math
 import re
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, field_validator, model_validator
 
 Units = Literal["mm", "cm", "m", "unitless"]
 PrimitiveKind = Literal["box", "sphere", "cylinder", "cone"]
@@ -19,18 +19,23 @@ PrimitiveKind = Literal["box", "sphere", "cylinder", "cone"]
 _ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
 _COLOR_PATTERN = re.compile(r"^#[0-9a-f]{6}$")
 
-Vec3 = tuple[float, float, float]
+
+def _json_array_to_tuple(value: object) -> object:
+    return tuple(value) if isinstance(value, list) else value
+
+
+Vec3 = Annotated[tuple[float, float, float], BeforeValidator(_json_array_to_tuple)]
 
 
 class Scene(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", strict=True)
 
-    background: str | None = None
+    background: str | None = Field(default=None, min_length=1)
     displayScale: float = Field(gt=0, allow_inf_nan=False)
 
 
 class Transform(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", strict=True)
 
     position: Vec3
     rotation: Vec3
@@ -52,7 +57,7 @@ class Transform(BaseModel):
 
 
 class Material(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", strict=True)
 
     color: str
     transparency: float | None = Field(default=None, ge=0, le=1)
@@ -66,7 +71,7 @@ class Material(BaseModel):
 
 
 class ModelObject(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", strict=True)
 
     id: str
     name: str = Field(min_length=1)
@@ -74,7 +79,7 @@ class ModelObject(BaseModel):
     dimensions: dict[str, float]
     transform: Transform
     material: Material
-    tags: list[str] | None = None
+    tags: list[Annotated[str, Field(min_length=1)]] | None = None
 
     @field_validator("id")
     @classmethod
@@ -95,7 +100,7 @@ class ModelObject(BaseModel):
 
 
 class ModelSpec(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", strict=True)
 
     schemaVersion: Literal["1.0"]
     projectId: str = Field(min_length=1)

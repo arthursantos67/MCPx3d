@@ -12,6 +12,7 @@ scene until reset_scene() is called.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager
 from typing import Any, Literal
@@ -52,6 +53,7 @@ class X3DMcpClient:
 
     def __init__(self, session: ClientSession) -> None:
         self._session = session
+        self._composed_scene: str | None = None
 
     @classmethod
     @asynccontextmanager
@@ -71,6 +73,13 @@ class X3DMcpClient:
             )
             session = await stack.enter_async_context(ClientSession(read_stream, write_stream))
             await session.initialize()
+        except asyncio.CancelledError:
+            try:
+                await stack.aclose()
+            except BaseException as cleanup_error:
+                if _contains_transport_error(cleanup_error):
+                    raise McpUnavailableError(str(cleanup_error)) from cleanup_error
+            raise
         except BaseException as exc:
             # A failed transport task can make anyio's task-group teardown raise its own
             # ExceptionGroup here, which would bury the real cause -- swallow that and
@@ -88,7 +97,17 @@ class X3DMcpClient:
 
     async def reset_scene(self) -> str:
         """Clear the session's scene to an empty state."""
+        self._composed_scene = None
         return await self._call("reset_scene")
+
+    async def compose_scene(
+        self, objects: list[dict[str, Any]], *, background: dict[str, Any] | None = None
+    ) -> str:
+        content = await self._call(
+            "compose_scene", {"objects": objects, "background": background, "encoding": "xml"}
+        )
+        self._composed_scene = content
+        return content
 
     async def create_primitive(
         self,
@@ -138,12 +157,19 @@ class X3DMcpClient:
 
         return def_name
 
+    async def create_background(self, color: tuple[float, float, float]) -> None:
+        await self._create_node("Background", {"skyColor": [list(color)]})
+
     async def get_scene(self, encoding: Literal["xml", "json", "vrml"] = "xml") -> str:
         """Return the session's current scene, serialized in `encoding`."""
+        if encoding == "xml" and self._composed_scene is not None:
+            return self._composed_scene
         return await self._call("get_scene", {"encoding": encoding})
 
     async def validate_current_scene(self) -> str:
         """Schema (XSD) and semantic validation of the session's current scene."""
+        if self._composed_scene is not None:
+            return f"Schema: {await self.validate_x3d(self._composed_scene)}\n\n{await self.validate_semantic(self._composed_scene)}"
         return await self._call("validate_current_scene")
 
     async def validate_x3d(self, content: str, *, encoding: Literal["xml", "json"] = "xml") -> str:
@@ -203,3 +229,11 @@ class X3DMcpClient:
 def _result_text(result: types.CallToolResult) -> str:
     parts = [block.text for block in result.content if isinstance(block, types.TextContent)]
     return "\n".join(parts)
+
+
+def _contains_transport_error(error: BaseException) -> bool:
+    if isinstance(error, (httpx.HTTPError, OSError)):
+        return True
+    if isinstance(error, BaseExceptionGroup):
+        return any(_contains_transport_error(child) for child in error.exceptions)
+    return False

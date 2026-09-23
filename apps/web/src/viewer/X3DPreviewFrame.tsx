@@ -7,6 +7,7 @@ interface X3DPreviewFrameProps {
   /** Absolute URL of the current revision's standalone HTML artifact, or
    * `null` before any revision has committed. */
   readonly previewUrl: string | null
+  readonly onStatusChange?: (status: 'artifact-generation' | 'loading' | 'ready' | 'failed') => void
 }
 
 /**
@@ -19,7 +20,7 @@ interface X3DPreviewFrameProps {
  * blank out the last valid scene (PRD FE-08's last-valid-scene rule; full
  * revision-badge/status polish is Issue #29).
  */
-function X3DPreviewFrame({ previewUrl }: X3DPreviewFrameProps) {
+function X3DPreviewFrame({ previewUrl, onStatusChange }: X3DPreviewFrameProps) {
   const trackerRef = useRef<BlobUrlTracker | null>(null)
   if (trackerRef.current === null) {
     trackerRef.current = new BlobUrlTracker(browserObjectUrlFactory)
@@ -34,6 +35,7 @@ function X3DPreviewFrame({ previewUrl }: X3DPreviewFrameProps) {
     if (!tracker) return
     let cancelled = false
     setError(null)
+    onStatusChange?.('artifact-generation')
 
     fetch(previewUrl)
       .then((response) => {
@@ -42,17 +44,19 @@ function X3DPreviewFrame({ previewUrl }: X3DPreviewFrameProps) {
       })
       .then((html) => {
         if (cancelled) return
+        onStatusChange?.('loading')
         setBlobUrl(tracker.set(html))
       })
       .catch((err: unknown) => {
         if (cancelled) return
         setError(err instanceof Error ? err.message : String(err))
+        onStatusChange?.('failed')
       })
 
     return () => {
       cancelled = true
     }
-  }, [previewUrl])
+  }, [previewUrl, onStatusChange])
 
   useEffect(() => {
     const tracker = trackerRef.current
@@ -76,6 +80,10 @@ function X3DPreviewFrame({ previewUrl }: X3DPreviewFrameProps) {
         title="3D preview"
         src={blobUrl}
         sandbox="allow-scripts"
+        onLoad={() => {
+          trackerRef.current?.markLoaded(blobUrl)
+          onStatusChange?.('ready')
+        }}
       />
       {error && (
         <div className="viewer-frame__error" role="alert">

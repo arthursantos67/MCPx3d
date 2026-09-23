@@ -56,18 +56,18 @@ def test_unknown_project_returns_standardized_404(
     response = client.get("/api/projects/prj_does_not_exist/artifacts/html?revision=0")
 
     assert response.status_code == 404
-    assert response.json()["detail"]["code"] == "PROJECT_NOT_FOUND"
+    assert response.json()["code"] == "PROJECT_NOT_FOUND"
 
 
-def test_mcp_unavailable_maps_to_503(project_service: ProjectSessionService) -> None:
+def test_uncommitted_revision_is_not_available(project_service: ProjectSessionService) -> None:
     session = project_service.create_project()
     app.dependency_overrides[get_settings] = lambda: Settings(mcp_base_url=_CLOSED_PORT_URL)
     client = TestClient(app)
 
     response = client.get(f"/api/projects/{session.project_id}/artifacts/html?revision=0")
 
-    assert response.status_code == 503
-    assert response.json()["detail"]["code"] == "MCP_UNAVAILABLE"
+    assert response.status_code == 404
+    assert response.json()["code"] == "ARTIFACT_UNAVAILABLE"
 
 
 def test_valid_revision_returns_standalone_html(
@@ -104,4 +104,48 @@ def test_stale_revision_maps_to_404_artifact_unavailable(
     response = client.get(f"/api/projects/{session.project_id}/artifacts/html?revision=0")
 
     assert response.status_code == 404
-    assert response.json()["detail"]["code"] == "ARTIFACT_UNAVAILABLE"
+    assert response.json()["code"] == "ARTIFACT_UNAVAILABLE"
+
+
+def test_manifest_download_uses_attachment_content_disposition(
+    project_service: ProjectSessionService,
+) -> None:
+    session = project_service.create_project()
+    client = TestClient(app)
+
+    response = client.get(f"/api/projects/{session.project_id}/artifacts/manifest?revision=0")
+
+    assert response.status_code == 200
+    assert response.headers["content-disposition"].startswith("attachment;")
+    assert response.headers["content-type"].startswith("application/json")
+    assert response.json()["projectId"] == session.project_id
+
+
+def test_html_download_sets_attachment_content_disposition(
+    x3d_mcp_server: str, project_service: ProjectSessionService
+) -> None:
+    app.dependency_overrides[get_settings] = lambda: Settings(mcp_base_url=AnyHttpUrl(x3d_mcp_server))
+    client = TestClient(app)
+    session = project_service.create_project()
+    commit = client.post(
+        f"/api/projects/{session.project_id}/plans",
+        json={"expectedRevision": 0, "plan": _CREATE_CUBE_PLAN},
+    )
+    assert commit.status_code == 200
+
+    response = client.get(f"/api/projects/{session.project_id}/artifacts/html?revision=1&download=true")
+
+    assert response.status_code == 200
+    assert response.headers["content-disposition"].startswith("attachment;")
+
+
+def test_x3dj_download_is_rejected_without_contacting_mcp(
+    project_service: ProjectSessionService,
+) -> None:
+    session = project_service.create_project()
+    client = TestClient(app)
+
+    response = client.get(f"/api/projects/{session.project_id}/artifacts/x3dj?revision=0")
+
+    assert response.status_code == 404
+    assert response.json()["code"] == "ARTIFACT_UNAVAILABLE"

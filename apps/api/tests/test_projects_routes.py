@@ -61,7 +61,7 @@ def test_get_unknown_project_returns_standardized_404(
     response = client.get("/api/projects/prj_does_not_exist")
 
     assert response.status_code == 404
-    body = response.json()["detail"]
+    body = response.json()
     assert body["code"] == "PROJECT_NOT_FOUND"
     assert "correlationId" in body
     assert "Traceback" not in body["message"]

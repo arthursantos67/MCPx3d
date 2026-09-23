@@ -32,7 +32,7 @@ test("set() returns a new URL and does not revoke anything the first time", () =
   assert.equal(tracker.get(), url);
 });
 
-test("a second set() revokes the previous URL only after the new one is created", () => {
+test("a second set() retains the previous URL until the new frame has loaded", () => {
   const { factory, created, revoked } = makeFakeFactory();
   const tracker = new BlobUrlTracker(factory);
 
@@ -40,8 +40,12 @@ test("a second set() revokes the previous URL only after the new one is created"
   const second = tracker.set("<html>two</html>");
 
   assert.equal(created.length, 2);
-  assert.deepEqual(revoked, [first]);
+  assert.deepEqual(revoked, []);
   assert.equal(tracker.get(), second);
+
+  tracker.markLoaded(second);
+
+  assert.deepEqual(revoked, [first]);
 });
 
 test("clear() revokes the current URL and resets to null", () => {
@@ -53,6 +57,17 @@ test("clear() revokes the current URL and resets to null", () => {
 
   assert.deepEqual(revoked, [url]);
   assert.equal(tracker.get(), null);
+});
+
+test("clear() revokes a retained URL when replacement never loads", () => {
+  const { factory, revoked } = makeFakeFactory();
+  const tracker = new BlobUrlTracker(factory);
+  const first = tracker.set("<html>one</html>");
+  const second = tracker.set("<html>two</html>");
+
+  tracker.clear();
+
+  assert.deepEqual(revoked, [second, first]);
 });
 
 test("clear() on an already-empty tracker does not call revoke", () => {

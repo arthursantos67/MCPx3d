@@ -3,7 +3,7 @@
  * (PRD §9.1/§9.2/§9.3, Issue #27): create a project session and apply a
  * `ModelPlan`. Every error response from `apps/api` -- both `api_error` and
  * `error_response` in `apps/api/src/api/errors.py` -- shares the same
- * `{"detail": {code, message, details, correlationId}}` body (PRD §9.4);
+ * `{code, message, details, correlationId}` body (PRD §9.4);
  * `ApiError` below is that shape parsed into a typed, throwable error so
  * callers (`useChatController`) can surface it cleanly instead of a raw
  * `Response`.
@@ -24,6 +24,7 @@ export type ArtifactFormat = "html" | "x3d" | "x3dj" | "x3dv";
 export interface ArtifactDescriptor {
   readonly format: ArtifactFormat;
   readonly available: boolean;
+  readonly reason: string | null;
 }
 
 export interface ApplyPlanResponse {
@@ -31,8 +32,9 @@ export interface ApplyPlanResponse {
   readonly revision: number;
   readonly modelSpec: ModelSpec;
   readonly validation: ValidationSummary;
-  readonly preview: { readonly url: string };
+  readonly preview: { readonly url: string } | null;
   readonly artifacts: readonly ArtifactDescriptor[];
+  readonly correlationId: string | null;
 }
 
 export interface ApplyPlanRequestBody {
@@ -74,8 +76,8 @@ function baseUrl(): string {
 
 async function throwApiError(response: Response): Promise<never> {
   try {
-    const body = (await response.json()) as { detail?: ErrorDetail };
-    if (body.detail) throw new ApiError(response.status, body.detail);
+    const body = (await response.json()) as ErrorDetail;
+    if (body.code && body.message) throw new ApiError(response.status, body);
   } catch (error) {
     if (error instanceof ApiError) throw error;
   }
@@ -101,7 +103,28 @@ export async function applyPlan(
     body: JSON.stringify(body),
   });
   if (!response.ok) return throwApiError(response);
-  return (await response.json()) as ApplyPlanResponse;
+  const result = (await response.json()) as Omit<ApplyPlanResponse, "correlationId">;
+  return { ...result, correlationId: response.headers.get("X-Correlation-Id") };
+}
+
+export async function deleteProject(projectId: string): Promise<void> {
+  const response = await fetch(`${baseUrl()}/api/projects/${projectId}`, { method: "DELETE" });
+  if (!response.ok) return throwApiError(response);
+}
+
+export interface McpHealth {
+  readonly reachable: boolean;
+  readonly detail: string | null;
+}
+
+export async function getMcpHealth(): Promise<McpHealth> {
+  const response = await fetch(`${baseUrl()}/api/health/mcp`);
+  if (!response.ok) return throwApiError(response);
+  return (await response.json()) as McpHealth;
+}
+
+export function artifactUrl(projectId: string, format: ArtifactFormat | "manifest", revision: number): string {
+  return `${baseUrl()}/api/projects/${projectId}/artifacts/${format}?revision=${revision}&download=true`;
 }
 
 export function resolveArtifactUrl(relativeUrl: string): string {

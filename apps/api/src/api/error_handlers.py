@@ -29,7 +29,7 @@ from __future__ import annotations
 
 from uuid import uuid4
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
@@ -44,7 +44,11 @@ from api.errors import error_response
 from api.limits import ComplexityLimitError
 from api.mcp_client import X3DMcpError
 from api.mutation import MutationError, UnknownTargetError
-from api.projects import ProjectNotFoundError, RevisionConflictError
+from api.projects import (
+    ProjectNotFoundError,
+    RevisionConflictError,
+    SessionCapacityError,
+)
 from api.x3d_validation import X3DValidationError
 
 
@@ -69,6 +73,26 @@ def _x3d_validation_details(exc: X3DValidationError) -> list[object]:
 
 
 def register_error_handlers(app: FastAPI) -> None:
+    @app.exception_handler(HTTPException)
+    async def _http_exception(request: Request, exc: HTTPException) -> JSONResponse:
+        detail = exc.detail
+        if isinstance(detail, dict) and isinstance(detail.get("code"), str) and isinstance(
+            detail.get("message"), str
+        ):
+            return error_response(
+                exc.status_code,
+                detail["code"],
+                detail["message"],
+                details=detail.get("details") if isinstance(detail.get("details"), list) else None,
+                correlation_id=_correlation_id(request),
+            )
+        return error_response(
+            exc.status_code,
+            "HTTP_ERROR",
+            str(detail),
+            correlation_id=_correlation_id(request),
+        )
+
     @app.exception_handler(ProjectNotFoundError)
     async def _project_not_found(request: Request, exc: ProjectNotFoundError) -> JSONResponse:
         return error_response(
@@ -86,6 +110,10 @@ def register_error_handlers(app: FastAPI) -> None:
             f"Expected revision {exc.expected_revision}, current revision is {exc.current_revision}.",
             correlation_id=_correlation_id(request),
         )
+
+    @app.exception_handler(SessionCapacityError)
+    async def _session_capacity(request: Request, exc: SessionCapacityError) -> JSONResponse:
+        return error_response(429, "SESSION_LIMIT", str(exc), correlation_id=_correlation_id(request))
 
     @app.exception_handler(UnknownTargetError)
     async def _unknown_target(request: Request, exc: UnknownTargetError) -> JSONResponse:

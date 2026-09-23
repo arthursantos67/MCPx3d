@@ -21,15 +21,22 @@ change.
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Query, Response
 
-from api.artifacts import build_html_artifact
+from api.artifacts import (
+    ArtifactConversionError,
+    StaleArtifactRequestError,
+    build_converted_artifact,
+    build_html_artifact,
+    build_model_spec_artifact,
+    build_x3d_artifact,
+    normalized_artifact_filename,
+)
 from api.config import Settings, get_settings
 from api.mcp_client import X3DMcpClient
 from api.projects import ProjectSessionService, get_project_service
-from api.x3d_validation import build_and_validate_candidate
 
 router = APIRouter(prefix="/api/projects", tags=["artifacts"])
 
@@ -40,28 +47,103 @@ async def get_html_artifact(
     revision: Annotated[int, Query(ge=0)],
     project_service: Annotated[ProjectSessionService, Depends(get_project_service)],
     settings: Annotated[Settings, Depends(get_settings)],
+    download: bool = False,
 ) -> Response:
     # ProjectNotFoundError propagates to the PROJECT_NOT_FOUND handler.
     session = project_service.get_project(project_id)
+    snapshot_revision = session.revision
+    x3d_content = session.validated_x3d.get(snapshot_revision)
+    if revision != snapshot_revision or x3d_content is None:
+        raise StaleArtifactRequestError(project_id, revision, snapshot_revision)
 
-    # McpUnavailableError/McpToolError/X3DValidationError propagate to their handlers.
+    cached_html = session.html_artifacts.get(snapshot_revision)
+    if cached_html is not None:
+        return Response(
+            content=cached_html,
+            media_type="text/html; charset=utf-8",
+            headers={
+                "Content-Disposition": _content_disposition(
+                    normalized_artifact_filename(project_id, snapshot_revision, "html"), download
+                )
+            },
+        )
+
     async with X3DMcpClient.connect(
         str(settings.mcp_base_url), settings.mcp_request_timeout_seconds
     ) as client:
-        _def_names, validation = await build_and_validate_candidate(client, session.model_spec)
-
-        # StaleArtifactRequestError/ArtifactTooLargeError propagate to their handlers.
         artifact = await build_html_artifact(
             client,
             project_id=project_id,
-            revision=session.revision,
-            x3d_content=validation.content,
+            revision=snapshot_revision,
+            x3d_content=x3d_content,
             requested_revision=revision,
             max_bytes=settings.max_artifact_bytes,
         )
+    project_service.cache_html_artifact(project_id, snapshot_revision, artifact.content)
 
     return Response(
         content=artifact.content,
         media_type=artifact.media_type,
-        headers={"Content-Disposition": f'inline; filename="{artifact.filename}"'},
+        headers={"Content-Disposition": _content_disposition(artifact.filename, download)},
+    )
+
+
+def _content_disposition(filename: str, download: bool) -> str:
+    disposition = "attachment" if download else "inline"
+    return f'{disposition}; filename="{filename}"'
+
+
+ArtifactFormat = Literal["x3d", "x3dj", "x3dv", "manifest"]
+
+
+@router.get("/{project_id}/artifacts/{format}")
+async def get_download_artifact(
+    project_id: str,
+    format: ArtifactFormat,
+    revision: Annotated[int, Query(ge=0)],
+    project_service: Annotated[ProjectSessionService, Depends(get_project_service)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> Response:
+    session = project_service.get_project(project_id)
+    x3d_content = session.validated_x3d.get(session.revision)
+
+    if format == "manifest":
+        artifact = build_model_spec_artifact(
+            project_id=project_id,
+            revision=session.revision,
+            model_spec=session.model_spec,
+            requested_revision=revision,
+            max_bytes=settings.max_artifact_bytes,
+        )
+    else:
+        if format == "x3dj":
+            raise ArtifactConversionError(format, "X3DJ is unavailable for the pinned X3D toolchain")
+        if x3d_content is None:
+            raise StaleArtifactRequestError(project_id, revision, session.revision)
+        if format == "x3d":
+            artifact = build_x3d_artifact(
+                project_id=project_id,
+                revision=session.revision,
+                x3d_content=x3d_content,
+                requested_revision=revision,
+                max_bytes=settings.max_artifact_bytes,
+            )
+        else:
+            async with X3DMcpClient.connect(
+                str(settings.mcp_base_url), settings.mcp_request_timeout_seconds
+            ) as client:
+                artifact = await build_converted_artifact(
+                    client,
+                    format=format,
+                    project_id=project_id,
+                    revision=session.revision,
+                    x3d_content=x3d_content,
+                    requested_revision=revision,
+                    max_bytes=settings.max_artifact_bytes,
+                )
+
+    return Response(
+        content=artifact.content,
+        media_type=artifact.media_type,
+        headers={"Content-Disposition": _content_disposition(artifact.filename, True)},
     )

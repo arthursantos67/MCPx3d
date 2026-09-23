@@ -117,6 +117,11 @@ class TestParseSemanticReport:
             Diagnostic("info", "unused-def", "DEF='y' is defined but never USE'd."),
         )
 
+    def test_unknown_or_incomplete_report_is_an_error(self) -> None:
+        assert _parse_semantic_report("validation completed") == (
+            Diagnostic("error", "semantic-report-protocol", "Unrecognized or incomplete semantic report."),
+        )
+
 
 class TestValidationResultSummary:
     def test_to_summary_matches_fr23_shape(self) -> None:
@@ -136,7 +141,6 @@ class TestValidationResultSummary:
             "semanticValid": True,
             "warnings": [
                 {"check": "naming-convention", "message": "bad name"},
-                {"check": "unused-def", "message": "unused"},
             ],
             "autofixes": [{"node": "Box", "from": "appearance", "to": "geometry"}],
         }

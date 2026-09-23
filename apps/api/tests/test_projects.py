@@ -150,6 +150,30 @@ def test_expired_project_returns_not_found() -> None:
         service.get_project(session.project_id)
 
 
+def test_creating_a_project_collects_expired_sessions() -> None:
+    clock = _FakeClock()
+    service = _service(ttl_seconds=60.0, clock=clock)
+    expired = service.create_project()
+
+    clock.advance(61.0)
+    active = service.create_project()
+
+    assert service.collect_expired() == 0
+    with pytest.raises(ProjectNotFoundError):
+        service.get_project(expired.project_id)
+    assert service.get_project(active.project_id).project_id == active.project_id
+
+
+def test_session_limit_rejects_new_live_sessions() -> None:
+    service = ProjectSessionService(ttl_seconds=3600.0, max_sessions=1, clock=_FakeClock())
+    service.create_project()
+
+    from api.projects import SessionCapacityError
+
+    with pytest.raises(SessionCapacityError):
+        service.create_project()
+
+
 def test_active_project_is_not_expired_by_ttl_alone() -> None:
     clock = _FakeClock()
     service = _service(ttl_seconds=60.0, clock=clock)

@@ -24,6 +24,7 @@ export const browserObjectUrlFactory: ObjectUrlFactory = {
  */
 export class BlobUrlTracker {
   private current: string | null = null;
+  private retired: string[] = [];
   private readonly factory: ObjectUrlFactory;
 
   constructor(factory: ObjectUrlFactory) {
@@ -34,12 +35,20 @@ export class BlobUrlTracker {
     const next = this.factory.create(html);
     const previous = this.current;
     this.current = next;
-    if (previous) this.factory.revoke(previous);
+    if (previous) this.retired.push(previous);
     return next;
+  }
+
+  markLoaded(url: string): void {
+    if (url !== this.current) return;
+    for (const retired of this.retired) this.factory.revoke(retired);
+    this.retired = [];
   }
 
   clear(): void {
     if (this.current) this.factory.revoke(this.current);
+    for (const retired of this.retired) this.factory.revoke(retired);
+    this.retired = [];
     this.current = null;
   }
 

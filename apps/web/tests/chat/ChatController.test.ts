@@ -4,7 +4,7 @@ import { test } from "node:test";
 import { MockLLMProvider, type MockResponse } from "../../../../packages/agent/src/mock-provider.ts";
 import type { ModelSpec } from "../../../../packages/domain/ts/src/model-spec.ts";
 
-import type { ApplyPlanRequestBody, ApplyPlanResponse } from "../../src/api/client.ts";
+import { ApiError, type ApplyPlanRequestBody, type ApplyPlanResponse } from "../../src/api/client.ts";
 import { ChatController, type AgentProvider, type ChatApi } from "../../src/chat/ChatController.ts";
 import type { AgentStatus } from "../../src/chat/types.ts";
 
@@ -53,6 +53,7 @@ function makeFakeApi(
       if (!applyResult) throw new Error("applyPlan should not be called in this test");
       return applyResult(body);
     },
+    deleteProject: async () => {},
     resolveArtifactUrl: (relativeUrl) => `http://test${relativeUrl}`,
   };
   return { api, applyCalls };
@@ -74,7 +75,8 @@ test("a successful request updates modelSpec/previewUrl and appends an assistant
     modelSpec: { ...spec, revision: 1 },
     validation: { schemaValid: true, semanticValid: true, warnings: [], autofixes: [] },
     preview: { url: "/api/projects/prj_test/artifacts/html?revision=1" },
-    artifacts: [{ format: "html", available: true }],
+    artifacts: [{ format: "html", available: true, reason: null }],
+    correlationId: "request-1",
   }));
   const controller = new ChatController(provider, api);
   await controller.initialize();
@@ -144,7 +146,8 @@ test("a second send while one is already in flight is a no-op (duplicate-submit 
     modelSpec: { ...spec, revision: 1 },
     validation: { schemaValid: true, semanticValid: true, warnings: [], autofixes: [] },
     preview: { url: "/api/projects/prj_test/artifacts/html?revision=1" },
-    artifacts: [{ format: "html", available: true }],
+    artifacts: [{ format: "html", available: true, reason: null }],
+    correlationId: "request-1",
   }));
   const controller = new ChatController(provider, api);
   await controller.initialize();
@@ -172,4 +175,76 @@ test("canSend reflects an unsupported local AI state", async () => {
 
   assert.equal(gate.canSend, false);
   if (!gate.canSend) assert.equal(gate.reason, "No WebGPU adapter.");
+});
+
+test("a failed update preserves the valid preview and revision for retry", async () => {
+  const spec = emptySpec(1);
+  const { provider } = makeFakeProvider([CREATE_CUBE_PLAN]);
+  const { api } = makeFakeApi(spec, () => {
+    throw new ApiError(503, { code: "MCP_UNAVAILABLE", message: "MCP is unavailable.", correlationId: "request-2" });
+  });
+  const controller = new ChatController(provider, api);
+  await controller.initialize();
+  controller.setViewerStatus("ready");
+  const previewUrl = "http://test/api/projects/prj_test/artifacts/html?revision=1";
+  (controller as unknown as { patch: (state: object) => void }).patch({ previewUrl });
+
+  await controller.sendMessage("make it larger");
+
+  const state = controller.getState();
+  assert.equal(state.modelSpec?.revision, 1);
+  assert.equal(state.previewUrl, previewUrl);
+  assert.equal(state.requestStatus, "failed");
+  assert.equal(state.failureSource, "mcp");
+  assert.equal(controller.canSend().canSend, true);
+});
+
+test("no_change keeps the current artifact and does not advance the revision", async () => {
+  const spec = emptySpec(1);
+  const previewUrl = "http://test/api/projects/prj_test/artifacts/html?revision=1";
+  const { provider } = makeFakeProvider([{ intent: "no_change", operations: [{ op: "no_change", reason: "Already correct." }] }]);
+  const { api } = makeFakeApi(spec, () => ({
+    projectId: "prj_test",
+    revision: 1,
+    modelSpec: spec,
+    validation: { schemaValid: true, semanticValid: true, warnings: [], autofixes: [] },
+    preview: { url: "/api/projects/prj_test/artifacts/html?revision=1" },
+    artifacts: [{ format: "html", available: true, reason: null }],
+    correlationId: "request-3",
+  }));
+  const controller = new ChatController(provider, api);
+  await controller.initialize();
+  (controller as unknown as { patch: (state: object) => void }).patch({ previewUrl });
+
+  await controller.sendMessage("leave it as it is");
+
+  const state = controller.getState();
+  assert.equal(state.modelSpec?.revision, 1);
+  assert.equal(state.previewUrl, previewUrl);
+  assert.equal(state.requestStatus, "no-change");
+});
+
+test("an expired project preserves the last scene until explicit recreation, then clears stale state", async () => {
+  const spec = emptySpec(1);
+  const { provider } = makeFakeProvider([CREATE_CUBE_PLAN]);
+  const { api } = makeFakeApi(spec, () => {
+    throw new ApiError(404, { code: "PROJECT_NOT_FOUND", message: "Project expired.", correlationId: "request-4" });
+  });
+  const controller = new ChatController(provider, api);
+  await controller.initialize();
+  (controller as unknown as { patch: (state: object) => void }).patch({
+    previewUrl: "http://test/api/projects/prj_test/artifacts/html?revision=1",
+  });
+
+  await controller.sendMessage("change the cube");
+
+  assert.equal(controller.getState().requestStatus, "session-expired");
+  assert.equal(controller.getState().previewUrl, "http://test/api/projects/prj_test/artifacts/html?revision=1");
+  assert.equal(controller.canSend().canSend, false);
+
+  await controller.retryProject();
+
+  assert.equal(controller.getState().projectError, null);
+  assert.equal(controller.getState().previewUrl, null);
+  assert.equal(controller.getState().messages.length, 0);
 });

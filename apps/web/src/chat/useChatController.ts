@@ -97,6 +97,10 @@ export interface UseChatController {
   readonly state: ChatControllerState;
   readonly canSend: () => SendGate;
   readonly sendMessage: (text: string) => void;
+  readonly retryProject: () => void;
+  readonly resetProject: () => void;
+  readonly renameProject: (name: string) => void;
+  readonly setViewerStatus: (status: "artifact-generation" | "loading" | "ready" | "failed") => void;
 }
 
 export function useChatController(): UseChatController {
@@ -107,6 +111,7 @@ export function useChatController(): UseChatController {
 
   useEffect(() => {
     void controller.initialize();
+    return () => controller.dispose();
   }, [controller]);
 
   const subscribe = useCallback(
@@ -123,6 +128,17 @@ export function useChatController(): UseChatController {
     [controller],
   );
   const canSend = useCallback(() => controller.canSend(), [controller]);
+  const retryProject = useCallback(() => {
+    void controller.retryProject();
+  }, [controller]);
+  const resetProject = useCallback(() => {
+    void controller.resetProject();
+  }, [controller]);
+  const renameProject = useCallback((name: string) => controller.renameProject(name), [controller]);
+  const setViewerStatus = useCallback(
+    (status: "artifact-generation" | "loading" | "ready" | "failed") => controller.setViewerStatus(status),
+    [controller],
+  );
 
-  return { state, sendMessage, canSend };
+  return { state, sendMessage, canSend, retryProject, resetProject, renameProject, setViewerStatus };
 }

@@ -9,6 +9,7 @@ interface ChatPanelProps {
   readonly state: ChatControllerState
   readonly sendMessage: (text: string) => void
   readonly canSend: () => SendGate
+  readonly retryProject: () => void
   readonly onOpenProviderSettings: () => void
 }
 
@@ -21,7 +22,7 @@ interface ChatPanelProps {
  * -- and the single `WebLLMProvider`/project session it owns -- is also the
  * source of `previewUrl` for the viewer panel next to it.
  */
-function ChatPanel({ state, sendMessage, canSend, onOpenProviderSettings }: ChatPanelProps) {
+function ChatPanel({ state, sendMessage, canSend, retryProject, onOpenProviderSettings }: ChatPanelProps) {
   const gate = canSend()
   const progressVisible = state.isBusy || state.agentPhase === 'loading'
   const progressLabel = state.isBusy ? 'Generating…' : (state.agentDetail ?? 'Loading local model…')
@@ -34,6 +35,11 @@ function ChatPanel({ state, sendMessage, canSend, onOpenProviderSettings }: Chat
       </div>
       <div className="workspace-chat__composer">
         <GenerationProgress visible={progressVisible} label={progressLabel} />
+        {state.projectError && (
+          <button type="button" onClick={retryProject}>
+            {state.requestStatus === 'session-expired' ? 'Recreate expired project' : 'Start a new project'}
+          </button>
+        )}
         <PromptComposer
           gate={gate}
           onSend={sendMessage}

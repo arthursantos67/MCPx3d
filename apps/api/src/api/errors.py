@@ -78,7 +78,7 @@ def error_response(
     _log(status_code, code, correlation_id, message)
     response = JSONResponse(
         status_code=status_code,
-        content={"detail": _detail(code, message, details, correlation_id)},
+        content=_detail(code, message, details, correlation_id),
     )
     if correlation_id:
         response.headers["X-Correlation-Id"] = correlation_id

@@ -33,7 +33,7 @@ Serves at `http://localhost:8000`.
 ```bash
 cd apps/api
 cp .env.example .env  # optional, defaults work out of the box
-uv run uvicorn api.main:app --reload --port 8001
+uv run api
 ```
 
 Serves at `http://localhost:8001` (interactive docs at `/docs`).

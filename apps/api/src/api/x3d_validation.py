@@ -88,7 +88,7 @@ class ValidationResult:
             "warnings": [
                 {"check": d.check, "message": d.message}
                 for d in self.semantic_diagnostics
-                if d.level != "error"
+                if d.level == "warning"
             ],
             "autofixes": list(self.autofixes),
         }
@@ -104,24 +104,40 @@ def _parse_semantic_report(report: str) -> tuple[Diagnostic, ...]:
 
     diagnostics: list[Diagnostic] = []
     level: DiagnosticLevel | None = None
+    saw_report = False
+    saw_section = False
+    saw_diagnostic = False
     for line in report.splitlines():
+        if line == "# Semantic Check Report":
+            saw_report = True
+            continue
         section_level = _SECTION_LEVELS.get(line)
         if section_level is not None:
             level = section_level
+            saw_section = True
             continue
         match = _DIAGNOSTIC_LINE.match(line)
         if match is not None and level is not None:
             diagnostics.append(Diagnostic(level, match["check"], match["message"]))
-    return tuple(diagnostics)
+            saw_diagnostic = True
+    if saw_report and saw_section and saw_diagnostic:
+        return tuple(diagnostics)
+    return (Diagnostic("error", "semantic-report-protocol", "Unrecognized or incomplete semantic report."),)
 
 
 async def validate_scene_content(client: X3DMcpClient, content: str) -> ValidationResult:
     """Runs schema + semantic validation against arbitrary X3D `content`."""
-    schema = json.loads(await client.validate_x3d(content))
+    try:
+        schema = json.loads(await client.validate_x3d(content))
+        schema_valid = schema["valid"] is True
+        schema_errors = tuple(schema["errors"])
+    except (TypeError, KeyError, json.JSONDecodeError) as exc:
+        schema_valid = False
+        schema_errors = (f"Invalid schema validation response: {exc}",)
     semantic_report = await client.validate_semantic(content)
     return ValidationResult(
-        schema_valid=bool(schema["valid"]),
-        schema_errors=tuple(schema["errors"]),
+        schema_valid=schema_valid,
+        schema_errors=schema_errors,
         semantic_diagnostics=_parse_semantic_report(semantic_report),
         autofixes=(),
         content=content,

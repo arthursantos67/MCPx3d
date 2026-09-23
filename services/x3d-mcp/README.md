@@ -3,7 +3,7 @@
 Runs the upstream [Web3D Consortium `x3d_mcp`](https://github.com/Web3DConsortium/x3d_mcp) server as a pinned, reproducible dependency in Streamable HTTP mode.
 
 - `vendor/` — git submodule pinned to a tested upstream commit (see `docs/x3d-mcp.md`). Do not edit files inside it; changes belong upstream.
-- `run.sh` — starts the server with the correct transport/env and a working dependency pin.
+- `run.sh` — executable POSIX entrypoint that starts the server with the correct transport/env and a working dependency pin.
 - `.env.example` — copy to `.env` and adjust `PORT`/`HOST` if needed.
 
 ## Setup

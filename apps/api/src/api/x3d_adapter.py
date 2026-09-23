@@ -45,6 +45,32 @@ async def apply_model_spec(client: X3DMcpClient, spec: ModelSpec) -> dict[str, s
     await client.reset_scene()
 
     def_names: dict[str, str] = {}
+    if _can_compose_in_batch(spec):
+        objects: list[dict[str, object]] = []
+        for obj in spec.objects:
+            def_name = _def_name(obj.id)
+            objects.append(
+                {
+                    "shape": obj.kind,
+                    "size": _compose_dimensions(obj.kind, obj.dimensions, spec.scene.displayScale),
+                    "translation": list(_scale_vec3(obj.transform.position, spec.scene.displayScale)),
+                    "rotation": list(euler_xyz_to_axis_angle(obj.transform.rotation)),
+                    "color": list(_hex_to_rgb(obj.material.color)),
+                    "def_name": def_name,
+                }
+            )
+            def_names[obj.id] = def_name
+        background = (
+            {"skyColor": list(_hex_to_rgb(spec.scene.background))}
+            if spec.scene.background is not None
+            else None
+        )
+        await client.compose_scene(objects, background=background)
+        return def_names
+
+    if spec.scene.background is not None:
+        await client.create_background(_hex_to_rgb(spec.scene.background))
+
     for obj in spec.objects:
         def_name = _def_name(obj.id)
         await client.create_primitive(
@@ -60,6 +86,29 @@ async def apply_model_spec(client: X3DMcpClient, spec: ModelSpec) -> dict[str, s
         def_names[obj.id] = def_name
 
     return def_names
+
+
+def _can_compose_in_batch(spec: ModelSpec) -> bool:
+    return all(
+        obj.material.transparency is None and obj.transform.scale == (1.0, 1.0, 1.0)
+        for obj in spec.objects
+    )
+
+
+def _compose_dimensions(
+    kind: PrimitiveKind, dimensions: dict[str, float], display_scale: float
+) -> list[float]:
+    if kind == "box":
+        return [
+            dimensions["width"] * display_scale,
+            dimensions["height"] * display_scale,
+            dimensions["depth"] * display_scale,
+        ]
+    if kind == "sphere":
+        return [dimensions["radius"] * display_scale]
+    if kind == "cylinder":
+        return [dimensions["radius"] * display_scale, dimensions["height"] * display_scale]
+    return [dimensions["bottomRadius"] * display_scale, dimensions["height"] * display_scale]
 
 
 def _def_name(object_id: str) -> str:

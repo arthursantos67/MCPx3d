@@ -7,7 +7,7 @@ on:
 
 jobs:
   web:
-    name: web (lint, typecheck, build)
+    name: TypeScript (lint, typecheck, test)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -18,15 +18,34 @@ jobs:
           cache-dependency-path: package-lock.json
       - run: npm ci
       - run: npm run lint --workspace web
-      - run: npm run typecheck --workspace web
-      - run: npm run build --workspace web
+      - run: npm run typecheck
+      - run: npm test
+      - run: test -x services/x3d-mcp/run.sh
 
   api:
-    name: api (lint, typecheck)
+    name: API (lint, typecheck, test)
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: apps/api
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: astral-sh/setup-uv@v3
+        with:
+          version: "0.12.17"
+      - run: uv sync
+      - run: uv run ruff check .
+      - run: uv run mypy src
+      - run: uv run pytest
+
+  domain-python:
+    name: domain-python (lint, typecheck, test)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/domain/python
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v3
@@ -35,3 +54,4 @@ jobs:
       - run: uv sync
       - run: uv run ruff check .
       - run: uv run mypy src
+      - run: uv run pytest

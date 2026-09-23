@@ -12,7 +12,7 @@ import math
 import re
 from typing import Annotated, Literal
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
+from pydantic import AfterValidator, BaseModel, BeforeValidator, ConfigDict, Field, model_validator
 
 from domain.model_spec import PrimitiveKind
 
@@ -47,13 +47,21 @@ def _check_finite_vec3(value: tuple[float, float, float]) -> tuple[float, float,
     return value
 
 
+def _json_array_to_tuple(value: object) -> object:
+    return tuple(value) if isinstance(value, list) else value
+
+
 def _check_nonzero_vec3(value: tuple[float, float, float]) -> tuple[float, float, float]:
     if any(component == 0 for component in value):
         raise ValueError("factor components must be nonzero")
     return value
 
 
-Vec3 = Annotated[tuple[float, float, float], AfterValidator(_check_finite_vec3)]
+Vec3 = Annotated[
+    tuple[float, float, float],
+    BeforeValidator(_json_array_to_tuple),
+    AfterValidator(_check_finite_vec3),
+]
 ObjectId = Annotated[str, AfterValidator(_check_id)]
 Color = Annotated[str, AfterValidator(_check_color)]
 Dimensions = Annotated[dict[str, float], AfterValidator(_check_dimensions)]
@@ -61,7 +69,7 @@ NonzeroVec3 = Annotated[Vec3, AfterValidator(_check_nonzero_vec3)]
 
 
 class CreateObject(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", strict=True)
 
     op: Literal["create_object"] = "create_object"
     id: ObjectId | None = None
@@ -71,18 +79,18 @@ class CreateObject(BaseModel):
     position: Vec3 | None = None
     rotation: Vec3 | None = None
     color: Color | None = None
-    tags: list[str] | None = None
+    tags: list[Annotated[str, Field(min_length=1)]] | None = None
 
 
 class DeleteObject(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", strict=True)
 
     op: Literal["delete_object"] = "delete_object"
     target: ObjectId
 
 
 class DuplicateObject(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", strict=True)
 
     op: Literal["duplicate_object"] = "duplicate_object"
     target: ObjectId
@@ -91,7 +99,7 @@ class DuplicateObject(BaseModel):
 
 
 class SetDimensions(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", strict=True)
 
     op: Literal["set_dimensions"] = "set_dimensions"
     target: ObjectId
@@ -101,7 +109,7 @@ class SetDimensions(BaseModel):
 class TranslateObject(BaseModel):
     """Moves `target` by `delta`, relative to its current position."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", strict=True)
 
     op: Literal["translate_object"] = "translate_object"
     target: ObjectId
@@ -111,7 +119,7 @@ class TranslateObject(BaseModel):
 class RotateObject(BaseModel):
     """Rotates `target` by `delta` (radians per axis), relative to its current rotation."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", strict=True)
 
     op: Literal["rotate_object"] = "rotate_object"
     target: ObjectId
@@ -121,7 +129,7 @@ class RotateObject(BaseModel):
 class ScaleObject(BaseModel):
     """Multiplies `target`'s current scale by `factor` per axis."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", strict=True)
 
     op: Literal["scale_object"] = "scale_object"
     target: ObjectId
@@ -129,7 +137,7 @@ class ScaleObject(BaseModel):
 
 
 class SetMaterial(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", strict=True)
 
     op: Literal["set_material"] = "set_material"
     target: ObjectId
@@ -144,7 +152,7 @@ class SetMaterial(BaseModel):
 
 
 class RenameObject(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", strict=True)
 
     op: Literal["rename_object"] = "rename_object"
     target: ObjectId
@@ -152,10 +160,10 @@ class RenameObject(BaseModel):
 
 
 class SetScene(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", strict=True)
 
     op: Literal["set_scene"] = "set_scene"
-    background: str | None = None
+    background: str | None = Field(default=None, min_length=1)
     displayScale: float | None = Field(default=None, gt=0, allow_inf_nan=False)
 
     @model_validator(mode="after")
@@ -168,7 +176,7 @@ class SetScene(BaseModel):
 class Clarify(BaseModel):
     """Asks the user for missing/ambiguous information. Never mutates ModelSpec."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", strict=True)
 
     op: Literal["clarify"] = "clarify"
     question: str = Field(min_length=1)
@@ -177,10 +185,10 @@ class Clarify(BaseModel):
 class NoChange(BaseModel):
     """Responds without modifying geometry."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", strict=True)
 
     op: Literal["no_change"] = "no_change"
-    reason: str | None = None
+    reason: str | None = Field(default=None, min_length=1)
 
 
 Operation = Annotated[
@@ -201,7 +209,7 @@ Operation = Annotated[
 
 
 class ModelPlan(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", strict=True)
 
     intent: str = Field(min_length=1)
     operations: list[Operation]

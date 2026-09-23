@@ -22,7 +22,6 @@
 }
 
 .workspace-topbar__settings-button {
-  margin-left: auto;
   font: inherit;
   font-size: 13px;
   color: var(--text-h);
@@ -31,6 +30,63 @@
   border-radius: 6px;
   padding: 5px 10px;
   cursor: pointer;
+}
+
+.workspace-topbar__project-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.workspace-topbar__project-name input {
+  width: 160px;
+  font: inherit;
+  color: var(--text-h);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 8px;
+}
+
+.workspace-topbar__reset-button,
+.download-menu button {
+  font: inherit;
+  font-size: 13px;
+  color: var(--text-h);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 10px;
+  cursor: pointer;
+}
+
+.workspace-topbar__settings-button {
+  margin-left: auto;
+}
+
+.workspace-topbar__reset-button:disabled,
+.download-menu button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.download-menu {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.download-menu__label,
+.download-menu__error {
+  font-size: 12px;
+  color: var(--text);
+}
+
+.download-menu__error {
+  color: #d33;
+  max-width: 180px;
 }
 
 .workspace-main {
@@ -76,7 +132,46 @@
   align-items: center;
   padding: 0 16px;
   border-top: 1px solid var(--border);
-  font-size: 13px;
+  gap: 14px;
+  font-size: 12px;
+  color: var(--text);
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+.workspace-diagnostics {
+  margin-left: auto;
+  color: var(--text-h);
+}
+
+.workspace-diagnostics summary {
+  cursor: pointer;
+}
+
+.workspace-diagnostics__content {
+  position: absolute;
+  right: 12px;
+  bottom: 32px;
+  z-index: 2;
+  width: min(420px, calc(100vw - 24px));
+  padding: 10px 12px;
+  white-space: normal;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 6px 24px rgb(0 0 0 / 15%);
+}
+
+.workspace-diagnostics__content p {
+  margin: 0 0 6px;
+}
+
+.workspace-diagnostics__content p:last-child {
+  margin-bottom: 0;
+}
+
+.workspace-diagnostics__warning {
+  color: #a55b00;
 }
 
 .workspace-placeholder {
