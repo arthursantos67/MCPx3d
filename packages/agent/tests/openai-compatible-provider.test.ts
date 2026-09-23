@@ -10,13 +10,17 @@ import {
 const CONFIG = { baseUrl: "https://api.example.com/v1", apiKey: "sk-test", model: "test-model" };
 
 function fakeFetch(
-  handler: (url: string, init: RequestInit) => Promise<{ status: number; body: unknown; text?: string }>,
+  handler: (
+    url: string,
+    init: RequestInit,
+  ) => Promise<{ status: number; body: unknown; text?: string; headers?: Record<string, string> }>,
 ): FetchLike {
   return (async (url: string | URL | Request, init?: RequestInit) => {
     const result = await handler(String(url), init ?? {});
     return {
       ok: result.status >= 200 && result.status < 300,
       status: result.status,
+      headers: new Headers(result.headers),
       json: async () => result.body,
       text: async () => result.text ?? JSON.stringify(result.body),
     } as Response;
@@ -191,9 +195,13 @@ test("defaults max_completion_tokens to a small cap when the caller doesn't spec
 });
 
 test("a non-2xx response throws a descriptive error without leaking the api key, and state returns to ready", async () => {
+  let calls = 0;
   const provider = new OpenAICompatibleProvider(
     CONFIG,
-    fakeFetch(async () => ({ status: 401, body: {}, text: "invalid api key" })),
+    fakeFetch(async () => {
+      calls += 1;
+      return { status: 401, body: {}, text: "invalid api key" };
+    }),
   );
   await provider.initialize();
 
@@ -204,7 +212,75 @@ test("a non-2xx response throws a descriptive error without leaking the api key,
     assert.doesNotMatch(error.message, /sk-test/);
     return true;
   });
+  assert.equal(calls, 1);
   assert.deepEqual(provider.getState(), { phase: "ready" });
+});
+
+test("retries transient 503 responses with exponential backoff and succeeds", async () => {
+  let calls = 0;
+  const delays: number[] = [];
+  const provider = new OpenAICompatibleProvider(
+    CONFIG,
+    fakeFetch(async () => {
+      calls += 1;
+      if (calls < 3) return { status: 503, body: { error: { status: "UNAVAILABLE" } } };
+      return { status: 200, body: { choices: [{ message: { content: "{}" } }] } };
+    }),
+    async (milliseconds) => {
+      delays.push(milliseconds);
+    },
+    () => 0.5,
+  );
+  await provider.initialize();
+
+  await assert.doesNotReject(() => provider.generateStructured([], {}));
+
+  assert.equal(calls, 3);
+  assert.deepEqual(delays, [1000, 2000]);
+});
+
+test("uses Retry-After when a transient response supplies it", async () => {
+  let calls = 0;
+  const delays: number[] = [];
+  const provider = new OpenAICompatibleProvider(
+    CONFIG,
+    fakeFetch(async () => {
+      calls += 1;
+      return calls === 1
+        ? { status: 503, body: {}, headers: { "retry-after": "3" } }
+        : { status: 200, body: { choices: [{ message: { content: "{}" } }] } };
+    }),
+    async (milliseconds) => {
+      delays.push(milliseconds);
+    },
+  );
+  await provider.initialize();
+
+  await provider.generateStructured([], {});
+
+  assert.equal(calls, 2);
+  assert.deepEqual(delays, [3000]);
+});
+
+test("stops after two retries and replaces a raw 503 payload with an actionable message", async () => {
+  let calls = 0;
+  const provider = new OpenAICompatibleProvider(
+    CONFIG,
+    fakeFetch(async () => {
+      calls += 1;
+      return { status: 503, body: { error: { message: "high demand" } } };
+    }),
+    async () => undefined,
+  );
+  await provider.initialize();
+
+  await assert.rejects(() => provider.generateStructured([], {}), (error: unknown) => {
+    assert.ok(error instanceof Error);
+    assert.match(error.message, /temporarily unavailable after three attempts/);
+    assert.doesNotMatch(error.message, /\{\s*"error"/);
+    return true;
+  });
+  assert.equal(calls, 3);
 });
 
 test("a fetch failure becomes an actionable provider request error without leaking the original browser error", async () => {

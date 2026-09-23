@@ -39,6 +39,7 @@ export type OpenAICompatibleProviderState =
   | { readonly phase: "error"; readonly message: string };
 
 export type FetchLike = typeof fetch;
+export type SleepLike = (milliseconds: number, signal: AbortSignal) => Promise<void>;
 
 export type OpenAICompatibleStateListener = (state: OpenAICompatibleProviderState) => void;
 
@@ -52,10 +53,55 @@ function isConfigComplete(config: OpenAICompatibleConfig): boolean {
  * budget to eat into a free-tier tokens-per-minute limit. */
 const DEFAULT_MAX_COMPLETION_TOKENS = 2048;
 const CHAT_COMPLETIONS_PATH = "/chat/completions";
+const MAX_TRANSIENT_RETRIES = 2;
+const BASE_RETRY_DELAY_MS = 1000;
 
 function toChatCompletionsUrl(configuredUrl: string): string {
   const normalized = configuredUrl.trim().replace(/\/+$/, "");
   return normalized.endsWith(CHAT_COMPLETIONS_PATH) ? normalized : `${normalized}${CHAT_COMPLETIONS_PATH}`;
+}
+
+function isTransientStatus(status: number): boolean {
+  return status === 408 || status === 429 || status === 500 || status === 502 || status === 503 || status === 504;
+}
+
+function retryAfterMilliseconds(response: Response): number | null {
+  const value = response.headers.get("retry-after");
+  if (value === null) return null;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds) && seconds >= 0) return seconds * 1000;
+  const date = Date.parse(value);
+  return Number.isNaN(date) ? null : Math.max(0, date - Date.now());
+}
+
+function exponentialDelayMilliseconds(retryIndex: number, random: () => number): number {
+  const jitter = 0.8 + random() * 0.4;
+  return Math.round(BASE_RETRY_DELAY_MS * 2 ** retryIndex * jitter);
+}
+
+function sleepWithAbort(milliseconds: number, signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return Promise.reject(new DOMException("Request cancelled", "AbortError"));
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, milliseconds);
+    const onAbort = (): void => {
+      clearTimeout(timeout);
+      reject(new DOMException("Request cancelled", "AbortError"));
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+function providerResponseMessage(status: number, bodyText: string): string {
+  if (status === 503) {
+    return "The AI model is temporarily unavailable after three attempts (status 503). Try again shortly or choose another model.";
+  }
+  if (status === 429) {
+    return "The AI provider rate limit was reached after three attempts (status 429). Try again shortly or check the provider quota.";
+  }
+  return `OpenAI-compatible request failed with status ${status}${bodyText ? `: ${bodyText}` : ""}`;
 }
 
 export class OpenAICompatibleProvider implements LLMProvider {
@@ -64,6 +110,8 @@ export class OpenAICompatibleProvider implements LLMProvider {
   private readonly config: OpenAICompatibleConfig;
   private readonly chatCompletionsUrl: string;
   private readonly fetchImpl: FetchLike;
+  private readonly sleepImpl: SleepLike;
+  private readonly random: () => number;
   private state: OpenAICompatibleProviderState = { phase: "idle" };
   private readonly listeners = new Set<OpenAICompatibleStateListener>();
   private inFlight: AbortController | null = null;
@@ -74,10 +122,17 @@ export class OpenAICompatibleProvider implements LLMProvider {
   // to the provider instance instead, throwing "Illegal invocation" (Chrome)
   // / "'fetch' called on an object that does not implement interface
   // Window" (Firefox) on the very first request.
-  constructor(config: OpenAICompatibleConfig, fetchImpl: FetchLike = fetch.bind(globalThis)) {
+  constructor(
+    config: OpenAICompatibleConfig,
+    fetchImpl: FetchLike = fetch.bind(globalThis),
+    sleepImpl: SleepLike = sleepWithAbort,
+    random: () => number = Math.random,
+  ) {
     this.config = { ...config, baseUrl: config.baseUrl.trim() };
     this.chatCompletionsUrl = toChatCompletionsUrl(config.baseUrl);
     this.fetchImpl = fetchImpl;
+    this.sleepImpl = sleepImpl;
+    this.random = random;
   }
 
   getState(): OpenAICompatibleProviderState {
@@ -134,54 +189,63 @@ export class OpenAICompatibleProvider implements LLMProvider {
     const controller = new AbortController();
     this.inFlight = controller;
     try {
-      let response: Response;
-      try {
-        response = await this.fetchImpl(this.chatCompletionsUrl, {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            authorization: `Bearer ${this.config.apiKey}`,
-          },
-          body: JSON.stringify({
-            model: this.config.model,
-            messages: toOpenAiMessages(messages),
-            response_format: { type: "json_schema", json_schema: { name: "model_plan", schema: stripDescriptions(schema) } },
-            temperature: options?.temperature,
-            // Only the current-standard field name: some endpoints (Google's
-            // Gemini OpenAI-compat layer, confirmed live) reject a request
-            // that sets both `max_tokens` and `max_completion_tokens` at once
-            // with a 400, rather than ignoring the one they don't recognize.
-            // `max_completion_tokens` is what current OpenAI and Groq expect;
-            // capped at a small default rather than left unset, since a
-            // ModelPlan response is at most a few hundred tokens but some
-            // models reserve a much larger completion budget by default,
-            // which can burn through a free-tier tokens-per-minute limit in a
-            // single request.
-            max_completion_tokens: options?.maxTokens ?? DEFAULT_MAX_COMPLETION_TOKENS,
-            // Reasoning-capable models (e.g. Groq's openai/gpt-oss family) can
-            // reserve a large hidden token budget for chain-of-thought before
-            // ever producing the visible JSON answer, on top of (not capped
-            // by) max_completion_tokens above -- a real driver of hitting a
-            // free-tier tokens-per-minute limit for a task this simple.
-            // Ignored by models/endpoints that don't recognize it.
-            reasoning_effort: "low",
-          }),
-          signal: controller.signal,
-        });
-      } catch (error) {
-        if (error instanceof DOMException && error.name === "AbortError") throw error;
-        throw new ProviderRequestError(
-          "Could not reach the configured AI endpoint. Check the Base URL and whether the provider allows browser requests.",
-          { cause: error },
-        );
+      const request: RequestInit = {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${this.config.apiKey}`,
+        },
+        body: JSON.stringify({
+          model: this.config.model,
+          messages: toOpenAiMessages(messages),
+          response_format: { type: "json_schema", json_schema: { name: "model_plan", schema: stripDescriptions(schema) } },
+          temperature: options?.temperature,
+          // Only the current-standard field name: some endpoints (Google's
+          // Gemini OpenAI-compat layer, confirmed live) reject a request
+          // that sets both `max_tokens` and `max_completion_tokens` at once
+          // with a 400, rather than ignoring the one they don't recognize.
+          // `max_completion_tokens` is what current OpenAI and Groq expect;
+          // capped at a small default rather than left unset, since a
+          // ModelPlan response is at most a few hundred tokens but some
+          // models reserve a much larger completion budget by default,
+          // which can burn through a free-tier tokens-per-minute limit in a
+          // single request.
+          max_completion_tokens: options?.maxTokens ?? DEFAULT_MAX_COMPLETION_TOKENS,
+          // Reasoning-capable models (e.g. Groq's openai/gpt-oss family) can
+          // reserve a large hidden token budget for chain-of-thought before
+          // ever producing the visible JSON answer, on top of (not capped
+          // by) max_completion_tokens above -- a real driver of hitting a
+          // free-tier tokens-per-minute limit for a task this simple.
+          // Ignored by models/endpoints that don't recognize it.
+          reasoning_effort: "low",
+        }),
+        signal: controller.signal,
+      };
+
+      let response: Response | null = null;
+      for (let attempt = 0; attempt <= MAX_TRANSIENT_RETRIES; attempt += 1) {
+        try {
+          response = await this.fetchImpl(this.chatCompletionsUrl, request);
+        } catch (error) {
+          if (error instanceof DOMException && error.name === "AbortError") throw error;
+          throw new ProviderRequestError(
+            "Could not reach the configured AI endpoint. Check the Base URL and whether the provider allows browser requests.",
+            { cause: error },
+          );
+        }
+
+        if (response.ok) break;
+
+        const bodyText = await response.text().catch(() => "");
+        if (!isTransientStatus(response.status) || attempt === MAX_TRANSIENT_RETRIES) {
+          throw new ProviderRequestError(providerResponseMessage(response.status, bodyText));
+        }
+
+        const delay = retryAfterMilliseconds(response) ?? exponentialDelayMilliseconds(attempt, this.random);
+        await this.sleepImpl(delay, controller.signal);
       }
 
-      if (!response.ok) {
-        const bodyText = await response.text().catch(() => "");
-        throw new ProviderRequestError(
-          `OpenAI-compatible request failed with status ${response.status}${bodyText ? `: ${bodyText}` : ""}`,
-        );
-      }
+      if (response === null) throw new ProviderRequestError("The AI provider returned no response.");
 
       const body = (await response.json()) as { choices?: { message?: { content?: string | null } }[] };
       const content = body.choices?.[0]?.message?.content;
