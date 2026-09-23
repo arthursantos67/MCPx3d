@@ -3,7 +3,7 @@
 **Project:** AI Web3D Modeler  
 **Plan version:** 1.0  
 **PRD baseline:** `PRD-AI-Web3D-Modeler-v1.0.md`  
-**Last update:** 2026-09-21  
+**Last update:** 2026-09-23<br>
 **Target milestone:** MVP `v0.1.0`
 
 ---
@@ -23,6 +23,7 @@ Recommended labels:
 - `infra`
 - `security`
 - `testing`
+- `performance`
 - `docs`
 - `priority:P0`
 - `priority:P1`
@@ -74,6 +75,8 @@ Configure:
 - environment examples;
 - formatting/linting;
 - basic CI skeleton.
+- root npm workspace that declares every JavaScript/TypeScript package participating in source imports;
+- one committed root lockfile and clean-install workflow.
 
 ### Acceptance criteria
 
@@ -82,6 +85,7 @@ Configure:
 - [ ] root README contains one-command/clear startup sequence.
 - [ ] frontend and backend lint/typecheck commands exist.
 - [ ] lockfiles are committed.
+- [ ] a clean checkout can run one root install and resolve `apps/web`, `packages/agent`, and `packages/domain/ts` without pre-existing nested `node_modules`.
 - [ ] no AI API key is required for baseline startup.
 
 ### Depends on
@@ -102,6 +106,7 @@ Establish the upstream X3D service as a reproducible dependency.
 
 - Choose and record tested upstream commit/tag.
 - Add setup script or git-submodule/vendor strategy.
+- Store Unix startup scripts with executable mode in Git.
 - Start with `MCP_TRANSPORT=streamable-http`.
 - Configure port and health endpoint.
 - Document license/reference.
@@ -113,6 +118,8 @@ Establish the upstream X3D service as a reproducible dependency.
 - [ ] `/mcp` can be reached by a test client.
 - [ ] dependency revision is pinned.
 - [ ] production path does not float automatically to upstream `main`.
+- [ ] `./services/x3d-mcp/run.sh` runs from a clean Linux checkout without `chmod` or shell-specific workaround.
+- [ ] CI verifies the executable bit and performs a bounded startup/health smoke test.
 
 ### Depends on
 
@@ -144,12 +151,20 @@ Endpoints:
 - `GET /api/health`
 - `GET /api/health/mcp`
 
+Operational startup:
+
+- choose one canonical development/server entrypoint;
+- remove the scaffold `api` command or make it start the FastAPI application;
+- reuse the same application target in local documentation and containers.
+
 ### Acceptance criteria
 
 - [ ] app health returns 200 when API is alive.
 - [ ] MCP health reports reachable/unreachable separately.
 - [ ] internal exception details are not leaked.
 - [ ] settings are typed and validated at startup.
+- [ ] the installed/documented API command starts the application and responds on `/api/health`.
+- [ ] no official-looking entrypoint prints a scaffold greeting and exits successfully.
 
 ### Depends on
 
@@ -175,6 +190,7 @@ Create `X3DMcpClient` with methods sufficient for spike:
 - validate current scene;
 - semantic validate;
 - generate X3DOM page.
+- preserve cooperative cancellation across connect and request calls.
 
 ### Acceptance criteria
 
@@ -184,6 +200,8 @@ Create `X3DMcpClient` with methods sufficient for spike:
 - [ ] semantic validation result is captured.
 - [ ] standalone HTML can be retrieved.
 - [ ] failures map to typed application errors.
+- [ ] transport/protocol failures are mapped without catching `BaseException`.
+- [ ] task/request cancellation propagates and is never reported as `MCP_UNAVAILABLE`.
 
 ### Depends on
 
@@ -217,6 +235,12 @@ Define:
 
 Generate/maintain TypeScript and Python-compatible types.
 
+Contract rules:
+
+- JSON Schema is the normative source of truth;
+- Python validation must be strict (no string/boolean-to-number coercion) and forbid extra properties;
+- every string `minLength`, numeric bound, enum and required field must be equivalent across runtimes.
+
 ### Acceptance criteria
 
 - [ ] JSON Schema exists.
@@ -225,6 +249,8 @@ Generate/maintain TypeScript and Python-compatible types.
 - [ ] duplicate object IDs fail domain validation.
 - [ ] schema version is explicit.
 - [ ] TypeScript and Python shapes are tested for compatibility.
+- [ ] fixtures rejected by the JSON Schema are also rejected by Pydantic and TypeScript validators.
+- [ ] empty tags/background values and scalar coercions are covered explicitly.
 
 ### Depends on
 
@@ -262,6 +288,8 @@ Define the only operations the AI is allowed to propose.
 - [ ] executable-code fields do not exist.
 - [ ] target requirements are operation-specific.
 - [ ] examples exist for creation and modification plans.
+- [ ] Python/API validation rejects schema-invalid coercions, empty constrained strings and additional properties.
+- [ ] contract fixtures are shared or generated so operation requirements cannot drift between JSON Schema, Python and TypeScript.
 
 ### Depends on
 
@@ -317,6 +345,8 @@ Own temporary project state safely.
 - session TTL;
 - revision;
 - expected-revision conflict.
+- amortized or periodic cleanup of abandoned expired sessions;
+- configurable global session capacity with deterministic eviction/rejection behavior.
 
 ### Acceptance criteria
 
@@ -325,6 +355,9 @@ Own temporary project state safely.
 - [ ] successful mutation increments exactly once.
 - [ ] stale expected revision returns conflict.
 - [ ] expired project returns project-not-found/expired error.
+- [ ] a session that expires and is never accessed again is removed without requiring a lookup by its ID.
+- [ ] repeated project creation cannot grow the in-memory store beyond its configured capacity.
+- [ ] cleanup is safe while another request is reading or committing a session.
 
 ### Depends on
 
@@ -356,6 +389,7 @@ Map:
 - rotation;
 - scale;
 - base color.
+- basic scene background already exposed by `ModelSpec.scene.background`/`set_scene`.
 
 ### Acceptance criteria
 
@@ -364,6 +398,8 @@ Map:
 - [ ] stable IDs/names map to stable X3D DEF or adapter metadata where appropriate.
 - [ ] no raw X3D is generated by LLM.
 - [ ] unit/display scaling is documented and tested.
+- [ ] a valid basic background value creates/configures an X3D `Background` node and is visible in the artifact.
+- [ ] richer lighting/viewpoint controls remain outside this issue and are tracked by #54.
 
 ### Depends on
 
@@ -388,6 +424,8 @@ Ensure no invalid scene becomes current.
 5. revalidate;
 6. commit only on success.
 
+Protocol rule: schema/semantic validation is fail-closed. Empty, partial or unrecognized MCP reports are protocol failures, never implicit success.
+
 ### Acceptance criteria
 
 - [ ] invalid candidate cannot replace last valid revision.
@@ -395,6 +433,9 @@ Ensure no invalid scene becomes current.
 - [ ] warnings are preserved.
 - [ ] autofixes are recorded.
 - [ ] integration test demonstrates failed candidate rollback.
+- [ ] semantic success requires an explicit recognized success result.
+- [ ] empty, partially parsed and unknown report formats prevent commit and produce typed diagnostics.
+- [ ] diagnostic severity (`info`, `warning`, `error`) is preserved without promoting information to warnings.
 
 ### Depends on
 
@@ -453,12 +494,17 @@ Allow downloading `.x3d`.
 
 Expose supported alternative X3D encodings.
 
+Availability must be derived from the pinned converter's tested capability, not from the mere presence of a format name in an API constant. A known-broken format remains explicitly unavailable.
+
 ### Acceptance criteria
 
 - [ ] `.x3dj` generated through tested conversion path.
 - [ ] `.x3dv` generated through tested conversion path.
 - [ ] format appears in UI only if available.
 - [ ] conversion errors are isolated from base X3D artifact.
+- [ ] artifact descriptors report `available=false` (or omit the format consistently) when the pinned upstream cannot produce valid output.
+- [ ] capability detection is covered against the currently pinned `x3d_mcp`; `.x3dj` is not advertised until that test passes.
+- [ ] one unavailable optional format never disables HTML, X3D or manifest downloads.
 
 ### Depends on
 
@@ -527,6 +573,8 @@ Load and run the local LLM without blocking UI.
 - browser cache;
 - Web Worker engine;
 - cancellation if supported.
+- idempotent initialization shared across repeated React lifecycle effects;
+- deterministic worker/listener disposal.
 
 ### Acceptance criteria
 
@@ -535,6 +583,8 @@ Load and run the local LLM without blocking UI.
 - [ ] main thread remains interactive.
 - [ ] second load benefits from cache.
 - [ ] runtime status is exposed to application state.
+- [ ] concurrent/repeated `initialize()` calls share one in-flight initialization and create one active runtime.
+- [ ] `dispose()` removes listeners, terminates owned workers and is safe to call more than once.
 
 ### Depends on
 
@@ -643,6 +693,8 @@ Avoid destructive guesses on ambiguous part references.
 - [ ] duplicate/similar name case can produce `clarify`.
 - [ ] clarification does not mutate project.
 - [ ] next user answer is provided with prior clarification context.
+- [ ] the clarification answer is appended exactly once as the current user request.
+- [ ] the assembled message order is `system → bounded history → current user`, with no duplicated adjacent user turn.
 - [ ] tests cover at least 5 ambiguous prompts.
 
 ### Depends on
@@ -669,6 +721,8 @@ Avoid destructive guesses on ambiguous part references.
 - [ ] OpenAPI generated.
 - [ ] session/revision metadata returned.
 - [ ] error codes standardized.
+- [ ] errors follow one documented PRD envelope instead of switching between top-level fields and FastAPI `detail` wrappers.
+- [ ] project-not-found/expired is machine-detectable so the frontend can offer an explicit new-session recovery flow.
 
 ### Depends on
 
@@ -694,6 +748,8 @@ Create the central mutation transaction.
 6. commit;
 7. generate artifact descriptors.
 
+No-effect plans (`no_change` or an empty effective operation set) terminate before candidate rendering and are returned as a successful conversational result without changing project state.
+
 ### Acceptance criteria
 
 - [ ] valid plan commits.
@@ -701,6 +757,8 @@ Create the central mutation transaction.
 - [ ] invalid X3D does not commit.
 - [ ] correlation ID returned/logged.
 - [ ] response includes current validation and artifact availability.
+- [ ] `no_change` performs no MCP/artifact call and does not increment revision.
+- [ ] artifact availability reflects tested runtime capability rather than a hardcoded list.
 
 ### Depends on
 
@@ -723,6 +781,9 @@ Implement PRD error codes consistently.
 - [ ] 409 revision conflict is distinct.
 - [ ] MCP failure maps to 503.
 - [ ] validation failure maps to structured 422.
+- [ ] the canonical response body is `{code, message, details, correlationId}` at the top level, matching the PRD/OpenAPI contract.
+- [ ] every error path, including `AMBIGUOUS_TARGET`, returns the same correlation ID in body and `X-Correlation-Id` header and writes it to logs.
+- [ ] validation errors remain actionable without leaking stack traces, secrets or provider payloads.
 
 ### Depends on
 
@@ -742,6 +803,8 @@ Implement PRD error codes consistently.
 - numeric bounds;
 - artifact size;
 - session TTL.
+- maximum simultaneous in-memory sessions;
+- request body byte limit enforced before JSON parsing.
 
 ### Acceptance criteria
 
@@ -749,6 +812,9 @@ Implement PRD error codes consistently.
 - [ ] 101st object is rejected under default 100-object limit.
 - [ ] NaN/Infinity cannot enter ModelSpec.
 - [ ] limits are configuration-driven.
+- [ ] oversized HTTP bodies are rejected before full buffering/parsing.
+- [ ] project creation cannot exceed the configured session capacity.
+- [ ] TTL cleanup behavior is verified independently of session lookup.
 
 ### Depends on
 
@@ -806,6 +872,8 @@ Implement side-by-side chat + viewer layout.
 
 Wire user prompt to WebLLM ModelPlan generation.
 
+The controller owns one idempotent lifecycle and one canonical conversation assembly path for normal prompts and clarification follow-ups.
+
 ### Acceptance criteria
 
 - [ ] first prompt produces ModelPlan.
@@ -813,6 +881,11 @@ Wire user prompt to WebLLM ModelPlan generation.
 - [ ] valid plan is sent to API.
 - [ ] backend result becomes assistant response.
 - [ ] local agent errors are surfaced cleanly.
+- [ ] React `StrictMode` effect replay creates at most one project and one AI runtime.
+- [ ] controller cleanup disposes listeners/runtime resources and ignores stale async completions.
+- [ ] recent user/assistant history is passed once, remains bounded, and clarification answers are not duplicated.
+- [ ] initial project creation can be retried without reloading the page.
+- [ ] `PROJECT_NOT_FOUND`/expiration presents an explicit new-session action and clears or restores stale state according to documented UX.
 
 ### Depends on
 
@@ -833,6 +906,9 @@ Render current standalone X3DOM HTML safely.
 - [ ] sandboxed iframe is used.
 - [ ] current validated revision renders.
 - [ ] old Blob/object URLs are revoked.
+- [ ] the previous Blob URL remains valid until the replacement iframe source has committed and loaded (or failed deterministically).
+- [ ] rapid revision changes cannot let an older async response replace a newer revision.
+- [ ] unmount/error paths revoke every owned URL exactly once without blanking the current valid preview prematurely.
 - [ ] viewer error state is visible.
 - [ ] no generated HTML is inserted directly into parent DOM.
 
@@ -856,6 +932,8 @@ Preserve usable model if a new request fails.
 - [ ] status clearly says latest request failed.
 - [ ] revision badge does not increment.
 - [ ] retry from same valid state is possible.
+- [ ] session expiration is distinguished from a modeling failure and offers explicit project recreation.
+- [ ] `no_change` keeps the same revision/artifact and does not trigger a viewer reload.
 
 ### Depends on
 
@@ -877,6 +955,8 @@ Preserve usable model if a new request fails.
 ### Acceptance criteria
 
 - [ ] only available formats are enabled.
+- [ ] a descriptor marked unavailable is disabled/hidden with a useful reason and is never requested speculatively.
+- [ ] UI availability refreshes from the committed revision response, not a hardcoded format list.
 - [ ] filename uses normalized project name.
 - [ ] current revision is clear.
 - [ ] downloads succeed through browser.
@@ -918,12 +998,16 @@ Preserve usable model if a new request fails.
 - revision;
 - warnings/autofixes;
 - correlation ID.
+- current pipeline stage and elapsed time for long-running generation/preview work.
 
 ### Acceptance criteria
 
 - [ ] normal mode remains concise.
 - [ ] detailed diagnostics are expandable.
 - [ ] validation warnings are readable.
+- [ ] `info`, `warning` and `error` remain separate in labels and counts.
+- [ ] progress distinguishes provider request/retry, plan validation, API/MCP build, X3D validation, artifact generation and viewer loading.
+- [ ] timings are correlated without exposing prompts, API keys or raw provider responses.
 - [ ] infrastructure failure source is distinguishable.
 
 ### Depends on
@@ -966,6 +1050,8 @@ Give the LLM enough model knowledge without sending generated HTML/X3D.
 - [ ] summary is bounded in size.
 - [ ] unrelated internal state is omitted.
 - [ ] follow-up modification test succeeds.
+- [ ] a configurable bounded window of recent user/assistant turns accompanies the summary when conversational references require it.
+- [ ] one shared assembler prevents duplicate insertion of the current request in normal and clarification flows.
 
 ### Depends on
 
@@ -1026,6 +1112,8 @@ Recover from fixable X3D failures without infinite loops.
 - [ ] canceled inference does not submit partial plan.
 - [ ] previous model remains valid.
 - [ ] UI returns to ready state.
+- [ ] cancellation propagates through frontend request, API orchestration and MCP connection/call boundaries where supported.
+- [ ] backend cancellation is not translated into `MCP_UNAVAILABLE` or logged as an infrastructure incident.
 
 ### Depends on
 
@@ -1077,6 +1165,8 @@ Prove the LLM cannot execute arbitrary code.
 - [ ] body size limits.
 - [ ] MCP timeout enforced.
 - [ ] public abuse cannot create unbounded in-memory sessions.
+- [ ] expired sessions are collected even when their IDs are never requested again.
+- [ ] creation and cleanup races cannot evict an active commit or exceed the configured capacity.
 
 ### Depends on
 
@@ -1119,6 +1209,9 @@ Isolate standalone viewer HTML from application origin.
 - [ ] duplicate/unknown target tests.
 - [ ] schema version tests.
 - [ ] rollback tests.
+- [ ] shared positive/negative fixtures run against JSON Schema, Pydantic and TypeScript validators.
+- [ ] rejection-equivalence covers scalar coercion, extra properties, required fields, `minLength`, enums and numeric bounds.
+- [ ] `expectedRevision: "0"`, boolean/string dimensions and empty constrained strings are regression fixtures.
 
 ### Depends on
 
@@ -1138,6 +1231,9 @@ Isolate standalone viewer HTML from application origin.
 - [ ] generates X3DOM page.
 - [ ] tests MCP unavailable path.
 - [ ] tests isolated sessions.
+- [ ] unknown, empty and partially parseable semantic reports fail closed and prevent commit.
+- [ ] current pinned-converter capability is asserted, including known-unavailable `.x3dj` without breaking base artifacts.
+- [ ] cancellation during connect/call propagates instead of becoming `MCP_UNAVAILABLE`.
 
 ### Depends on
 
@@ -1175,6 +1271,9 @@ At least 30 prompts across:
 - correct target rate;
 - repair count;
 - latency.
+- latency split by provider/repair, local plan validation, API, MCP scene build, X3D validation, artifact generation and viewer-ready time;
+- MCP call count by object/scene complexity;
+- cache hit/miss for revision artifacts.
 
 ### Acceptance criteria
 
@@ -1182,10 +1281,12 @@ At least 30 prompts across:
 - [ ] results can be stored as JSON/Markdown.
 - [ ] reference model meets documented MVP threshold.
 - [ ] failures are inspectable.
+- [ ] simple and composed-scene latency budgets are documented on reference hardware/network.
+- [ ] benchmark output preserves correlation/stage data without prompts, credentials or private provider payloads.
 
 ### Depends on
 
-#17, #19, #35, #42
+#17, #19, #35, #42, #64, #65
 
 ---
 
@@ -1201,6 +1302,7 @@ At least 30 prompts across:
 - modify part;
 - download artifact;
 - reset.
+- replace an already loaded preview and verify the old Blob URL is revoked only after the new source is active.
 
 ### Acceptance criteria
 
@@ -1226,6 +1328,11 @@ At least 30 prompts across:
 - validation failure;
 - revision conflict;
 - artifact failure.
+- initial project creation failure followed by retry;
+- session expiration during a conversation followed by explicit recreation;
+- React `StrictMode` initialization replay;
+- clarification follow-up without duplicate user turn;
+- new preview failure while the prior valid Blob URL remains usable.
 
 ### Acceptance criteria
 
@@ -1252,6 +1359,9 @@ At least 30 prompts across:
 - [ ] no LLM key required for default mode.
 - [ ] common WebGPU issues documented.
 - [ ] tested OS/browser baseline listed.
+- [ ] Linux instructions work from a clean checkout, including executable MCP startup script.
+- [ ] exactly one canonical API startup command is documented and verified; obsolete scaffold entrypoints are removed or clearly unsupported.
+- [ ] clean root dependency installation and commands for every test suite are documented.
 
 ### Depends on
 
@@ -1274,6 +1384,7 @@ Make backend dependencies reproducible.
 - [ ] docker compose starts both.
 - [ ] API reaches MCP by service name.
 - [ ] health checks defined.
+- [ ] container API command uses the same canonical application entrypoint documented for local setup.
 
 ### Depends on
 
@@ -1292,6 +1403,7 @@ Make backend dependencies reproducible.
 - [ ] WebLLM model/CORS requirements documented.
 - [ ] SPA routing works on chosen static host.
 - [ ] CSP/viewer requirements documented.
+- [ ] build succeeds from a clean checkout after only the documented root install, with no hidden package-local `node_modules` dependency.
 
 ### Depends on
 
@@ -1335,6 +1447,7 @@ Verify all PRD MVP exit criteria.
 - [ ] README product limitations clearly state Web3D ≠ CAD/manufacturing.
 - [ ] release notes published.
 - [ ] tag `v0.1.0` created.
+- [ ] audit remediation Issues #63–#66 are complete or any exception is explicitly documented with owner, risk and target date.
 
 ### Depends on
 
@@ -1372,7 +1485,7 @@ Use upstream validation/audit tools to inspect an uploaded X3D document and conv
 
 **Priority:** P2
 
-Expose safe scene-level ModelPlan operations for camera, viewpoint, background, and lights.
+Expose safe scene-level ModelPlan operations for camera, viewpoints, background gradients/sky-ground controls, and lights. This does not defer the basic single-color background already present in ModelSpec v1; that MVP mapping belongs to #9.
 
 ---
 
@@ -1440,6 +1553,147 @@ Only after CAD geometry correctness and feature representation are validated.
 
 ---
 
+# Audit Remediation Backlog (MVP)
+
+These issues were added after the 2026-09-22 code audit. They cover gaps that were not explicit in Issues #1–#62 and are referenced from `RELATORIO-AUDITORIA-CODIGO.md`.
+
+## Issue #63 — Make revision artifacts atomic and cache validated output
+
+**Labels:** `backend`, `x3d`, `performance`, `testing`, `priority:P0`
+
+### Objective
+
+Guarantee that every served X3D/HTML artifact belongs to the exact advertised revision and avoid rebuilding an unchanged validated scene on every preview request.
+
+### Scope
+
+- capture an immutable `(projectId, revision, ModelSpec)` snapshot before any asynchronous MCP work;
+- store validated X3D, validation summary, capability descriptors and optional HTML by exact revision;
+- reject a requested stale/future revision before work and never relabel an older result with a newer session revision;
+- coalesce concurrent cache misses for the same project/revision/format into one build;
+- define bounded cache size, TTL/eviction and cleanup together with project-session lifecycle;
+- invalidate/create entries only on successful commit; failed candidates never replace last-valid artifacts.
+
+### Acceptance criteria
+
+- [ ] a deterministic concurrency test interleaves preview revision N with commit N+1 and proves no cross-revision response is possible.
+- [ ] repeated preview/download requests for the same revision reuse validated X3D and do not call scene construction/validation again.
+- [ ] concurrent identical misses execute one underlying build and all callers receive the same immutable artifact.
+- [ ] cache keys include project, revision and format/config inputs that affect bytes.
+- [ ] cache memory is bounded and expired/deleted projects release artifacts.
+- [ ] cache failure or eviction never invalidates the last committed ModelSpec and can rebuild safely.
+- [ ] response metadata, filename and body all identify the same revision.
+
+### Depends on
+
+#8, #10, #11, #22
+
+---
+
+## Issue #64 — Batch scene construction and reduce MCP round-trips
+
+**Labels:** `backend`, `x3d`, `performance`, `testing`, `priority:P1`
+
+### Objective
+
+Reduce the dominant post-AI latency caused by many sequential MCP transport calls for every primitive in a composed scene.
+
+### Scope
+
+- record baseline transport-call count and stage duration for a cube, table, chair and table+vase+chair fixture;
+- prefer an upstream batch/transaction tool when available; otherwise add a wrapper-level batch command or bounded concurrency only for operations proven independent;
+- preserve deterministic node order, stable DEF/name mapping, cancellation, timeout and all-or-nothing candidate behavior;
+- keep one final schema/semantic validation boundary and compare generated scenes against golden expectations;
+- document a safe fallback to the existing granular path when batch capability is unavailable.
+
+### Acceptance criteria
+
+- [ ] benchmark output reports MCP calls and elapsed build time per fixture before and after the change.
+- [ ] the composed fixture performs at least 50% fewer transport round-trips than the recorded baseline, or a reviewed upstream limitation and alternative target are documented.
+- [ ] each primitive and the composed fixture remain schema/semantically valid and equivalent in visible structure/materials.
+- [ ] operation ordering is deterministic across repeated runs.
+- [ ] partial batch failure cannot commit a revision or corrupt the next isolated session.
+- [ ] orchestration timeout and user cancellation stop remaining batch work.
+
+### Depends on
+
+#4, #9, #10, #42
+
+---
+
+## Issue #65 — Add end-to-end stage timing, progress and latency budgets
+
+**Labels:** `backend`, `frontend`, `agent`, `performance`, `testing`, `priority:P1`
+
+### Objective
+
+Make a slow request diagnosable and show useful progress while distinguishing external AI latency from local validation, MCP construction and viewer loading.
+
+### Stages
+
+- provider request, transient retry and format repair;
+- local ModelPlan parse/schema validation;
+- API queue/request and candidate mutation;
+- MCP connect/scene construction;
+- X3D schema and semantic validation;
+- artifact/cache generation;
+- browser fetch, Blob swap and iframe ready/error.
+
+### Scope
+
+- assign stable stage names and monotonic durations under one correlation ID;
+- expose safe timing metadata through logs and an opt-in diagnostics response/UI path;
+- publish coarse progress/status events without fabricating a percentage when total duration is unknown;
+- define reference budgets for a simple primitive and a composed fixture, including retry/cache-hit dimensions;
+- never log or display API keys, full prompts, provider raw responses or other secrets.
+
+### Acceptance criteria
+
+- [ ] one request can be traced from submit through viewer-ready using the same correlation/revision identifiers.
+- [ ] diagnostics distinguish provider latency, retry backoff, MCP build, validation, artifact/cache and viewer load.
+- [ ] UI shows the active stage and elapsed time and remains cancellable/responsive.
+- [ ] cache hits and `no_change` show skipped stages rather than misleading work.
+- [ ] automated tests use controlled clocks/events to verify stage order, completion and error/cancel termination.
+- [ ] #43 benchmark output includes per-stage p50/p95 (or raw samples when the suite is too small) and the documented budgets.
+
+### Depends on
+
+#22, #23, #27, #32
+
+---
+
+## Issue #66 — Run the complete workspace and MCP test matrix in CI
+
+**Labels:** `infra`, `testing`, `priority:P0`
+
+### Objective
+
+Prevent merges that pass a partial lint/typecheck job while skipping the existing frontend, agent, domain, API and MCP regression suites.
+
+### Required jobs
+
+- root clean `npm ci`, then lint/typecheck/test for `apps/web`, `packages/agent` and `packages/domain/ts`;
+- locked Python install, lint/typecheck/test for `apps/api` and `packages/domain/python`;
+- separate Linux MCP integration job that initializes the pinned submodule, starts the service, waits on health with a timeout and always tears it down;
+- production build job only where the repository policy explicitly requires/allows it;
+- cache keys derived from committed lockfiles without hiding a missing dependency.
+
+### Acceptance criteria
+
+- [ ] every committed unit suite runs on pull requests and `main`; the job fails when a suite discovers zero tests unexpectedly.
+- [ ] tests run from a clean checkout with no package-local dependency residue.
+- [ ] MCP integration is isolated, bounded by health/request timeouts and uploads concise diagnostics on failure.
+- [ ] the Linux job verifies `services/x3d-mcp/run.sh` is executable from Git.
+- [ ] contract-equivalence fixtures from #41 and MCP protocol fixtures from #42 run in CI.
+- [ ] job names and required/optional status are documented so a skipped integration job cannot look like full coverage.
+- [ ] cancellation, artifact revision race, capability availability, session cleanup and Blob replacement regressions are assigned to an executing suite.
+
+### Depends on
+
+#1, #2, #41, #42, #63
+
+---
+
 # Recommended Milestones
 
 ## Milestone M0 — Vertical Slice
@@ -1466,7 +1720,7 @@ Exit demo:
 
 Add:
 
-`#24, #36–#40, #44–#50`
+`#24, #36–#40, #44–#50, #63–#66`
 
 Exit:
 
@@ -1502,6 +1756,7 @@ Unless an issue explicitly states otherwise, “done” means:
 - [ ] errors handled;
 - [ ] no new lint/typecheck failures;
 - [ ] public contract documented if changed;
+- [ ] linked audit finding updated with the implementing issue/test evidence when applicable;
 - [ ] PRD updated if the implemented behavior intentionally differs from the baseline;
 - [ ] no hardcoded secret/API key introduced;
 - [ ] no arbitrary LLM code execution introduced.
