@@ -45,6 +45,16 @@ test("instructs the model to default/infer dimensions instead of clarifying over
   assert.match(prompt, /never for missing exact measurements alone/);
 });
 
+test("requires clarification for material variants and provides bounded semantic recipes", () => {
+  const prompt = buildSystemPrompt(BASE_SPEC);
+
+  assert.match(prompt, /wall-mounted or freestanding/);
+  assert.match(prompt, /decide for me/);
+  assert.match(prompt, /Open shelf: left side, right side, top, bottom/);
+  assert.match(prompt, /Wall-mounted TV: Screen, Frame, and Wall mount; never feet/);
+  assert.match(prompt, /Cabinet: top, bottom, left side, right side, back/);
+});
+
 test("requires colors in the canonical lowercase hexadecimal format", () => {
   const prompt = buildSystemPrompt(BASE_SPEC);
 

@@ -33,6 +33,7 @@ const RULES = `Rules:
 - When modifying, duplicating, deleting, or renaming a part, target it by its existing id from the current model below -- never by display name, and never by an id that is not listed unless you create it earlier in the same plan.
 - If the user references an ambiguous or duplicate-named existing part, respond with a single clarify operation instead of guessing which part they mean.
 - When creating a new object, do not ask for clarification just because exact measurements were not given. If the user gave exact dimensions, use them. If the user described a goal or purpose instead of numbers (e.g. "big enough for six people", "a small side table"), infer reasonable real-world dimensions from that goal. If neither was given, use ordinary real-world default dimensions for that kind of object and proceed. Reserve clarify for when you genuinely cannot proceed at all: an ambiguous/duplicate-named target, or a request too vague to decompose into primitives -- never for missing exact measurements alone.
+- Ask one concise clarify question when a requested form has materially different visible variants, including a TV that could be wall-mounted or freestanding, or a shelf that could be open or closed. If the user says "decide for me" (or equivalent), choose a sensible default instead: freestanding TV and open shelf.
 - For a multi-part object such as a chair, table, or shelf, create one supported primitive for every visible structural part. Give each part a specific, stable name and id (for example Table top, Front left leg, Seat, Backrest, Shelf 1) so later requests can target it precisely.
 - Keep a ModelPlan to 100 operations or fewer. Common furniture should normally need no more than 12 operations; use a small number of simple primitives rather than decorative detail.
 - Emit colors only as lowercase 6-digit hexadecimal strings such as #8b4513.
@@ -41,6 +42,15 @@ const RULES = `Rules:
 - Write any free text you produce (a clarify question, or a no_change reason) in the same language the user's most recent message is written in. Do not switch to a different language than the user used.`;
 
 const COORDINATE_CONVENTION = `Coordinate convention: X is left/right, Y is up/down, Z is front/back; positive X is right, positive Y is up, and positive Z is front. Positions are primitive centers. For floor-standing furniture, use Y=0 as the floor: a vertical leg of height h is centered at Y=h/2, and a top resting on it is centered at leg height plus half its own height.`;
+
+const DECOMPOSITION_RECIPES = `Semantic decomposition recipes:
+- Open shelf: left side, right side, top, bottom, and independently named Shelf 1, Shelf 2 (and more shelves only when requested); no back or doors unless requested.
+- Freestanding TV: Screen, Frame, and either Left foot + Right foot or one Stand. Wall-mounted TV: Screen, Frame, and Wall mount; never feet.
+- Rack: top, bottom, left side, right side, named shelves, and optional back only when requested.
+- Cabinet: top, bottom, left side, right side, back, and named Door left + Door right.
+- Sofa: Seat, Backrest, Left arm, Right arm, and named feet when visible.
+- Table: Table top and four named corner legs. Chair: Seat, Backrest, and four named corner legs.
+Use these names and matching lowercase underscore ids. They are visible structural parts, not decorative detail.`;
 
 export function buildSystemPrompt(modelSpec: ModelSpec, summaryOptions?: ModelSpecSummaryOptions): string {
   return [
@@ -51,6 +61,8 @@ export function buildSystemPrompt(modelSpec: ModelSpec, summaryOptions?: ModelSp
     OPERATION_REFERENCE,
     "",
     COORDINATE_CONVENTION,
+    "",
+    DECOMPOSITION_RECIPES,
     `Units: this project's semantic unit is "${modelSpec.units}". All dimensions and positions you emit are in this unit, before any display scaling.`,
     "",
     "Current model:",

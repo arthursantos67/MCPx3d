@@ -680,26 +680,40 @@ Convert user request + current model summary into schema-constrained ModelPlan.
 
 ---
 
-## Issue #20 — Implement ambiguity/clarification behavior
+## Issue #20 — Clarify materially ambiguous creation and edit intent
 
 **Labels:** `agent`, `priority:P1`
 
 ### Objective
 
-Avoid destructive guesses on ambiguous part references.
+Avoid destructive guesses when an existing target is ambiguous or when a
+creation request has materially different valid interpretations.
+
+### Scope
+
+- distinguish an ambiguous existing target from an ambiguous requested form;
+- ask one concise question when the answer changes visible structure or use,
+  such as freestanding versus wall-mounted TV, or open versus closed shelf;
+- keep inferring ordinary dimensions when they do not change that intent;
+- let the user explicitly delegate a choice with wording such as "decide for
+  me";
+- preserve the question and answer as bounded conversation context.
 
 ### Acceptance criteria
 
 - [ ] duplicate/similar name case can produce `clarify`.
+- [ ] a materially ambiguous creation request can produce one `clarify` question.
+- [ ] ordinary missing measurements alone do not cause an unnecessary question.
+- [ ] a user may delegate a choice and receive a reasonable default plan.
 - [ ] clarification does not mutate project.
 - [ ] next user answer is provided with prior clarification context.
 - [ ] the clarification answer is appended exactly once as the current user request.
 - [ ] the assembled message order is `system → bounded history → current user`, with no duplicated adjacent user turn.
-- [ ] tests cover at least 5 ambiguous prompts.
+- [ ] tests cover at least 5 ambiguous prompts, including Portuguese creation requests.
 
 ### Depends on
 
-#19, #7
+#19, #7, #34
 
 ---
 
@@ -1249,13 +1263,14 @@ Completed 2026-09-24. `apps/api/tests/conftest.py` starts the pinned Streamable 
 
 ---
 
-## Issue #43 — Create golden prompt benchmark suite
+## Issue #43 — Run a real-provider golden quality and latency benchmark
 
 **Labels:** `testing`, `ai`, `priority:P0`
 
 ### Objective
 
-Measure agent reliability instead of relying on demos.
+Measure the configured external provider's reliability, visual decomposition
+quality, and latency instead of relying on demos or deterministic mocks.
 
 ### Suite
 
@@ -1264,7 +1279,7 @@ At least 30 prompts across:
 - single primitives;
 - colors;
 - positions;
-- composed objects;
+- composed objects, including shelves, TVs, racks and cabinets;
 - follow-up modifications;
 - deletions;
 - duplication;
@@ -1278,17 +1293,21 @@ At least 30 prompts across:
 - X3D-valid final scene rate;
 - correct target rate;
 - repair count;
-- latency.
+- structural fidelity to the expected visible parts;
+- unintended-overlap rate;
+- latency;
 - latency split by provider/repair, local plan validation, API, MCP scene build, X3D validation, artifact generation and viewer-ready time;
 - MCP call count by object/scene complexity;
 - cache hit/miss for revision artifacts.
 
 ### Acceptance criteria
 
-- [ ] benchmark runner exists.
+- [ ] an opt-in runner executes the corpus through the configured external provider and local API/MCP stack.
+- [ ] deterministic fixture tests cover the runner in CI without requiring a paid provider or credentials.
 - [ ] results can be stored as JSON/Markdown.
-- [ ] reference model meets documented MVP threshold.
+- [ ] results identify provider/model configuration and meet documented MVP thresholds for valid plans, valid scenes and structural fidelity.
 - [ ] failures are inspectable.
+- [ ] each shelf/TV failure records the missing or incorrect structural part without retaining prompts, credentials or raw provider output.
 - [ ] simple and composed-scene latency budgets are documented on reference hardware/network.
 - [ ] benchmark output preserves correlation/stage data without prompts, credentials or private provider payloads.
 
@@ -1489,11 +1508,33 @@ Use upstream validation/audit tools to inspect an uploaded X3D document and conv
 
 ---
 
-## Issue #54 — Add richer X3D lighting/viewpoint controls
+## Issue #54 — Add viewer navigation, zoom and camera framing
 
-**Priority:** P2
+**Priority:** P1
 
-Expose safe scene-level ModelPlan operations for camera, viewpoints, background gradients/sky-ground controls, and lights. This does not defer the basic single-color background already present in ModelSpec v1; that MVP mapping belongs to #9.
+### Objective
+
+Make navigation useful for ordinary scenes before adding advanced scene-level
+lighting controls.
+
+### Scope
+
+- zoom in/out controls, fit-to-scene, and independent camera reset;
+- preserve normal X3DOM orbit, pan and wheel navigation;
+- frame the whole validated scene after a new revision without an abrupt jump;
+- reserve typed scene-level camera, viewpoint, gradient and light operations
+  for a later extension.
+
+### Acceptance criteria
+
+- [ ] zoom controls work without requiring a mouse wheel.
+- [ ] fit-to-scene frames every visible object at practical distance.
+- [ ] reset camera never resets the project or changes ModelSpec.
+- [ ] camera failure or an unavailable viewer API leaves normal manual navigation usable.
+
+### Depends on
+
+#25, #28
 
 ---
 
@@ -1637,7 +1678,7 @@ Completed 2026-09-24. Compatible scenes use the upstream `compose_scene` tool on
 
 ---
 
-## Issue #65 — Add end-to-end stage timing, progress and latency budgets
+## Issue #65 — Complete end-to-end stage timing, progress and latency budgets
 
 **Labels:** `backend`, `frontend`, `agent`, `performance`, `testing`, `priority:P1`
 
@@ -1647,9 +1688,9 @@ Make a slow request diagnosable and show useful progress while distinguishing ex
 
 ### Stages
 
-- provider request, transient retry and format repair;
+- provider request, transient retry and format repair as separate durations;
 - local ModelPlan parse/schema validation;
-- API queue/request and candidate mutation;
+- browser-to-API request, API queue/request and candidate mutation;
 - MCP connect/scene construction;
 - X3D schema and semantic validation;
 - artifact/cache generation;
@@ -1666,9 +1707,9 @@ Make a slow request diagnosable and show useful progress while distinguishing ex
 ### Acceptance criteria
 
 - [ ] one request can be traced from submit through viewer-ready using the same correlation/revision identifiers.
-- [ ] diagnostics distinguish provider latency, retry backoff, MCP build, validation, artifact/cache and viewer load.
+- [ ] diagnostics distinguish provider latency, retry backoff, format repair, browser/API request, MCP build, validation, artifact/cache and viewer load.
 - [ ] UI shows the active stage and elapsed time and remains cancellable/responsive.
-- [ ] cache hits and `no_change` show skipped stages rather than misleading work.
+- [ ] cache hits and `no_change` show skipped stages rather than misleading work or zero-duration work.
 - [ ] automated tests use controlled clocks/events to verify stage order, completion and error/cancel termination.
 - [ ] #43 benchmark output includes per-stage p50/p95 (or raw samples when the suite is too small) and the documented budgets.
 
@@ -1707,6 +1748,144 @@ Prevent merges that pass a partial lint/typecheck job while skipping the existin
 ### Depends on
 
 #1, #2, #41, #42, #63
+
+---
+
+## Issue #67 — Add semantic decomposition recipes for common objects
+
+**Labels:** `agent`, `testing`, `priority:P0`
+
+### Objective
+
+Make common objects recognizably match their intended form instead of reducing
+them to a single valid primitive.
+
+### Scope
+
+- provide bounded, renderer-independent decomposition recipes using only the
+  existing primitive ModelPlan operations;
+- cover at least an open shelf, TV on feet, wall-mounted TV, rack, cabinet and
+  sofa, alongside the existing chair and table patterns;
+- require stable, human-readable names and IDs for visible structural parts;
+- guide sensible defaults while allowing Issue #20 to ask when the requested
+  variant materially changes the result.
+
+### Acceptance criteria
+
+- [ ] shelf plans contain independently addressable sides and shelves, rather than one solid box.
+- [ ] freestanding TV plans contain a screen, frame and feet or stand; wall-mounted variants do not invent feet.
+- [ ] every recipe stays within the configured operation limit and passes ModelPlan/domain validation.
+- [ ] golden fixtures assert expected parts, names, spatial relationships and valid X3D output.
+- [ ] the configured provider's Issue #43 benchmark records structural-fidelity results for every recipe.
+
+### Depends on
+
+#19, #20, #34, #35
+
+---
+
+## Issue #68 — Prevent unintended geometric overlap
+
+**Labels:** `agent`, `backend`, `testing`, `priority:P1`
+
+### Objective
+
+Prevent generated parts from visibly passing through each other unless that
+overlap is explicitly requested or is an intentional contact.
+
+### Scope
+
+- calculate conservative axis-aligned bounds from ModelSpec primitives and transforms;
+- distinguish allowed face contact, containment and requested overlap from unintended penetration;
+- represent an explicit requested intersection with a typed operation-level flag,
+  never by trusting unstructured prompt text at validation time;
+- validate a candidate before commit and return concise, safe diagnostics;
+- give the agent one bounded opportunity to correct a diagnosable layout failure.
+
+### Acceptance criteria
+
+- [ ] overlapping shelves, legs, screens or unrelated scene objects are rejected before commit.
+- [ ] floor contact and a shelf resting on its side supports remain valid.
+- [ ] an explicit user request to intersect or embed objects can be represented without a false failure.
+- [ ] a failed overlap check preserves the last valid revision and surfaces actionable diagnostics.
+- [ ] unit and integration tests cover primitive pairs, composed furniture and the correction path.
+
+### Depends on
+
+#7, #10, #19, #67
+
+---
+
+## Issue #69 — Persist a semantic scene name
+
+**Labels:** `domain`, `agent`, `backend`, `frontend`, `priority:P1`
+
+### Objective
+
+Make the project's name describe the modeled scene and persist with the
+semantic model instead of existing only as frontend download state.
+
+### Scope
+
+- add a bounded, user-editable scene title to ModelSpec and its TypeScript and
+  Python schema mirrors;
+- add a typed `set_scene_title` ModelPlan operation for the agent to suggest a
+  title without overriding an explicit user edit;
+- use the canonical title in workspace chrome, artifact filenames, manifest
+  exports and bounded agent context;
+- migrate unnamed scenes to a safe default title.
+
+### Acceptance criteria
+
+- [ ] a scene called "Wooden bookcase" remains so after reload, revision and export.
+- [ ] user-renamed titles take precedence over a later agent suggestion.
+- [ ] titles are normalized for filenames and never leak into executable or HTML contexts.
+- [ ] JSON Schema, Python and TypeScript contracts remain equivalent and migration is tested.
+
+### Depends on
+
+#5, #6, #7, #14, #31
+
+---
+
+## Issue #70 — Optimize the external Gemini provider path from benchmark data
+
+**Labels:** `agent`, `performance`, `testing`, `priority:P1`
+
+### Objective
+
+Reduce external-provider response time without trading away the structural
+quality established by the benchmark.
+
+### Scope
+
+- compare the configured Gemini-compatible model and request settings against
+  Issue #43's corpus;
+- reduce avoidable prompt/context and completion-token cost while preserving
+  the current scene summary and required structured-output constraints;
+- identify retry and format-repair causes before changing retry policy;
+- make any chosen provider/model setting explicit in user configuration and
+  documentation rather than silently changing it.
+
+### Acceptance criteria
+
+- [ ] a before/after benchmark report compares p50/p95 provider latency, repair rate and structural fidelity.
+- [ ] the selected configuration meets the documented latency budget without regressing valid-plan or valid-scene rates.
+- [ ] provider errors never expose credentials, raw prompts or raw responses.
+- [ ] a user can see which configured provider/model is active.
+
+### Depends on
+
+#43, #65, #67
+
+---
+
+## Recommended implementation sequence for agent quality and responsiveness
+
+`#65 -> #43 -> #20 -> #67 -> #68 -> #69 -> #54 -> #70`
+
+Issue #36 remains useful for invalid X3D repair, but is not in this sequence:
+a technically valid solid-box TV or shelf does not trigger an X3D repair loop.
 
 ---
 
