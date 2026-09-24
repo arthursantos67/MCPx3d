@@ -29,7 +29,9 @@ class Settings(BaseSettings):
     artifact_cache_max_entries: int = Field(default=200, gt=0)
     artifact_cache_ttl_seconds: int = Field(default=3600, gt=0)
 
-    cors_allow_origins: list[str] = Field(default_factory=lambda: ["http://localhost:5173"])
+    cors_allow_origins: list[str] = Field(
+        default_factory=lambda: ["http://localhost:5173", "http://127.0.0.1:5173"]
+    )
 
 
 @lru_cache

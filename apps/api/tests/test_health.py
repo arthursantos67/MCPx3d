@@ -51,6 +51,19 @@ def test_health_returns_ok() -> None:
     assert response.json() == {"status": "ok"}
 
 
+@pytest.mark.parametrize("origin", ["http://localhost:5173", "http://127.0.0.1:5173"])
+def test_cors_accepts_local_frontend_origins(origin: str) -> None:
+    client = TestClient(app)
+
+    response = client.options(
+        "/api/projects",
+        headers={"Origin": origin, "Access-Control-Request-Method": "POST"},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == origin
+
+
 def test_mcp_health_reports_unreachable_for_closed_port() -> None:
     app.dependency_overrides[get_settings] = lambda: Settings(mcp_base_url=AnyHttpUrl("http://127.0.0.1:1"))
     client = TestClient(app)

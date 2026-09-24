@@ -3,7 +3,15 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-from domain.model_plan import CreateObject, DuplicateObject, ModelPlan, RotateObject, ScaleObject, SetDimensions, TranslateObject
+from domain.model_plan import (
+    CreateObject,
+    DuplicateObject,
+    ModelPlan,
+    RotateObject,
+    ScaleObject,
+    SetDimensions,
+    TranslateObject,
+)
 from domain.model_spec import ModelObject, ModelSpec
 
 
@@ -34,9 +42,16 @@ def validate_no_unintended_overlap(spec: ModelSpec, plan: ModelPlan) -> None:
 def bounds_for(obj: ModelObject) -> Bounds:
     half = _half_extents(obj)
     rotation = _rotation_matrix(obj.transform.rotation)
-    rotated = tuple(sum(abs(rotation[row][column]) * half[column] for column in range(3)) for row in range(3))
+    rotated = (
+        sum(abs(rotation[0][column]) * half[column] for column in range(3)),
+        sum(abs(rotation[1][column]) * half[column] for column in range(3)),
+        sum(abs(rotation[2][column]) * half[column] for column in range(3)),
+    )
     position = obj.transform.position
-    return Bounds(tuple(position[i] - rotated[i] for i in range(3)), tuple(position[i] + rotated[i] for i in range(3)))
+    return Bounds(
+        (position[0] - rotated[0], position[1] - rotated[1], position[2] - rotated[2]),
+        (position[0] + rotated[0], position[1] + rotated[1], position[2] + rotated[2]),
+    )
 
 
 def _half_extents(obj: ModelObject) -> tuple[float, float, float]:
@@ -49,7 +64,11 @@ def _half_extents(obj: ModelObject) -> tuple[float, float, float]:
         raw = (dimensions["radius"], dimensions["height"] / 2, dimensions["radius"])
     else:
         raw = (dimensions["bottomRadius"], dimensions["height"] / 2, dimensions["bottomRadius"])
-    return tuple(abs(raw[i] * obj.transform.scale[i]) for i in range(3))
+    return (
+        abs(raw[0] * obj.transform.scale[0]),
+        abs(raw[1] * obj.transform.scale[1]),
+        abs(raw[2] * obj.transform.scale[2]),
+    )
 
 
 def _rotation_matrix(rotation: tuple[float, float, float]) -> tuple[tuple[float, float, float], ...]:

@@ -11,7 +11,14 @@ import math
 import re
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    BeforeValidator,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator,
+)
 
 Units = Literal["mm", "cm", "m", "unitless"]
 PrimitiveKind = Literal["box", "sphere", "cylinder", "cone"]

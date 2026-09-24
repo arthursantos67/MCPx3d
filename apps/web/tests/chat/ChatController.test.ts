@@ -66,6 +66,20 @@ const CREATE_CUBE_PLAN = {
   ],
 };
 
+const REPAIRED_CUBE_PLAN = {
+  intent: "create_model",
+  operations: [
+    {
+      op: "create_object",
+      name: "Cube",
+      kind: "box",
+      dimensions: { width: 10, height: 10, depth: 10 },
+      position: [20, 0, 0],
+      color: "#ff0000",
+    },
+  ],
+};
+
 test("a successful request updates modelSpec/previewUrl and appends an assistant message", async () => {
   const spec = emptySpec(0);
   const { provider } = makeFakeProvider([CREATE_CUBE_PLAN]);
@@ -115,6 +129,45 @@ test("a generation failure leaves modelSpec/previewUrl untouched and surfaces an
     state.messages.map((m) => m.role),
     ["user", "error"],
   );
+});
+
+test("a rejected geometry plan is regenerated once with the API validation diagnostic", async () => {
+  const spec = emptySpec(0);
+  const { provider, mock } = makeFakeProvider([CREATE_CUBE_PLAN, REPAIRED_CUBE_PLAN]);
+  let applyAttempt = 0;
+  const { api, applyCalls } = makeFakeApi(spec, () => {
+    applyAttempt += 1;
+    if (applyAttempt === 1) {
+      throw new ApiError(422, {
+        code: "UNINTENDED_OVERLAP",
+        message: "'Table top' (table_top) intersects 'Backrest' (chair_backrest); move one part.",
+        correlationId: "request-overlap",
+      });
+    }
+    return {
+      projectId: "prj_test",
+      revision: 1,
+      modelSpec: { ...spec, revision: 1 },
+      validation: { schemaValid: true, semanticValid: true, warnings: [], autofixes: [] },
+      preview: { url: "/api/projects/prj_test/artifacts/html?revision=1" },
+      artifacts: [{ format: "html", available: true, reason: null }],
+      correlationId: "request-repaired",
+    };
+  });
+  const controller = new ChatController(provider, api);
+  await controller.initialize();
+
+  await controller.sendMessage("create a table and chair");
+
+  assert.equal(mock.calls.length, 2);
+  assert.equal(applyCalls.length, 2);
+  assert.deepEqual(applyCalls[0]?.plan, CREATE_CUBE_PLAN);
+  assert.deepEqual(applyCalls[1]?.plan, REPAIRED_CUBE_PLAN);
+  const repairRequest = mock.calls[1]?.messages.at(-1)?.content ?? "";
+  assert.match(repairRequest, /UNINTENDED_OVERLAP/);
+  assert.match(repairRequest, /table_top/);
+  assert.equal(controller.getState().requestStatus, "succeeded");
+  assert.deepEqual(controller.getState().messages.map((message) => message.role), ["user", "assistant"]);
 });
 
 test("a pure clarify plan is surfaced as an assistant question and never reaches applyPlan", async () => {

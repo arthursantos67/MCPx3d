@@ -262,7 +262,7 @@ test("uses Retry-After when a transient response supplies it", async () => {
   assert.deepEqual(delays, [3000]);
 });
 
-test("stops after two retries and replaces a raw 503 payload with an actionable message", async () => {
+test("stops after four retries and replaces a raw 503 payload with an actionable message", async () => {
   let calls = 0;
   const provider = new OpenAICompatibleProvider(
     CONFIG,
@@ -276,11 +276,11 @@ test("stops after two retries and replaces a raw 503 payload with an actionable 
 
   await assert.rejects(() => provider.generateStructured([], {}), (error: unknown) => {
     assert.ok(error instanceof Error);
-    assert.match(error.message, /temporarily unavailable after three attempts/);
+    assert.match(error.message, /temporarily unavailable after five attempts/);
     assert.doesNotMatch(error.message, /\{\s*"error"/);
     return true;
   });
-  assert.equal(calls, 3);
+  assert.equal(calls, 5);
 });
 
 test("a fetch failure becomes an actionable provider request error without leaking the original browser error", async () => {

@@ -103,6 +103,17 @@ function failureSource(error: unknown): "provider" | "modeling" | "mcp" | "sessi
   return "modeling";
 }
 
+const REPAIRABLE_APPLY_ERROR_CODES = new Set([
+  "DOMAIN_VALIDATION_FAILED",
+  "UNKNOWN_TARGET",
+  "UNINTENDED_OVERLAP",
+  "X3D_VALIDATION_FAILED",
+]);
+
+function isRepairableApplyError(error: unknown): error is ApiError {
+  return error instanceof ApiError && error.status === 422 && REPAIRABLE_APPLY_ERROR_CODES.has(error.code);
+}
+
 export class ChatController {
   private state: ChatControllerState;
   private readonly listeners = new Set<() => void>();
@@ -337,10 +348,15 @@ export class ChatController {
     }
 
     if (cancellation.signal.aborted) return;
-    const providerTimings = { provider_request: Math.max(0, this.now() - startedAt) };
+    let providerRequestMs = Math.max(0, this.now() - startedAt);
 
     if (isPureClarify(plan)) {
-      this.patch({ isBusy: false, requestStatus: "succeeded", pipelineStage: "ready", timings: providerTimings });
+      this.patch({
+        isBusy: false,
+        requestStatus: "succeeded",
+        pipelineStage: "ready",
+        timings: { provider_request: providerRequestMs },
+      });
       this.appendMessage("assistant", plan.operations[0].question);
       if (this.activeCancellation === cancellation) this.activeCancellation = null;
       return;
@@ -349,12 +365,46 @@ export class ChatController {
     this.patch({ pipelineStage: "plan-validation" });
 
     try {
-      this.patch({ pipelineStage: "api-mcp-build" });
-      const response = await this.api.applyPlan(projectId, {
-        expectedRevision: modelSpec.revision,
-        requestId: this.makeId(),
-        plan,
-      }, cancellation.signal);
+      let response: ApplyPlanResponse | null = null;
+      for (let applyAttempt = 0; applyAttempt < 2; applyAttempt += 1) {
+        this.patch({ pipelineStage: "api-mcp-build" });
+        try {
+          response = await this.api.applyPlan(projectId, {
+            expectedRevision: modelSpec.revision,
+            requestId: this.makeId(),
+            plan,
+          }, cancellation.signal);
+          break;
+        } catch (error) {
+          if (applyAttempt > 0 || !isRepairableApplyError(error)) throw error;
+
+          this.patch({ pipelineStage: "provider-request" });
+          const repairStartedAt = this.now();
+          plan = await generateModelPlan({
+            provider: this.provider,
+            request: trimmed,
+            modelSpec,
+            recentMessages,
+            priorValidationDiagnostics: `${error.code}: ${error.message}`,
+          });
+          providerRequestMs += Math.max(0, this.now() - repairStartedAt);
+          if (cancellation.signal.aborted) return;
+
+          if (isPureClarify(plan)) {
+            this.patch({
+              isBusy: false,
+              requestStatus: "succeeded",
+              pipelineStage: "ready",
+              timings: { provider_request: providerRequestMs },
+            });
+            this.appendMessage("assistant", plan.operations[0].question);
+            return;
+          }
+          this.patch({ pipelineStage: "plan-validation" });
+        }
+      }
+
+      if (response === null) throw new Error("The plan could not be applied.");
       if (cancellation.signal.aborted) return;
       const unchanged = response.revision === modelSpec.revision;
       this.patch({
@@ -369,7 +419,7 @@ export class ChatController {
         artifacts: response.artifacts,
         validation: response.validation,
         correlationId: response.correlationId,
-        timings: { ...providerTimings, ...response.timings },
+        timings: { provider_request: providerRequestMs, ...response.timings },
         requestStatus: unchanged ? "no-change" : "succeeded",
         pipelineStage: unchanged ? "ready" : "x3d-validation",
       });

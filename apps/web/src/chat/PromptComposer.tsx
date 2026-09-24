@@ -11,8 +11,9 @@ interface PromptComposerProps {
   readonly onOpenProviderSettings: () => void;
 }
 
-/** FE-02: multiline input, Enter submits / Shift+Enter inserts a newline,
- * disabled while a request is in flight or local AI isn't ready yet. */
+/** FE-02: multiline input, Enter submits / Shift+Enter inserts a newline.
+ * The input remains editable while sending is gated so the user can draft a
+ * prompt while the provider or project is still starting. */
 function PromptComposer({ gate, onSend, showProviderLink, onOpenProviderSettings }: PromptComposerProps) {
   const [value, setValue] = useState("");
 
@@ -39,7 +40,6 @@ function PromptComposer({ gate, onSend, showProviderLink, onOpenProviderSettings
         onChange={(event) => setValue(event.target.value)}
         onKeyDown={handleKeyDown}
         placeholder="Describe the 3D object you want to create or change…"
-        disabled={!gate.canSend}
         rows={3}
         aria-label="Message"
       />

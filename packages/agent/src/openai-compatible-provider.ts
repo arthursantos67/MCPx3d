@@ -53,7 +53,7 @@ function isConfigComplete(config: OpenAICompatibleConfig): boolean {
  * budget to eat into a free-tier tokens-per-minute limit. */
 const DEFAULT_MAX_COMPLETION_TOKENS = 2048;
 const CHAT_COMPLETIONS_PATH = "/chat/completions";
-const MAX_TRANSIENT_RETRIES = 2;
+const MAX_TRANSIENT_RETRIES = 4;
 const BASE_RETRY_DELAY_MS = 1000;
 
 function toChatCompletionsUrl(configuredUrl: string): string {
@@ -96,10 +96,10 @@ function sleepWithAbort(milliseconds: number, signal: AbortSignal): Promise<void
 
 function providerResponseMessage(status: number, bodyText: string): string {
   if (status === 503) {
-    return "The AI model is temporarily unavailable after three attempts (status 503). Try again shortly or choose another model.";
+    return "The AI model is temporarily unavailable after five attempts (status 503). Try again shortly or choose another model.";
   }
   if (status === 429) {
-    return "The AI provider rate limit was reached after three attempts (status 429). Try again shortly or check the provider quota.";
+    return "The AI provider rate limit was reached after five attempts (status 429). Try again shortly or check the provider quota.";
   }
   return `OpenAI-compatible request failed with status ${status}${bodyText ? `: ${bodyText}` : ""}`;
 }

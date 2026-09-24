@@ -29,12 +29,11 @@ function toFormState(config: ProviderConfig): FormState {
 /**
  * BYOK settings panel: pick "Local (WebLLM)" (the default, unchanged
  * behavior) or "Custom (your own API key)" for any OpenAI-compatible
- * endpoint. Settings apply on next reload -- there is no live provider
- * hot-swap in this pass (the chat controller is constructed once).
+ * endpoint. Saving reloads the page so the controller is reconstructed with
+ * the selected provider immediately.
  */
 function ProviderSettings({ open, onClose }: ProviderSettingsProps) {
   const [form, setForm] = useState<FormState>(() => toFormState(loadProviderConfig()))
-  const [savedNote, setSavedNote] = useState<string | null>(null)
 
   if (!open) return null
 
@@ -45,13 +44,12 @@ function ProviderSettings({ open, onClose }: ProviderSettingsProps) {
         ? { mode: 'byok', baseUrl: form.baseUrl.trim(), apiKey: form.apiKey.trim(), model: form.model.trim() }
         : { mode: 'local' }
     saveProviderConfig(config)
-    setSavedNote('Saved. Reload the page to apply.')
+    window.location.reload()
   }
 
   function handleClear(): void {
     clearProviderConfig()
-    setForm(toFormState({ mode: 'local' }))
-    setSavedNote('Cleared. Reload the page to apply.')
+    window.location.reload()
   }
 
   return (
@@ -115,19 +113,18 @@ function ProviderSettings({ open, onClose }: ProviderSettingsProps) {
                 type="text"
                 value={form.model}
                 onChange={(event) => setForm({ ...form, model: event.target.value })}
-                placeholder="llama-3.3-70b-versatile"
+                placeholder="gemini-3.5-flash-lite"
               />
             </label>
           </div>
         )}
 
         <div className="provider-settings__footer">
-          {savedNote && <span className="provider-settings__saved-note">{savedNote}</span>}
           <button type="button" className="provider-settings__clear" onClick={handleClear}>
             Clear
           </button>
           <button type="submit" className="provider-settings__submit">
-            Save
+            Save and apply
           </button>
         </div>
       </form>

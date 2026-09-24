@@ -19,7 +19,7 @@ def test_settings_have_expected_defaults() -> None:
     assert settings.max_operations_per_plan == 100
     assert settings.max_prompt_characters == 8000
     assert settings.max_artifact_bytes == 10_000_000
-    assert settings.cors_allow_origins == ["http://localhost:5173"]
+    assert settings.cors_allow_origins == ["http://localhost:5173", "http://127.0.0.1:5173"]
 
 
 @pytest.mark.parametrize(
