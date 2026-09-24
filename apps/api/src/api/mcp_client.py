@@ -54,6 +54,11 @@ class X3DMcpClient:
     def __init__(self, session: ClientSession) -> None:
         self._session = session
         self._composed_scene: str | None = None
+        self._transport_call_count = 0
+
+    @property
+    def transport_call_count(self) -> int:
+        return self._transport_call_count
 
     @classmethod
     @asynccontextmanager
@@ -80,7 +85,7 @@ class X3DMcpClient:
                 if _contains_transport_error(cleanup_error):
                     raise McpUnavailableError(str(cleanup_error)) from cleanup_error
             raise
-        except BaseException as exc:
+        except Exception as exc:
             # A failed transport task can make anyio's task-group teardown raise its own
             # ExceptionGroup here, which would bury the real cause -- swallow that and
             # report the original failure instead.
@@ -215,6 +220,7 @@ class X3DMcpClient:
         )
 
     async def _call(self, tool: str, arguments: dict[str, Any] | None = None) -> str:
+        self._transport_call_count += 1
         try:
             result = await self._session.call_tool(tool, arguments or {})
         except (httpx.HTTPError, OSError) as exc:

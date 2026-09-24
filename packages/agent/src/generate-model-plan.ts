@@ -37,11 +37,15 @@ import { ModelPlanValidationError, validateModelPlanDomainRules } from "../../do
 import type { ModelSpec } from "../../domain/ts/src/model-spec.ts";
 
 import { ProviderRequestError, type AgentMessage, type GenerationOptions, type LLMProvider } from "./provider.ts";
+import type { ModelSpecSummaryOptions } from "./model-spec-summary.ts";
 import { modelPlanJsonSchema } from "./schemas.ts";
 import { buildSystemPrompt } from "./system-prompt.ts";
 
 const ajv = new Ajv2020({ allErrors: true });
 const validateModelPlanSchema = ajv.compile(modelPlanJsonSchema);
+
+export const DEFAULT_RECENT_MESSAGE_LIMIT = 8;
+export const MAX_RECENT_MESSAGE_LIMIT = 32;
 
 export class ModelPlanGenerationError extends Error {
   constructor(message: string, options?: { cause?: unknown }) {
@@ -57,19 +61,16 @@ export interface GenerateModelPlanInput {
   readonly modelSpec: ModelSpec;
   /** Prior chat turns for context (FR-31); excludes the system prompt and the current request. */
   readonly recentMessages?: readonly AgentMessage[];
+  readonly maxRecentMessages?: number;
+  readonly summaryOptions?: ModelSpecSummaryOptions;
   /** Diagnostics from a previously failed apply attempt for this same request, if any (FR-31). */
   readonly priorValidationDiagnostics?: string;
   readonly options?: GenerationOptions;
 }
 
 export async function generateModelPlan(input: GenerateModelPlanInput): Promise<ModelPlan> {
-  const { provider, request, modelSpec, recentMessages = [], priorValidationDiagnostics, options } = input;
-
-  const systemMessage: AgentMessage = { role: "system", content: buildSystemPrompt(modelSpec) };
-  const userContent = priorValidationDiagnostics
-    ? `${request}\n\n(The previous attempt for this request failed validation: ${priorValidationDiagnostics}. Take this into account.)`
-    : request;
-  const messages: AgentMessage[] = [systemMessage, ...recentMessages, { role: "user", content: userContent }];
+  const { provider, modelSpec, options } = input;
+  const messages = assembleModelPlanMessages(input);
 
   const first = await attempt(provider, messages, options, modelSpec);
   if (first.ok) return first.plan;
@@ -90,6 +91,31 @@ export async function generateModelPlan(input: GenerateModelPlanInput): Promise<
   throw new ModelPlanGenerationError(
     `ModelPlan generation failed after one repair attempt: ${second.reason}`,
   );
+}
+
+export function assembleModelPlanMessages(input: Omit<GenerateModelPlanInput, "provider" | "options">): AgentMessage[] {
+  const maxRecentMessages = boundedRecentMessageLimit(input.maxRecentMessages);
+  const recentMessages = input.recentMessages
+    ?.filter((message) => message.role === "user" || message.role === "assistant")
+    .slice(-maxRecentMessages) ?? [];
+  const lastMessage = recentMessages.at(-1);
+  const history = lastMessage?.role === "user" && lastMessage.content.trim() === input.request.trim()
+    ? recentMessages.slice(0, -1)
+    : recentMessages;
+  const userContent = input.priorValidationDiagnostics
+    ? `${input.request}\n\n(The previous attempt for this request failed validation: ${input.priorValidationDiagnostics}. Take this into account.)`
+    : input.request;
+  return [
+    { role: "system", content: buildSystemPrompt(input.modelSpec, input.summaryOptions) },
+    ...history,
+    { role: "user", content: userContent },
+  ];
+}
+
+function boundedRecentMessageLimit(value: number | undefined): number {
+  return value !== undefined && Number.isFinite(value) && value > 0
+    ? Math.min(Math.floor(value), MAX_RECENT_MESSAGE_LIMIT)
+    : DEFAULT_RECENT_MESSAGE_LIMIT;
 }
 
 /**

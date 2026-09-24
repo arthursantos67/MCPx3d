@@ -212,6 +212,7 @@ def test_valid_plan_commits_and_returns_validation_and_artifacts(
     assert len(payload["modelSpec"]["objects"]) == 1
     assert payload["validation"]["schemaValid"] is True
     assert payload["validation"]["semanticValid"] is True
+    assert {"plan_validation", "candidate_mutation", "mcp_connect", "mcp_scene_build", "x3d_validation"} <= set(payload["timings"])
     assert payload["preview"]["url"] == f"/api/projects/{session.project_id}/artifacts/html?revision=1"
     assert {a["format"] for a in payload["artifacts"]} == {"html", "x3d", "x3dj", "x3dv"}
     assert {a["format"] for a in payload["artifacts"] if a["available"]} == {"html", "x3d", "x3dv"}

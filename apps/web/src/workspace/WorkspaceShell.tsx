@@ -27,9 +27,10 @@ import StatusBar from './StatusBar.tsx'
  * as unavailable, it also offers a direct way to configure that alternative.
  */
 function WorkspaceShell() {
-  const { state, sendMessage, canSend, retryProject, resetProject, renameProject, setViewerStatus } = useChatController()
+  const { state, sendMessage, cancelGeneration, canSend, retryProject, resetProject, renameProject, setViewerStatus } = useChatController()
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [mcpHealth, setMcpHealth] = useState<McpHealth | null>(null)
+  const [activePanel, setActivePanel] = useState<'chat' | 'viewer'>('chat')
 
   useEffect(() => {
     let active = true
@@ -78,18 +79,52 @@ function WorkspaceShell() {
         <ProviderSettings open={settingsOpen} onClose={() => setSettingsOpen(false)} />
       </header>
 
-      <div className="workspace-main">
-        <section className="workspace-chat" aria-label="Chat">
+      <div className={`workspace-main workspace-main--${activePanel}`}>
+        <div className="workspace-panel-tabs" role="tablist" aria-label="Workspace panels">
+          <button
+            type="button"
+            id="workspace-tab-chat"
+            role="tab"
+            aria-selected={activePanel === 'chat'}
+            aria-controls="workspace-chat-panel"
+            onClick={() => setActivePanel('chat')}
+          >
+            Chat
+          </button>
+          <button
+            type="button"
+            id="workspace-tab-viewer"
+            role="tab"
+            aria-selected={activePanel === 'viewer'}
+            aria-controls="workspace-viewer-panel"
+            onClick={() => setActivePanel('viewer')}
+          >
+            3D Preview
+          </button>
+        </div>
+
+        <section
+          id="workspace-chat-panel"
+          className="workspace-chat"
+          role="tabpanel"
+          aria-labelledby="workspace-tab-chat"
+        >
           <ChatPanel
             state={state}
             sendMessage={sendMessage}
+            cancelGeneration={cancelGeneration}
             canSend={canSend}
             retryProject={retryProject}
             onOpenProviderSettings={() => setSettingsOpen(true)}
           />
         </section>
 
-        <section className="workspace-viewer" aria-label="3D viewer">
+        <section
+          id="workspace-viewer-panel"
+          className="workspace-viewer"
+          role="tabpanel"
+          aria-labelledby="workspace-tab-viewer"
+        >
           <X3DPreviewFrame previewUrl={state.previewUrl} onStatusChange={setViewerStatus} />
         </section>
       </div>

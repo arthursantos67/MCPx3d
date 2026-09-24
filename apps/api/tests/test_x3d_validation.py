@@ -122,6 +122,12 @@ class TestParseSemanticReport:
             Diagnostic("error", "semantic-report-protocol", "Unrecognized or incomplete semantic report."),
         )
 
+    @pytest.mark.parametrize("report", ["", "# Semantic Check Report\n\n## Errors"])
+    def test_empty_or_partial_report_fails_closed(self, report: str) -> None:
+        assert _parse_semantic_report(report) == (
+            Diagnostic("error", "semantic-report-protocol", "Unrecognized or incomplete semantic report."),
+        )
+
 
 class TestValidationResultSummary:
     def test_to_summary_matches_fr23_shape(self) -> None:

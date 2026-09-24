@@ -53,7 +53,7 @@ export interface AgentProvider extends LLMProvider {
 
 export interface ChatApi {
   createProject(): Promise<ModelSpec>;
-  applyPlan(projectId: string, body: ApplyPlanRequestBody): Promise<ApplyPlanResponse>;
+  applyPlan(projectId: string, body: ApplyPlanRequestBody, signal?: AbortSignal): Promise<ApplyPlanResponse>;
   deleteProject(projectId: string): Promise<void>;
   resolveArtifactUrl(relativeUrl: string): string;
 }
@@ -111,6 +111,7 @@ export class ChatController {
   private readonly makeId: () => string;
   private initialization: Promise<void> | null = null;
   private readonly unsubscribeProvider: () => void;
+  private activeCancellation: AbortController | null = null;
 
   constructor(provider: AgentProvider, api: ChatApi, options?: ChatControllerOptions) {
     this.provider = provider;
@@ -124,6 +125,7 @@ export class ChatController {
       modelSpec: null,
       previewUrl: null,
       agentPhase: initial.phase,
+      agentProvider: provider.id,
       agentDetail: describeProviderState(initial),
       isBusy: false,
       projectId: null,
@@ -136,6 +138,7 @@ export class ChatController {
       failureSource: null,
       pipelineStage: "idle",
       pipelineStartedAt: null,
+      timings: {},
     };
 
     this.unsubscribeProvider = provider.onStateChange((next) => {
@@ -160,7 +163,22 @@ export class ChatController {
 
   dispose(): void {
     this.unsubscribeProvider();
+    this.cancelGeneration();
+  }
+
+  cancelGeneration(): void {
+    const cancellation = this.activeCancellation;
+    if (cancellation === null) return;
+    cancellation.abort();
+    this.activeCancellation = null;
     void this.provider.cancel?.();
+    this.patch({
+      isBusy: false,
+      requestStatus: "cancelled",
+      failureSource: null,
+      pipelineStage: "ready",
+      pipelineStartedAt: null,
+    });
   }
 
   async retryProject(): Promise<void> {
@@ -180,6 +198,7 @@ export class ChatController {
         failureSource: null,
         pipelineStage: "idle",
         pipelineStartedAt: null,
+        timings: recreatingExpiredProject ? {} : this.state.timings,
       });
     } catch (error) {
       this.patch({ projectError: describeError(error) });
@@ -205,6 +224,7 @@ export class ChatController {
       failureSource: null,
       pipelineStage: "idle",
       pipelineStartedAt: null,
+      timings: {},
       projectName: "Untitled model",
     });
     if (projectId) {
@@ -273,31 +293,42 @@ export class ChatController {
     const recentMessages = this.recentAgentMessages();
     this.appendMessage("user", trimmed);
 
+    const startedAt = this.now();
     this.patch({
       isBusy: true,
       requestStatus: "working",
       failureSource: null,
       pipelineStage: "provider-request",
-      pipelineStartedAt: this.now(),
+      pipelineStartedAt: startedAt,
+      timings: {},
     });
+    const cancellation = new AbortController();
+    this.activeCancellation = cancellation;
 
     let plan: ModelPlan;
     try {
       plan = await generateModelPlan({ provider: this.provider, request: trimmed, modelSpec, recentMessages });
     } catch (error) {
+      if (cancellation.signal.aborted) return;
+      if (this.activeCancellation === cancellation) this.activeCancellation = null;
       this.patch({
         isBusy: false,
         requestStatus: "failed",
         failureSource: failureSource(error),
         pipelineStage: "failed",
+        timings: { provider_request: Math.max(0, this.now() - startedAt) },
       });
       this.appendMessage("error", describeError(error));
       return;
     }
 
+    if (cancellation.signal.aborted) return;
+    const providerTimings = { provider_request: Math.max(0, this.now() - startedAt) };
+
     if (isPureClarify(plan)) {
-      this.patch({ isBusy: false, requestStatus: "succeeded", pipelineStage: "ready" });
+      this.patch({ isBusy: false, requestStatus: "succeeded", pipelineStage: "ready", timings: providerTimings });
       this.appendMessage("assistant", plan.operations[0].question);
+      if (this.activeCancellation === cancellation) this.activeCancellation = null;
       return;
     }
 
@@ -309,7 +340,8 @@ export class ChatController {
         expectedRevision: modelSpec.revision,
         requestId: this.makeId(),
         plan,
-      });
+      }, cancellation.signal);
+      if (cancellation.signal.aborted) return;
       const unchanged = response.revision === modelSpec.revision;
       this.patch({
         isBusy: false,
@@ -322,6 +354,7 @@ export class ChatController {
         artifacts: response.artifacts,
         validation: response.validation,
         correlationId: response.correlationId,
+        timings: { ...providerTimings, ...response.timings },
         requestStatus: unchanged ? "no-change" : "succeeded",
         pipelineStage: unchanged ? "ready" : "x3d-validation",
       });
@@ -330,6 +363,7 @@ export class ChatController {
         unchanged ? "No model changes were needed; the current revision remains active." : summarizeApplyResult(response),
       );
     } catch (error) {
+      if (cancellation.signal.aborted) return;
       const source = failureSource(error);
       this.patch({
         isBusy: false,
@@ -340,6 +374,8 @@ export class ChatController {
         pipelineStage: "failed",
       });
       this.appendMessage("error", describeError(error));
+    } finally {
+      if (this.activeCancellation === cancellation) this.activeCancellation = null;
     }
   }
 

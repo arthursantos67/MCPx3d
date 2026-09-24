@@ -22,6 +22,12 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
 @media (prefers-color-scheme: dark) {
   :root {
     --text: #9ca3af;
@@ -43,9 +49,11 @@ body {
   height: 100%;
   margin: 0;
   overflow: hidden;
+  overflow-x: hidden;
 }
 
 #root {
   height: 100%;
   box-sizing: border-box;
+  min-width: 0;
 }

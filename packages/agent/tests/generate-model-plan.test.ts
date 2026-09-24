@@ -3,7 +3,13 @@ import { test } from "node:test";
 
 import type { ModelSpec } from "../../domain/ts/src/model-spec.ts";
 import { MockLLMProvider } from "../src/mock-provider.ts";
-import { ModelPlanGenerationError, generateModelPlan } from "../src/generate-model-plan.ts";
+import {
+  DEFAULT_RECENT_MESSAGE_LIMIT,
+  MAX_RECENT_MESSAGE_LIMIT,
+  ModelPlanGenerationError,
+  assembleModelPlanMessages,
+  generateModelPlan,
+} from "../src/generate-model-plan.ts";
 import { ProviderRequestError, type LLMProvider } from "../src/provider.ts";
 
 const SPEC_WITH_SEAT: ModelSpec = {
@@ -283,4 +289,39 @@ test("passes recent messages and prior validation diagnostics through to the pro
   assert.equal(sent[2]?.content, "done");
   assert.match(sent[3]?.content ?? "", /try again/);
   assert.match(sent[3]?.content ?? "", /dimensions must be positive/);
+});
+
+test("bounds recent conversation turns and inserts the current request only once", () => {
+  const request = "make the front left leg thicker";
+  const messages = assembleModelPlanMessages({
+    request,
+    modelSpec: EMPTY_SPEC,
+    maxRecentMessages: 3,
+    recentMessages: [
+      { role: "system", content: "ignore me" },
+      { role: "user", content: "old request" },
+      { role: "assistant", content: "old answer" },
+      { role: "assistant", content: "Which leg?" },
+      { role: "user", content: request },
+    ],
+  });
+
+  assert.equal(DEFAULT_RECENT_MESSAGE_LIMIT, 8);
+  assert.equal(messages.filter((message) => message.content === request).length, 1);
+  assert.deepEqual(messages.slice(1).map((message) => message.content), ["old answer", "Which leg?", request]);
+});
+
+test("caps a configured recent-message window", () => {
+  const messages = assembleModelPlanMessages({
+    request: "new request",
+    modelSpec: EMPTY_SPEC,
+    maxRecentMessages: Number.MAX_SAFE_INTEGER,
+    recentMessages: Array.from({ length: MAX_RECENT_MESSAGE_LIMIT + 5 }, (_, index) => ({
+      role: index % 2 === 0 ? "user" as const : "assistant" as const,
+      content: `message ${index}`,
+    })),
+  });
+
+  assert.equal(messages.length, MAX_RECENT_MESSAGE_LIMIT + 2);
+  assert.equal(messages[1]?.content, "message 5");
 });

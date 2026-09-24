@@ -1,0 +1,31 @@
+[
+  {
+    "request": "Create a simple table with a top and four legs.",
+    "expectedPartNames": ["Table top", "Front left leg", "Front right leg", "Back left leg", "Back right leg"],
+    "plan": {
+      "intent": "create_table",
+      "operations": [
+        { "op": "create_object", "id": "table_top", "name": "Table top", "kind": "box", "dimensions": { "width": 1200, "height": 50, "depth": 700 }, "position": [0, 725, 0] },
+        { "op": "create_object", "id": "table_leg_front_left", "name": "Front left leg", "kind": "cylinder", "dimensions": { "radius": 40, "height": 700 }, "position": [-520, 350, 270] },
+        { "op": "create_object", "id": "table_leg_front_right", "name": "Front right leg", "kind": "cylinder", "dimensions": { "radius": 40, "height": 700 }, "position": [520, 350, 270] },
+        { "op": "create_object", "id": "table_leg_back_left", "name": "Back left leg", "kind": "cylinder", "dimensions": { "radius": 40, "height": 700 }, "position": [-520, 350, -270] },
+        { "op": "create_object", "id": "table_leg_back_right", "name": "Back right leg", "kind": "cylinder", "dimensions": { "radius": 40, "height": 700 }, "position": [520, 350, -270] }
+      ]
+    }
+  },
+  {
+    "request": "Create a chair with a seat, four legs, and a backrest.",
+    "expectedPartNames": ["Seat", "Front left leg", "Front right leg", "Back left leg", "Back right leg", "Backrest"],
+    "plan": {
+      "intent": "create_chair",
+      "operations": [
+        { "op": "create_object", "id": "chair_seat", "name": "Seat", "kind": "box", "dimensions": { "width": 450, "height": 40, "depth": 450 }, "position": [0, 470, 0] },
+        { "op": "create_object", "id": "chair_leg_front_left", "name": "Front left leg", "kind": "cylinder", "dimensions": { "radius": 25, "height": 450 }, "position": [-180, 225, 180] },
+        { "op": "create_object", "id": "chair_leg_front_right", "name": "Front right leg", "kind": "cylinder", "dimensions": { "radius": 25, "height": 450 }, "position": [180, 225, 180] },
+        { "op": "create_object", "id": "chair_leg_back_left", "name": "Back left leg", "kind": "cylinder", "dimensions": { "radius": 25, "height": 450 }, "position": [-180, 225, -180] },
+        { "op": "create_object", "id": "chair_leg_back_right", "name": "Back right leg", "kind": "cylinder", "dimensions": { "radius": 25, "height": 450 }, "position": [180, 225, -180] },
+        { "op": "create_object", "id": "chair_backrest", "name": "Backrest", "kind": "box", "dimensions": { "width": 450, "height": 300, "depth": 40 }, "position": [0, 640, -180] }
+      ]
+    }
+  }
+]

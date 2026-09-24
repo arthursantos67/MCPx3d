@@ -50,41 +50,35 @@ async def get_html_artifact(
     download: bool = False,
 ) -> Response:
     # ProjectNotFoundError propagates to the PROJECT_NOT_FOUND handler.
-    session = project_service.get_project(project_id)
-    snapshot_revision = session.revision
-    x3d_content = session.validated_x3d.get(snapshot_revision)
-    if revision != snapshot_revision or x3d_content is None:
-        raise StaleArtifactRequestError(project_id, revision, snapshot_revision)
+    snapshot = project_service.snapshot_revision(project_id, revision)
+    if snapshot is None:
+        current_revision = project_service.get_project(project_id).revision
+        raise StaleArtifactRequestError(project_id, revision, current_revision)
 
-    cached_html = session.html_artifacts.get(snapshot_revision)
-    if cached_html is not None:
-        return Response(
-            content=cached_html,
-            media_type="text/html; charset=utf-8",
-            headers={
-                "Content-Disposition": _content_disposition(
-                    normalized_artifact_filename(project_id, snapshot_revision, "html"), download
-                )
-            },
-        )
+    async def build() -> str:
+        async with X3DMcpClient.connect(
+            str(settings.mcp_base_url), settings.mcp_request_timeout_seconds
+        ) as client:
+            artifact = await build_html_artifact(
+                client,
+                project_id=snapshot.project_id,
+                revision=snapshot.revision,
+                x3d_content=snapshot.x3d_content,
+                requested_revision=snapshot.revision,
+                max_bytes=settings.max_artifact_bytes,
+            )
+        return artifact.content
 
-    async with X3DMcpClient.connect(
-        str(settings.mcp_base_url), settings.mcp_request_timeout_seconds
-    ) as client:
-        artifact = await build_html_artifact(
-            client,
-            project_id=project_id,
-            revision=snapshot_revision,
-            x3d_content=x3d_content,
-            requested_revision=revision,
-            max_bytes=settings.max_artifact_bytes,
-        )
-    project_service.cache_html_artifact(project_id, snapshot_revision, artifact.content)
+    content = await project_service.get_or_build_artifact(snapshot, "html", build)
 
     return Response(
-        content=artifact.content,
-        media_type=artifact.media_type,
-        headers={"Content-Disposition": _content_disposition(artifact.filename, download)},
+        content=content,
+        media_type="text/html; charset=utf-8",
+        headers={
+            "Content-Disposition": _content_disposition(
+                normalized_artifact_filename(project_id, snapshot.revision, "html"), download
+            )
+        },
     )
 
 
@@ -104,43 +98,58 @@ async def get_download_artifact(
     project_service: Annotated[ProjectSessionService, Depends(get_project_service)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> Response:
+    snapshot = project_service.snapshot_revision(project_id, revision)
     session = project_service.get_project(project_id)
-    x3d_content = session.validated_x3d.get(session.revision)
 
     if format == "manifest":
+        if revision != session.revision:
+            raise StaleArtifactRequestError(project_id, revision, session.revision)
         artifact = build_model_spec_artifact(
             project_id=project_id,
-            revision=session.revision,
-            model_spec=session.model_spec,
+            revision=revision,
+            model_spec=session.model_spec.model_copy(deep=True),
             requested_revision=revision,
             max_bytes=settings.max_artifact_bytes,
         )
     else:
         if format == "x3dj":
             raise ArtifactConversionError(format, "X3DJ is unavailable for the pinned X3D toolchain")
-        if x3d_content is None:
+        if snapshot is None:
             raise StaleArtifactRequestError(project_id, revision, session.revision)
         if format == "x3d":
             artifact = build_x3d_artifact(
                 project_id=project_id,
-                revision=session.revision,
-                x3d_content=x3d_content,
+                revision=snapshot.revision,
+                x3d_content=snapshot.x3d_content,
                 requested_revision=revision,
                 max_bytes=settings.max_artifact_bytes,
             )
         else:
-            async with X3DMcpClient.connect(
-                str(settings.mcp_base_url), settings.mcp_request_timeout_seconds
-            ) as client:
-                artifact = await build_converted_artifact(
-                    client,
-                    format=format,
-                    project_id=project_id,
-                    revision=session.revision,
-                    x3d_content=x3d_content,
-                    requested_revision=revision,
-                    max_bytes=settings.max_artifact_bytes,
-                )
+            async def build() -> str:
+                async with X3DMcpClient.connect(
+                    str(settings.mcp_base_url), settings.mcp_request_timeout_seconds
+                ) as client:
+                    converted = await build_converted_artifact(
+                        client,
+                        format=format,
+                        project_id=project_id,
+                        revision=snapshot.revision,
+                        x3d_content=snapshot.x3d_content,
+                        requested_revision=snapshot.revision,
+                        max_bytes=settings.max_artifact_bytes,
+                    )
+                return converted.content
+
+            content = await project_service.get_or_build_artifact(snapshot, format, build)
+            return Response(
+                content=content,
+                media_type="model/x3d-vrml",
+                headers={
+                    "Content-Disposition": _content_disposition(
+                        normalized_artifact_filename(project_id, snapshot.revision, format), True
+                    )
+                },
+            )
 
     return Response(
         content=artifact.content,

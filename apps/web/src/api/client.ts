@@ -35,6 +35,7 @@ export interface ApplyPlanResponse {
   readonly preview: { readonly url: string } | null;
   readonly artifacts: readonly ArtifactDescriptor[];
   readonly correlationId: string | null;
+  readonly timings?: Readonly<Record<string, number>>;
 }
 
 export interface ApplyPlanRequestBody {
@@ -96,11 +97,13 @@ export async function createProject(): Promise<ModelSpec> {
 export async function applyPlan(
   projectId: string,
   body: ApplyPlanRequestBody,
+  signal?: AbortSignal,
 ): Promise<ApplyPlanResponse> {
   const response = await fetch(`${baseUrl()}/api/projects/${projectId}/plans`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
+    signal,
   });
   if (!response.ok) return throwApiError(response);
   const result = (await response.json()) as Omit<ApplyPlanResponse, "correlationId">;

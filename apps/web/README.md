@@ -4,6 +4,10 @@
 
 **This module stays unused.** It was Phase-0 spike code (PRD §14.1) written before `packages/agent` existed. PRD §3.7 assigns "the provider package" (`packages/agent`) as the only place allowed to call WebLLM directly, so the real chat integration (Issue #27, below) depends on `packages/agent`'s `WebLLMProvider` instead of this. Retiring this directory is open follow-up, not done as part of #27.
 
+## Cancelling a generation
+
+While local inference or plan application is active, the chat presents **Cancel generation**. It interrupts the selected provider and aborts the pending API request when one exists. A canceled request is not applied to the project, so the last validated revision and its preview remain active; the composer returns to its ready state.
+
 ## Chat (`src/chat`, Issues #26/#27)
 
 `ChatPanel.tsx` (+ `MessageList.tsx`/`GenerationProgress.tsx`/`PromptComposer.tsx`/`ChatPanel.css`) is the presentational half; `ChatController.ts` is a framework-agnostic state machine (no React) that a user prompt flows through: `packages/agent`'s `generateModelPlan` (against a `WebLLMProvider`, adapted to this module's own `AgentProvider`/`AgentStatus` shape by `useChatController.ts`'s `toAgentProvider`) → a pure-`clarify` plan short-circuits to an assistant question instead of being POSTed (it would otherwise be rejected by the backend as `422 AMBIGUOUS_TARGET`) → otherwise `apps/web/src/api/client.ts`'s `applyPlan` POSTs it to `apps/api`, and `modelSpec`/`revision`/`previewUrl` only update on success. `useChatController.ts` is the `useSyncExternalStore` React wrapper, called once in `WorkspaceShell` (not inside `ChatPanel`), since the viewer needs the same controller's `previewUrl`. See `PRD-AI-Web3D-Modeler-v1.0.md` §10.1/§10.5's Issue #26/#27 implementation notes for the full detail, including why `packages/agent/src/schemas.ts` needed a fix before any of this could run in a browser at all.

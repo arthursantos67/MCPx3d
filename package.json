@@ -11,6 +11,7 @@
     "dev:web": "npm run dev --workspace web",
     "lint:web": "npm run lint --workspace web",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "test": "npm run test --workspaces --if-present"
+    "test": "npm run test --workspaces --if-present && node --test tests/golden/*.test.mjs",
+    "benchmark:report": "node tests/golden/run-benchmark.mjs"
   }
 }

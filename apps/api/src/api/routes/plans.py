@@ -40,6 +40,7 @@ plan's net effect on the object count.
 from __future__ import annotations
 
 import logging
+from time import perf_counter
 from typing import Annotated, Literal
 from uuid import uuid4
 
@@ -58,6 +59,7 @@ from api.projects import (
     RevisionConflictError,
     get_project_service,
 )
+from api.timing import StageTimer
 from api.x3d_validation import build_and_validate_candidate
 
 logger = logging.getLogger(__name__)
@@ -109,6 +111,7 @@ class ApplyPlanResponse(BaseModel):
     validation: ValidationSummary
     preview: PreviewInfo | None
     artifacts: list[ArtifactDescriptor]
+    timings: dict[str, int] = Field(default_factory=dict)
 
 
 def _request_id(body: dict[str, object]) -> str:
@@ -125,6 +128,7 @@ async def apply_plan_endpoint(
     project_service: Annotated[ProjectSessionService, Depends(get_project_service)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> ApplyPlanResponse:
+    timer = StageTimer(clock=perf_counter)
     correlation_id = _request_id(body)
     response.headers["X-Correlation-Id"] = correlation_id
     # So api.error_handlers can echo the same correlation id on any error
@@ -132,7 +136,8 @@ async def apply_plan_endpoint(
     http_request.state.correlation_id = correlation_id
 
     # ValidationError propagates to the INVALID_PLAN handler (api.error_handlers, Issue #23).
-    plan_request = ApplyPlanRequest.model_validate(body)
+    with timer.measure("plan_validation"):
+        plan_request = ApplyPlanRequest.model_validate(body)
 
     logger.info(
         "apply_plan.start correlation_id=%s project_id=%s expected_revision=%s",
@@ -169,9 +174,10 @@ async def apply_plan_endpoint(
         raise RevisionConflictError(project_id, plan_request.expectedRevision, session.revision)
 
     # UnknownTargetError/MutationError/ComplexityLimitError propagate to their handlers.
-    candidate = apply_plan(
-        session.model_spec, plan_request.plan, max_objects=settings.max_objects_per_project
-    )
+    with timer.measure("candidate_mutation"):
+        candidate = apply_plan(
+            session.model_spec, plan_request.plan, max_objects=settings.max_objects_per_project
+        )
 
     if all(isinstance(operation, NoChange) for operation in plan_request.plan.operations):
         return ApplyPlanResponse(
@@ -190,13 +196,18 @@ async def apply_plan_endpoint(
                 ArtifactDescriptor(format=fmt, available=available, reason=reason)
                 for fmt, available, reason in _ARTIFACT_AVAILABILITY
             ],
+            timings=timer.summary(),
         )
 
     # McpUnavailableError/McpToolError/X3DValidationError propagate to their handlers.
+    timer.start("mcp_connect")
     async with X3DMcpClient.connect(
         str(settings.mcp_base_url), settings.mcp_request_timeout_seconds
     ) as client:
-        _def_names, validation = await build_and_validate_candidate(client, candidate)
+        timer.finish("mcp_connect")
+        stage_timings: dict[str, int] = {}
+        _def_names, validation = await build_and_validate_candidate(client, candidate, stage_timings)
+        timer.add(stage_timings)
 
     # RevisionConflictError/ProjectNotFoundError propagate to their handlers (a race
     # with another request between the pre-check above and this commit).
@@ -226,4 +237,5 @@ async def apply_plan_endpoint(
             ArtifactDescriptor(format=fmt, available=available, reason=reason)
             for fmt, available, reason in _ARTIFACT_AVAILABILITY
         ],
+        timings=timer.summary(),
     )

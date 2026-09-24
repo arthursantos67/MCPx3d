@@ -1022,11 +1022,11 @@ Preserve usable model if a new request fails.
 
 ### Acceptance criteria
 
-- [ ] desktop = side-by-side.
-- [ ] tablet/mobile = tabs or stacked panels.
-- [ ] chat composer stays usable.
-- [ ] viewer has minimum usable height.
-- [ ] no horizontal body overflow.
+- [x] desktop = side-by-side.
+- [x] tablet/mobile = tabs or stacked panels.
+- [x] chat composer stays usable.
+- [x] viewer has minimum usable height.
+- [x] no horizontal body overflow.
 
 ### Depends on
 
@@ -1046,12 +1046,12 @@ Give the LLM enough model knowledge without sending generated HTML/X3D.
 
 ### Acceptance criteria
 
-- [ ] summary includes object IDs/names/kinds/key dimensions/transforms.
-- [ ] summary is bounded in size.
-- [ ] unrelated internal state is omitted.
-- [ ] follow-up modification test succeeds.
-- [ ] a configurable bounded window of recent user/assistant turns accompanies the summary when conversational references require it.
-- [ ] one shared assembler prevents duplicate insertion of the current request in normal and clarification flows.
+- [x] summary includes object IDs/names/kinds/key dimensions/transforms.
+- [x] summary is bounded in size.
+- [x] unrelated internal state is omitted.
+- [x] follow-up modification test succeeds.
+- [x] a configurable bounded window of recent user/assistant turns accompanies the summary when conversational references require it.
+- [x] one shared assembler prevents duplicate insertion of the current request in normal and clarification flows.
 
 ### Depends on
 
@@ -1069,10 +1069,10 @@ Improve decomposition of objects such as chair/table/shelf.
 
 ### Acceptance criteria
 
-- [ ] prompt includes decomposition guidance.
-- [ ] chair/table golden prompts create named parts.
-- [ ] generated plan stays below operation limits.
-- [ ] spatial conventions are consistent.
+- [x] prompt includes decomposition guidance.
+- [x] chair/table golden prompts create named parts.
+- [x] generated plan stays below operation limits.
+- [x] spatial conventions are consistent.
 
 ### Depends on
 
@@ -1108,12 +1108,16 @@ Recover from fixable X3D failures without infinite loops.
 
 ### Acceptance criteria
 
-- [ ] cancel visible during local inference.
-- [ ] canceled inference does not submit partial plan.
-- [ ] previous model remains valid.
-- [ ] UI returns to ready state.
-- [ ] cancellation propagates through frontend request, API orchestration and MCP connection/call boundaries where supported.
-- [ ] backend cancellation is not translated into `MCP_UNAVAILABLE` or logged as an infrastructure incident.
+- [x] cancel visible during local inference.
+- [x] canceled inference does not submit partial plan.
+- [x] previous model remains valid.
+- [x] UI returns to ready state.
+- [x] cancellation propagates through frontend request, API orchestration and MCP connection/call boundaries where supported.
+- [x] backend cancellation is not translated into `MCP_UNAVAILABLE` or logged as an infrastructure incident.
+
+### Implementation note
+
+Completed 2026-09-24 in `apps/web/src/chat/ChatController.ts`: one request-scoped `AbortController` cancels the provider and, if reached, the `POST /plans` fetch. An aborted generation returns the UI to ready without submitting its plan or replacing the prior model/preview. `X3DMcpClient.connect` now maps only ordinary connection failures to `MCP_UNAVAILABLE`; `CancelledError` propagates. `apps/web/tests/chat/ChatController.test.ts` and `apps/api/tests/test_mcp_client.py` cover both boundaries.
 
 ### Depends on
 
@@ -1225,15 +1229,19 @@ Isolate standalone viewer HTML from application origin.
 
 ### Acceptance criteria
 
-- [ ] starts test MCP service.
-- [ ] creates each primitive.
-- [ ] validates each scene.
-- [ ] generates X3DOM page.
-- [ ] tests MCP unavailable path.
-- [ ] tests isolated sessions.
-- [ ] unknown, empty and partially parseable semantic reports fail closed and prevent commit.
-- [ ] current pinned-converter capability is asserted, including known-unavailable `.x3dj` without breaking base artifacts.
-- [ ] cancellation during connect/call propagates instead of becoming `MCP_UNAVAILABLE`.
+- [x] starts test MCP service.
+- [x] creates each primitive.
+- [x] validates each scene.
+- [x] generates X3DOM page.
+- [x] tests MCP unavailable path.
+- [x] tests isolated sessions.
+- [x] unknown, empty and partially parseable semantic reports fail closed and prevent commit.
+- [x] current pinned-converter capability is asserted, including known-unavailable `.x3dj` without breaking base artifacts.
+- [x] cancellation during connect/call propagates instead of becoming `MCP_UNAVAILABLE`.
+
+### Implementation note
+
+Completed 2026-09-24. `apps/api/tests/conftest.py` starts the pinned Streamable HTTP MCP service; `apps/api/tests/test_mcp_integration.py` exercises every MVP primitive, schema/semantic validation, X3DOM output, unavailable transport and isolated sessions. Protocol-report, converter and cancellation regressions remain covered by the focused API tests.
 
 ### Depends on
 
@@ -1286,7 +1294,7 @@ At least 30 prompts across:
 
 ### Depends on
 
-#17, #19, #35, #42, #64, #65
+#18, #19, #35, #42, #64, #65
 
 ---
 
@@ -1576,13 +1584,17 @@ Guarantee that every served X3D/HTML artifact belongs to the exact advertised re
 
 ### Acceptance criteria
 
-- [ ] a deterministic concurrency test interleaves preview revision N with commit N+1 and proves no cross-revision response is possible.
-- [ ] repeated preview/download requests for the same revision reuse validated X3D and do not call scene construction/validation again.
-- [ ] concurrent identical misses execute one underlying build and all callers receive the same immutable artifact.
-- [ ] cache keys include project, revision and format/config inputs that affect bytes.
-- [ ] cache memory is bounded and expired/deleted projects release artifacts.
-- [ ] cache failure or eviction never invalidates the last committed ModelSpec and can rebuild safely.
-- [ ] response metadata, filename and body all identify the same revision.
+- [x] a deterministic concurrency test interleaves preview revision N with commit N+1 and proves no cross-revision response is possible.
+- [x] repeated preview/download requests for the same revision reuse validated X3D and do not call scene construction/validation again.
+- [x] concurrent identical misses execute one underlying build and all callers receive the same immutable artifact.
+- [x] cache keys include project, revision and format/config inputs that affect bytes.
+- [x] cache memory is bounded and expired/deleted projects release artifacts.
+- [x] cache failure or eviction never invalidates the last committed ModelSpec and can rebuild safely.
+- [x] response metadata, filename and body all identify the same revision.
+
+### Implementation note
+
+Completed 2026-09-24. `ProjectSessionService.snapshot_revision` captures immutable revision inputs before artifact work awaits MCP. The bounded TTL cache uses `(project_id, revision, format)` keys and shares in-flight HTML/VRML builds. Project deletion/expiry removes its entries; failures never mutate the committed `ModelSpec`. `test_projects.py` covers revision interleaving and concurrent cache misses.
 
 ### Depends on
 
@@ -1608,12 +1620,16 @@ Reduce the dominant post-AI latency caused by many sequential MCP transport call
 
 ### Acceptance criteria
 
-- [ ] benchmark output reports MCP calls and elapsed build time per fixture before and after the change.
-- [ ] the composed fixture performs at least 50% fewer transport round-trips than the recorded baseline, or a reviewed upstream limitation and alternative target are documented.
-- [ ] each primitive and the composed fixture remain schema/semantically valid and equivalent in visible structure/materials.
-- [ ] operation ordering is deterministic across repeated runs.
-- [ ] partial batch failure cannot commit a revision or corrupt the next isolated session.
-- [ ] orchestration timeout and user cancellation stop remaining batch work.
+- [x] benchmark output reports MCP calls and elapsed build time per fixture before and after the change.
+- [x] the composed fixture performs at least 50% fewer transport round-trips than the recorded baseline, or a reviewed upstream limitation and alternative target are documented.
+- [x] each primitive and the composed fixture remain schema/semantically valid and equivalent in visible structure/materials.
+- [x] operation ordering is deterministic across repeated runs.
+- [x] partial batch failure cannot commit a revision or corrupt the next isolated session.
+- [x] orchestration timeout and user cancellation stop remaining batch work.
+
+### Implementation note
+
+Completed 2026-09-24. Compatible scenes use the upstream `compose_scene` tool once, preserving `ModelSpec` order and DEF mapping; scale/transparency use the existing granular fallback. The baseline is one reset plus ten calls per primitive, while the composed fixture records one build call and elapsed time in `test_mcp_integration.py`. The normal candidate validation/commit boundary remains all-or-nothing.
 
 ### Depends on
 

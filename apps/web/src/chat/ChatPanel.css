@@ -53,6 +53,24 @@
   color: var(--text);
 }
 
+.chat-composer__cancel {
+  margin: -2px 0 8px;
+  align-self: flex-start;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text-h);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 4px 9px;
+  cursor: pointer;
+}
+
+.chat-composer__cancel:hover {
+  border-color: var(--accent-border);
+  background: var(--accent-bg);
+}
+
 .chat-composer {
   display: flex;
   flex-direction: column;
@@ -83,8 +101,10 @@
 }
 
 .chat-composer__hint {
+  min-width: 0;
   font-size: 12px;
   color: var(--text);
+  overflow-wrap: break-word;
 }
 
 .chat-composer__provider-link {

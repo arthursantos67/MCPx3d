@@ -11,6 +11,17 @@ async def test_connect_to_unreachable_host_raises_mcp_unavailable() -> None:
             pass
 
 
+async def test_cancellation_during_a_tool_call_is_not_mapped_to_mcp_unavailable() -> None:
+    class CancelledSession:
+        async def call_tool(self, tool: str, arguments: dict[str, object]) -> object:
+            raise __import__("asyncio").CancelledError()
+
+    client = X3DMcpClient(CancelledSession())  # type: ignore[arg-type]
+
+    with pytest.raises(__import__("asyncio").CancelledError):
+        await client.get_scene()
+
+
 async def test_unknown_node_type_raises_mcp_tool_error(x3d_mcp_server: str) -> None:
     async with X3DMcpClient.connect(x3d_mcp_server) as client:
         with pytest.raises(McpToolError):

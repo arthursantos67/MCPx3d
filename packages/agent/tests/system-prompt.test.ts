@@ -72,3 +72,14 @@ test("never invents operations beyond the fixed v1 set", () => {
     assert.match(prompt, new RegExp(`- ${op}:`));
   }
 });
+
+test("guides bounded named primitive decomposition with consistent furniture placement", () => {
+  const prompt = buildSystemPrompt(BASE_SPEC);
+
+  assert.match(prompt, /chair, table, or shelf/);
+  assert.match(prompt, /specific, stable name and id/);
+  assert.match(prompt, /100 operations or fewer/);
+  assert.match(prompt, /positive Z is front/);
+  assert.match(prompt, /Positions are primitive centers/);
+  assert.match(prompt, /Y=0 as the floor/);
+});

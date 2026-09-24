@@ -97,6 +97,7 @@ export interface UseChatController {
   readonly state: ChatControllerState;
   readonly canSend: () => SendGate;
   readonly sendMessage: (text: string) => void;
+  readonly cancelGeneration: () => void;
   readonly retryProject: () => void;
   readonly resetProject: () => void;
   readonly renameProject: (name: string) => void;
@@ -128,6 +129,7 @@ export function useChatController(): UseChatController {
     [controller],
   );
   const canSend = useCallback(() => controller.canSend(), [controller]);
+  const cancelGeneration = useCallback(() => controller.cancelGeneration(), [controller]);
   const retryProject = useCallback(() => {
     void controller.retryProject();
   }, [controller]);
@@ -140,5 +142,5 @@ export function useChatController(): UseChatController {
     [controller],
   );
 
-  return { state, sendMessage, canSend, retryProject, resetProject, renameProject, setViewerStatus };
+  return { state, sendMessage, cancelGeneration, canSend, retryProject, resetProject, renameProject, setViewerStatus };
 }

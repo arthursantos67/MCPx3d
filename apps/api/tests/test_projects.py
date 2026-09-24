@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 from domain.model_spec import Material, ModelObject, ModelSpec, Scene, Transform
 
@@ -199,3 +201,77 @@ def test_default_units_and_display_scale_are_applied_to_new_projects() -> None:
 
     assert session.model_spec.units == "m"
     assert session.model_spec.scene.displayScale == 2.5
+
+
+def test_revision_snapshot_is_not_relabelled_by_a_later_commit() -> None:
+    service = _service()
+    session = service.create_project()
+    first = service.commit_revision(
+        session.project_id, 0, _add_object(session.model_spec), "<X3D revision='1'/>"
+    )
+
+    snapshot = service.snapshot_revision(session.project_id, first.revision)
+    assert snapshot is not None
+
+    service.commit_revision(
+        session.project_id, first.revision, _add_object(first.model_spec, "obj_b"), "<X3D revision='2'/>"
+    )
+
+    assert snapshot.revision == 1
+    assert snapshot.x3d_content == "<X3D revision='1'/>"
+    assert len(snapshot.model_spec.objects) == 1
+
+
+@pytest.mark.anyio
+async def test_identical_artifact_cache_misses_share_one_build() -> None:
+    service = _service()
+    session = service.create_project()
+    committed = service.commit_revision(
+        session.project_id, 0, _add_object(session.model_spec), "<X3D/>"
+    )
+    snapshot = service.snapshot_revision(session.project_id, committed.revision)
+    assert snapshot is not None
+    started = asyncio.Event()
+    release = asyncio.Event()
+    calls = 0
+
+    async def build() -> str:
+        nonlocal calls
+        calls += 1
+        started.set()
+        await release.wait()
+        return "<html>revision 1</html>"
+
+    first = asyncio.create_task(service.get_or_build_artifact(snapshot, "html", build))
+    await started.wait()
+    second = asyncio.create_task(service.get_or_build_artifact(snapshot, "html", build))
+    await asyncio.sleep(0)
+    release.set()
+
+    assert await first == await second == "<html>revision 1</html>"
+    assert calls == 1
+
+
+@pytest.mark.anyio
+async def test_deleting_a_project_cancels_its_inflight_artifact_build() -> None:
+    service = _service()
+    session = service.create_project()
+    committed = service.commit_revision(
+        session.project_id, 0, _add_object(session.model_spec), "<X3D/>"
+    )
+    snapshot = service.snapshot_revision(session.project_id, committed.revision)
+    assert snapshot is not None
+    started = asyncio.Event()
+
+    async def build() -> str:
+        started.set()
+        await asyncio.Event().wait()
+        return "<html>should not be cached</html>"
+
+    artifact = asyncio.create_task(service.get_or_build_artifact(snapshot, "html", build))
+    await started.wait()
+    service.delete_project(session.project_id)
+
+    with pytest.raises(asyncio.CancelledError):
+        await artifact
+    assert not service._artifact_cache._entries

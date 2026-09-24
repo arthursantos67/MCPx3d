@@ -18,7 +18,7 @@ export interface ChatMessage {
 }
 
 export type AgentPhase = "idle" | "unsupported" | "loading" | "ready" | "generating" | "error";
-export type RequestStatus = "idle" | "working" | "succeeded" | "no-change" | "failed" | "session-expired";
+export type RequestStatus = "idle" | "working" | "succeeded" | "no-change" | "cancelled" | "failed" | "session-expired";
 export type PipelineStage =
   | "idle"
   | "provider-request"
@@ -49,6 +49,7 @@ export interface ChatControllerState {
   readonly modelSpec: ModelSpec | null;
   readonly previewUrl: string | null;
   readonly agentPhase: AgentPhase;
+  readonly agentProvider: string;
   readonly agentDetail: string | null;
   readonly isBusy: boolean;
   readonly projectId: string | null;
@@ -61,4 +62,5 @@ export interface ChatControllerState {
   readonly failureSource: FailureSource;
   readonly pipelineStage: PipelineStage;
   readonly pipelineStartedAt: number | null;
+  readonly timings: Readonly<Record<string, number>>;
 }

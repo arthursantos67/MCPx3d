@@ -42,8 +42,6 @@ async def apply_model_spec(client: X3DMcpClient, spec: ModelSpec) -> dict[str, s
     Returns the `ModelObject.id` -> X3D DEF name mapping each primitive was
     created with, so callers can correlate ModelSpec objects with X3D nodes.
     """
-    await client.reset_scene()
-
     def_names: dict[str, str] = {}
     if _can_compose_in_batch(spec):
         objects: list[dict[str, object]] = []
@@ -67,6 +65,8 @@ async def apply_model_spec(client: X3DMcpClient, spec: ModelSpec) -> dict[str, s
         )
         await client.compose_scene(objects, background=background)
         return def_names
+
+    await client.reset_scene()
 
     if spec.scene.background is not None:
         await client.create_background(_hex_to_rgb(spec.scene.background))

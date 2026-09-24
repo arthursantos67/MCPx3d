@@ -19,6 +19,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import re
+from time import perf_counter
 from typing import Literal
 
 from domain.model_spec import ModelSpec
@@ -169,7 +170,7 @@ async def autofix_and_revalidate(
 
 
 async def build_and_validate_candidate(
-    client: X3DMcpClient, spec: ModelSpec
+    client: X3DMcpClient, spec: ModelSpec, timings: dict[str, int] | None = None
 ) -> tuple[dict[str, str], ValidationResult]:
     """Builds `spec` as X3D and runs the full validation pipeline (Issue #10).
 
@@ -178,8 +179,14 @@ async def build_and_validate_candidate(
     invalid after autofix, so an invalid candidate can never be mistaken for
     one safe to commit as the project's new revision.
     """
+    started = perf_counter()
     def_names = await apply_model_spec(client, spec)
+    if timings is not None:
+        timings["mcp_scene_build"] = max(0, round((perf_counter() - started) * 1000))
+    started = perf_counter()
     result = await autofix_and_revalidate(client, await validate_current_scene(client))
+    if timings is not None:
+        timings["x3d_validation"] = max(0, round((perf_counter() - started) * 1000))
     if not result.valid:
         raise X3DValidationError(result)
     return def_names, result

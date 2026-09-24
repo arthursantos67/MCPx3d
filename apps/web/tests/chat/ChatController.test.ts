@@ -248,3 +248,66 @@ test("an expired project preserves the last scene until explicit recreation, the
   assert.equal(controller.getState().previewUrl, null);
   assert.equal(controller.getState().messages.length, 0);
 });
+
+test("cancelling local inference never submits its completed plan", async () => {
+  const spec = emptySpec(1);
+  let resolveGeneration: ((value: unknown) => void) | undefined;
+  let cancelCalls = 0;
+  const provider: AgentProvider = {
+    id: "deferred",
+    isAvailable: async () => true,
+    initialize: async () => {},
+    generateStructured: async <T>() => new Promise<T>((resolve) => { resolveGeneration = resolve as (value: unknown) => void; }),
+    cancel: async () => { cancelCalls += 1; },
+    getState: () => ({ phase: "ready" }),
+    onStateChange: () => () => {},
+  };
+  const { api, applyCalls } = makeFakeApi(spec);
+  const controller = new ChatController(provider, api);
+  await controller.initialize();
+
+  const request = controller.sendMessage("create a red cube");
+  controller.cancelGeneration();
+  resolveGeneration?.(CREATE_CUBE_PLAN);
+  await request;
+
+  assert.equal(cancelCalls, 1);
+  assert.equal(applyCalls.length, 0);
+  assert.equal(controller.getState().modelSpec?.revision, 1);
+  assert.equal(controller.getState().requestStatus, "cancelled");
+  assert.equal(controller.getState().isBusy, false);
+  assert.equal(controller.canSend().canSend, true);
+});
+
+test("cancelling an API request aborts it without replacing the current model", async () => {
+  const spec = emptySpec(1);
+  const { provider } = makeFakeProvider([CREATE_CUBE_PLAN]);
+  let signalStarted: () => void = () => {};
+  const started = new Promise<void>((resolve) => { signalStarted = resolve; });
+  let aborted = false;
+  const api: ChatApi = {
+    createProject: async () => spec,
+    applyPlan: async (_projectId, _body, signal) => new Promise<ApplyPlanResponse>((_resolve, reject) => {
+      signalStarted();
+      signal?.addEventListener("abort", () => {
+        aborted = true;
+        reject(new DOMException("The operation was aborted.", "AbortError"));
+      }, { once: true });
+    }),
+    deleteProject: async () => {},
+    resolveArtifactUrl: (relativeUrl) => `http://test${relativeUrl}`,
+  };
+  const controller = new ChatController(provider, api);
+  await controller.initialize();
+
+  const request = controller.sendMessage("create a red cube");
+  await started;
+  controller.cancelGeneration();
+  await request;
+
+  assert.equal(aborted, true);
+  assert.equal(controller.getState().modelSpec?.revision, 1);
+  assert.equal(controller.getState().previewUrl, null);
+  assert.equal(controller.getState().requestStatus, "cancelled");
+  assert.equal(controller.getState().isBusy, false);
+});

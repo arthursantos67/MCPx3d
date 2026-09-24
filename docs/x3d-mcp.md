@@ -22,3 +22,11 @@ See `services/x3d-mcp/README.md` for the `mcp<2` dependency pin required to run 
 At this pinned commit, `convert_x3d`'s JSON target (`.x3dj`) never returns well-formed JSON -- confirmed even for an empty `<Scene/>`, so it isn't content-specific. The bug is in the vendored `x3d` pip package's `X3D.JSON()` serializer (invoked by `services/x3d-mcp/vendor/src/tools/convert.py`), not in this repository's code, and not something to patch inside the pinned submodule. It appears to have gone unnoticed upstream because the vendored server's own test suite (`tests/test_tools.py::test_convert_xml_to_json`) only asserts substrings like `"X3D" in json_out`, never that the result actually parses.
 
 `apps/api` advertises `.x3dj` with `available: false` and rejects malformed conversion output, so the UI must not offer that download at this pin. `.x3dv` (ClassicVRML) continues to work. Revisit this note if the pinned commit is ever bumped past an upstream fix.
+
+## Scene batching and revision artifacts
+
+For scenes whose objects use only the fields supported by upstream `compose_scene`, the API sends one ordered `compose_scene` command instead of the granular node-by-node sequence. The granular path remains the safe fallback for transform scale or material transparency, which the pinned workflow tool does not represent. Both paths finish at the same schema and semantic validation boundary.
+
+The granular baseline is one reset plus ten MCP calls per primitive; the compatible composed fixtures use one build call. `apps/api/tests/test_mcp_integration.py` records the composed fixture's call count and elapsed build time and asserts the round-trip reduction against that baseline.
+
+The API retains validated X3D and generated artifacts by exact project/revision/format in a bounded, TTL-based in-memory cache. Concurrent HTML or VRML requests for the same cache key share one MCP build; a new committed revision receives a separate key and cannot relabel an earlier response. Cache entries are released when their temporary project expires or is deleted.

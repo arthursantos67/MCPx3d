@@ -9,9 +9,11 @@ from under the user; an untouched one does.
 
 from __future__ import annotations
 
+import asyncio
 import secrets
 import time
-from collections.abc import Callable
+from collections import OrderedDict
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from functools import lru_cache
 
@@ -66,6 +68,81 @@ class ProjectSession:
         return self.model_spec.revision
 
 
+@dataclass(frozen=True)
+class RevisionSnapshot:
+    """Immutable inputs for one exact, already-validated revision."""
+
+    project_id: str
+    revision: int
+    model_spec: ModelSpec
+    x3d_content: str
+
+
+@dataclass(frozen=True)
+class _CachedArtifact:
+    content: str
+    created_at: float
+
+
+class _ArtifactCache:
+    """Small in-memory artifact cache with one shared build per cache key."""
+
+    def __init__(self, *, max_entries: int, ttl_seconds: float, clock: Callable[[], float]) -> None:
+        self._max_entries = max_entries
+        self._ttl_seconds = ttl_seconds
+        self._clock = clock
+        self._entries: OrderedDict[tuple[str, int, str], _CachedArtifact] = OrderedDict()
+        self._inflight: dict[tuple[str, int, str], asyncio.Task[str]] = {}
+
+    async def get_or_build(
+        self, key: tuple[str, int, str], build: Callable[[], Awaitable[str]]
+    ) -> str:
+        self.collect_expired()
+        cached = self._entries.get(key)
+        if cached is not None:
+            self._entries.move_to_end(key)
+            return cached.content
+
+        in_flight = self._inflight.get(key)
+        if in_flight is None:
+            in_flight = asyncio.create_task(_build_cached_artifact(build))
+            self._inflight[key] = in_flight
+        try:
+            content = await asyncio.shield(in_flight)
+        except BaseException:
+            if self._inflight.get(key) is in_flight and in_flight.done():
+                self._inflight.pop(key, None)
+            raise
+
+        if self._inflight.get(key) is not in_flight:
+            return content
+
+        self._entries[key] = _CachedArtifact(content, self._clock())
+        self._entries.move_to_end(key)
+        while len(self._entries) > self._max_entries:
+            self._entries.popitem(last=False)
+        if in_flight.done():
+            self._inflight.pop(key, None)
+        return content
+
+    def remove_project(self, project_id: str) -> None:
+        for key in [key for key in self._entries if key[0] == project_id]:
+            del self._entries[key]
+        for key in [key for key in self._inflight if key[0] == project_id]:
+            task = self._inflight.pop(key)
+            task.cancel()
+
+    def collect_expired(self) -> None:
+        now = self._clock()
+        for key, entry in list(self._entries.items()):
+            if now - entry.created_at > self._ttl_seconds:
+                del self._entries[key]
+
+
+async def _build_cached_artifact(build: Callable[[], Awaitable[str]]) -> str:
+    return await build()
+
+
 def _empty_model_spec(
     project_id: str, *, units: Units, display_scale: float
 ) -> ModelSpec:
@@ -89,6 +166,8 @@ class ProjectSessionService:
         default_units: Units = "mm",
         default_display_scale: float = 1.0,
         max_sessions: int = 1_000,
+        artifact_cache_max_entries: int = 200,
+        artifact_cache_ttl_seconds: float = 3600.0,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self._ttl_seconds = ttl_seconds
@@ -97,6 +176,11 @@ class ProjectSessionService:
         self._clock = clock
         self._max_sessions = max_sessions
         self._sessions: dict[str, ProjectSession] = {}
+        self._artifact_cache = _ArtifactCache(
+            max_entries=artifact_cache_max_entries,
+            ttl_seconds=artifact_cache_ttl_seconds,
+            clock=clock,
+        )
 
     def create_project(self) -> ProjectSession:
         self.collect_expired()
@@ -130,6 +214,7 @@ class ProjectSessionService:
 
     def delete_project(self, project_id: str) -> None:
         self._sessions.pop(project_id, None)
+        self._artifact_cache.remove_project(project_id)
 
     def commit_revision(
         self,
@@ -159,6 +244,29 @@ class ProjectSessionService:
         if session.revision == revision:
             session.html_artifacts[revision] = content
 
+    def snapshot_revision(self, project_id: str, revision: int) -> RevisionSnapshot | None:
+        """Captures all route inputs before an await can observe a later commit."""
+        session = self.get_project(project_id)
+        x3d_content = session.validated_x3d.get(revision)
+        if revision != session.revision or x3d_content is None:
+            return None
+        return RevisionSnapshot(
+            project_id=project_id,
+            revision=revision,
+            model_spec=session.model_spec.model_copy(deep=True),
+            x3d_content=x3d_content,
+        )
+
+    async def get_or_build_artifact(
+        self,
+        snapshot: RevisionSnapshot,
+        format_key: str,
+        build: Callable[[], Awaitable[str]],
+    ) -> str:
+        return await self._artifact_cache.get_or_build(
+            (snapshot.project_id, snapshot.revision, format_key), build
+        )
+
     def collect_expired(self) -> int:
         expired = [
             project_id
@@ -167,6 +275,8 @@ class ProjectSessionService:
         ]
         for project_id in expired:
             self._sessions.pop(project_id, None)
+            self._artifact_cache.remove_project(project_id)
+        self._artifact_cache.collect_expired()
         return len(expired)
 
     def _is_expired(self, session: ProjectSession) -> bool:
@@ -187,4 +297,6 @@ def get_project_service() -> ProjectSessionService:
         default_units=settings.default_units,
         default_display_scale=settings.default_display_scale,
         max_sessions=settings.max_sessions,
+        artifact_cache_max_entries=settings.artifact_cache_max_entries,
+        artifact_cache_ttl_seconds=settings.artifact_cache_ttl_seconds,
     )
