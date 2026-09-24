@@ -54,6 +54,7 @@ from api.errors import api_error
 from api.limits import ComplexityLimitError
 from api.mcp_client import X3DMcpClient
 from api.mutation import apply_plan
+from api.overlap import validate_no_unintended_overlap
 from api.projects import (
     ProjectSessionService,
     RevisionConflictError,
@@ -178,6 +179,8 @@ async def apply_plan_endpoint(
         candidate = apply_plan(
             session.model_spec, plan_request.plan, max_objects=settings.max_objects_per_project
         )
+
+    validate_no_unintended_overlap(candidate, plan_request.plan)
 
     if all(isinstance(operation, NoChange) for operation in plan_request.plan.operations):
         return ApplyPlanResponse(

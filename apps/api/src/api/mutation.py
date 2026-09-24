@@ -29,6 +29,7 @@ from domain.model_plan import (
     SetDimensions,
     SetMaterial,
     SetScene,
+    SetSceneTitle,
     TranslateObject,
     Vec3,
 )
@@ -134,6 +135,8 @@ def apply_plan(
                 _apply_rename_object(operation, objects)
             case SetScene():
                 scene = _apply_set_scene(operation, scene)
+            case SetSceneTitle():
+                scene = _apply_set_scene_title(operation, scene)
             case Clarify() | NoChange():
                 pass  # No ModelSpec mutation by definition.
 
@@ -279,11 +282,19 @@ def _apply_rename_object(op: RenameObject, objects: dict[str, ModelObject]) -> N
 
 def _apply_set_scene(op: SetScene, scene: Scene) -> Scene:
     return Scene(
+        title=scene.title,
+        titleSource=scene.titleSource,
         background=op.background if op.background is not None else scene.background,
         displayScale=op.displayScale
         if op.displayScale is not None
         else scene.displayScale,
     )
+
+
+def _apply_set_scene_title(op: SetSceneTitle, scene: Scene) -> Scene:
+    if scene.titleSource == "user":
+        return scene
+    return Scene(title=op.title.strip(), titleSource="agent", background=scene.background, displayScale=scene.displayScale)
 
 
 def _add_vec3(a: Vec3, b: Vec3) -> Vec3:

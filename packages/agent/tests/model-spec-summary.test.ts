@@ -18,7 +18,7 @@ test("empty scene summarizes to a clear placeholder", () => {
     objects: [],
   };
 
-  assert.equal(summarizeModelSpec(spec), "(empty scene -- no objects yet)");
+  assert.equal(summarizeModelSpec(spec), 'Scene title: "Untitled model"\n(empty scene -- no objects yet)');
 });
 
 test("summarizes each object's id, name, kind, dimensions, transform, and color", () => {

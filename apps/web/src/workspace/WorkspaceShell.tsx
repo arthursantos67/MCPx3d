@@ -27,7 +27,7 @@ import StatusBar from './StatusBar.tsx'
  * as unavailable, it also offers a direct way to configure that alternative.
  */
 function WorkspaceShell() {
-  const { state, sendMessage, cancelGeneration, canSend, retryProject, resetProject, renameProject, setViewerStatus } = useChatController()
+  const { state, sendMessage, cancelGeneration, canSend, retryProject, resetProject, renameProject, persistProjectName, setViewerStatus } = useChatController()
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [mcpHealth, setMcpHealth] = useState<McpHealth | null>(null)
   const [activePanel, setActivePanel] = useState<'chat' | 'viewer'>('chat')
@@ -57,6 +57,7 @@ function WorkspaceShell() {
             value={state.projectName}
             maxLength={80}
             onChange={(event) => renameProject(event.target.value)}
+            onBlur={persistProjectName}
             aria-label="Project name"
           />
         </label>

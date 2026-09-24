@@ -44,6 +44,7 @@
         "position": { "$ref": "#/$defs/vec3" },
         "rotation": { "$ref": "#/$defs/vec3" },
         "color": { "$ref": "#/$defs/color" },
+        "allowOverlap": { "type": "boolean" },
         "tags": { "type": "array", "items": { "type": "string", "minLength": 1 } }
       }
     },
@@ -66,7 +67,8 @@
         "op": { "const": "duplicate_object" },
         "target": { "$ref": "#/$defs/objectId" },
         "newId": { "$ref": "#/$defs/objectId" },
-        "offset": { "$ref": "#/$defs/vec3" }
+        "offset": { "$ref": "#/$defs/vec3" },
+        "allowOverlap": { "type": "boolean" }
       }
     },
 
@@ -77,7 +79,8 @@
       "properties": {
         "op": { "const": "set_dimensions" },
         "target": { "$ref": "#/$defs/objectId" },
-        "dimensions": { "$ref": "#/$defs/dimensions" }
+        "dimensions": { "$ref": "#/$defs/dimensions" },
+        "allowOverlap": { "type": "boolean" }
       }
     },
 
@@ -89,7 +92,8 @@
       "properties": {
         "op": { "const": "translate_object" },
         "target": { "$ref": "#/$defs/objectId" },
-        "delta": { "$ref": "#/$defs/vec3" }
+        "delta": { "$ref": "#/$defs/vec3" },
+        "allowOverlap": { "type": "boolean" }
       }
     },
 
@@ -101,7 +105,8 @@
       "properties": {
         "op": { "const": "rotate_object" },
         "target": { "$ref": "#/$defs/objectId" },
-        "delta": { "$ref": "#/$defs/vec3" }
+        "delta": { "$ref": "#/$defs/vec3" },
+        "allowOverlap": { "type": "boolean" }
       }
     },
 
@@ -118,7 +123,8 @@
           "items": { "type": "number", "not": { "const": 0 } },
           "minItems": 3,
           "maxItems": 3
-        }
+        },
+        "allowOverlap": { "type": "boolean" }
       }
     },
 
@@ -158,6 +164,16 @@
       }
     },
 
+    "setSceneTitle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["op", "title"],
+      "properties": {
+        "op": { "const": "set_scene_title" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 80 }
+      }
+    },
+
     "clarify": {
       "description": "Asks the user for missing/ambiguous information. Never mutates ModelSpec.",
       "type": "object",
@@ -192,6 +208,7 @@
         { "$ref": "#/$defs/setMaterial" },
         { "$ref": "#/$defs/renameObject" },
         { "$ref": "#/$defs/setScene" },
+        { "$ref": "#/$defs/setSceneTitle" },
         { "$ref": "#/$defs/clarify" },
         { "$ref": "#/$defs/noChange" }
       ]

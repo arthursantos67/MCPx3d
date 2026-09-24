@@ -12,6 +12,8 @@ export type PrimitiveKind = "box" | "sphere" | "cylinder" | "cone";
 export type Vec3 = [number, number, number];
 
 export interface Scene {
+  title?: string;
+  titleSource?: "default" | "agent" | "user";
   background?: string;
   displayScale: number;
 }

@@ -11,10 +11,18 @@ from typing import Annotated
 
 from domain.model_spec import ModelSpec
 from fastapi import APIRouter, Depends, Response
+from pydantic import BaseModel, ConfigDict, Field
 
 from api.projects import ProjectSessionService, get_project_service
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
+
+
+class SceneTitleUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    expectedRevision: int = Field(ge=0)
+    title: str = Field(min_length=1, max_length=80)
 
 
 @router.post("", response_model=ModelSpec, status_code=201)
@@ -34,6 +42,15 @@ async def get_project(
     # (api.error_handlers, Issue #23).
     session = project_service.get_project(project_id)
     return session.model_spec
+
+
+@router.patch("/{project_id}/scene/title", response_model=ModelSpec)
+async def update_scene_title(
+    project_id: str,
+    body: SceneTitleUpdate,
+    project_service: Annotated[ProjectSessionService, Depends(get_project_service)],
+) -> ModelSpec:
+    return project_service.set_scene_title(project_id, body.expectedRevision, body.title).model_spec
 
 
 @router.delete("/{project_id}", status_code=204, response_class=Response)

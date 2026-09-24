@@ -55,6 +55,7 @@ export interface ChatApi {
   createProject(): Promise<ModelSpec>;
   applyPlan(projectId: string, body: ApplyPlanRequestBody, signal?: AbortSignal): Promise<ApplyPlanResponse>;
   deleteProject(projectId: string): Promise<void>;
+  updateSceneTitle?(projectId: string, expectedRevision: number, title: string): Promise<ModelSpec>;
   resolveArtifactUrl(relativeUrl: string): string;
 }
 
@@ -187,6 +188,7 @@ export class ChatController {
       const recreatingExpiredProject = this.state.requestStatus === "session-expired";
       this.patch({
         modelSpec,
+        projectName: modelSpec.scene.title ?? "Untitled model",
         projectId: modelSpec.projectId,
         projectError: null,
         messages: recreatingExpiredProject ? [] : this.state.messages,
@@ -207,6 +209,18 @@ export class ChatController {
 
   renameProject(name: string): void {
     this.patch({ projectName: name.trim().slice(0, 80) || "Untitled model" });
+  }
+
+  async persistProjectName(): Promise<void> {
+    const modelSpec = this.state.modelSpec;
+    const projectId = this.state.projectId;
+    if (!modelSpec || !projectId || !this.api.updateSceneTitle) return;
+    try {
+      const updated = await this.api.updateSceneTitle(projectId, modelSpec.revision, this.state.projectName);
+      this.patch({ modelSpec: updated, projectName: updated.scene.title ?? "Untitled model" });
+    } catch (error) {
+      this.appendMessage("error", describeError(error));
+    }
   }
 
   async resetProject(): Promise<void> {
@@ -346,6 +360,7 @@ export class ChatController {
       this.patch({
         isBusy: false,
         modelSpec: unchanged ? this.state.modelSpec : response.modelSpec,
+        projectName: response.modelSpec.scene.title ?? this.state.projectName,
         previewUrl: unchanged
           ? this.state.previewUrl
           : response.preview

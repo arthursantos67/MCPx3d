@@ -79,6 +79,7 @@ class CreateObject(BaseModel):
     position: Vec3 | None = None
     rotation: Vec3 | None = None
     color: Color | None = None
+    allowOverlap: bool = False
     tags: list[Annotated[str, Field(min_length=1)]] | None = None
 
 
@@ -96,6 +97,7 @@ class DuplicateObject(BaseModel):
     target: ObjectId
     newId: ObjectId
     offset: Vec3 | None = None
+    allowOverlap: bool = False
 
 
 class SetDimensions(BaseModel):
@@ -104,6 +106,7 @@ class SetDimensions(BaseModel):
     op: Literal["set_dimensions"] = "set_dimensions"
     target: ObjectId
     dimensions: Dimensions
+    allowOverlap: bool = False
 
 
 class TranslateObject(BaseModel):
@@ -114,6 +117,7 @@ class TranslateObject(BaseModel):
     op: Literal["translate_object"] = "translate_object"
     target: ObjectId
     delta: Vec3
+    allowOverlap: bool = False
 
 
 class RotateObject(BaseModel):
@@ -124,6 +128,7 @@ class RotateObject(BaseModel):
     op: Literal["rotate_object"] = "rotate_object"
     target: ObjectId
     delta: Vec3
+    allowOverlap: bool = False
 
 
 class ScaleObject(BaseModel):
@@ -134,6 +139,7 @@ class ScaleObject(BaseModel):
     op: Literal["scale_object"] = "scale_object"
     target: ObjectId
     factor: NonzeroVec3
+    allowOverlap: bool = False
 
 
 class SetMaterial(BaseModel):
@@ -173,6 +179,13 @@ class SetScene(BaseModel):
         return self
 
 
+class SetSceneTitle(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    op: Literal["set_scene_title"] = "set_scene_title"
+    title: str = Field(min_length=1, max_length=80)
+
+
 class Clarify(BaseModel):
     """Asks the user for missing/ambiguous information. Never mutates ModelSpec."""
 
@@ -202,6 +215,7 @@ Operation = Annotated[
     | SetMaterial
     | RenameObject
     | SetScene
+    | SetSceneTitle
     | Clarify
     | NoChange,
     Field(discriminator="op"),

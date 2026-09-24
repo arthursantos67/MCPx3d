@@ -20,6 +20,7 @@ export interface CreateObject {
   position?: Vec3;
   rotation?: Vec3;
   color?: string;
+  allowOverlap?: boolean;
   tags?: string[];
 }
 
@@ -33,12 +34,14 @@ export interface DuplicateObject {
   target: string;
   newId: string;
   offset?: Vec3;
+  allowOverlap?: boolean;
 }
 
 export interface SetDimensions {
   op: "set_dimensions";
   target: string;
   dimensions: Record<string, number>;
+  allowOverlap?: boolean;
 }
 
 /** Moves `target` by `delta`, relative to its current position. */
@@ -46,6 +49,7 @@ export interface TranslateObject {
   op: "translate_object";
   target: string;
   delta: Vec3;
+  allowOverlap?: boolean;
 }
 
 /** Rotates `target` by `delta` (radians per axis), relative to its current rotation. */
@@ -53,6 +57,7 @@ export interface RotateObject {
   op: "rotate_object";
   target: string;
   delta: Vec3;
+  allowOverlap?: boolean;
 }
 
 /** Multiplies `target`'s current scale by `factor` per axis. */
@@ -60,6 +65,7 @@ export interface ScaleObject {
   op: "scale_object";
   target: string;
   factor: Vec3;
+  allowOverlap?: boolean;
 }
 
 export interface SetMaterial {
@@ -79,6 +85,11 @@ export interface SetScene {
   op: "set_scene";
   background?: string;
   displayScale?: number;
+}
+
+export interface SetSceneTitle {
+  op: "set_scene_title";
+  title: string;
 }
 
 /** Asks the user for missing/ambiguous information. Never mutates ModelSpec. */
@@ -104,6 +115,7 @@ export type Operation =
   | SetMaterial
   | RenameObject
   | SetScene
+  | SetSceneTitle
   | Clarify
   | NoChange;
 
@@ -208,6 +220,9 @@ export function validateModelPlanDomainRules(plan: ModelPlan): void {
         if (op.background === undefined && op.displayScale === undefined) {
           fail("set_scene requires background and/or displayScale");
         }
+        break;
+      case "set_scene_title":
+        if (op.title.trim().length === 0 || op.title.length > 80) fail("set_scene_title requires a title of 1 to 80 characters");
         break;
       case "clarify":
       case "no_change":

@@ -115,6 +115,16 @@ export async function deleteProject(projectId: string): Promise<void> {
   if (!response.ok) return throwApiError(response);
 }
 
+export async function updateSceneTitle(projectId: string, expectedRevision: number, title: string): Promise<ModelSpec> {
+  const response = await fetch(`${baseUrl()}/api/projects/${projectId}/scene/title`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ expectedRevision, title }),
+  });
+  if (!response.ok) return throwApiError(response);
+  return (await response.json()) as ModelSpec;
+}
+
 export interface McpHealth {
   readonly reachable: boolean;
   readonly detail: string | null;

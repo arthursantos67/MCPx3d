@@ -3,6 +3,11 @@ import { useEffect, useRef, useState } from 'react'
 import './X3DPreviewFrame.css'
 import { BlobUrlTracker, browserObjectUrlFactory } from './objectUrl.ts'
 
+function withCameraBridge(html: string): string {
+  const bridge = `<script>window.addEventListener('message',function(e){var r=document.querySelector('x3d')&&document.querySelector('x3d').runtime;if(!r||!e.data||e.data.type!=='ai-web3d-camera')return;if(e.data.action==='fit'&&r.showAll)r.showAll();else if(e.data.action==='reset'&&r.resetView)r.resetView();else if(e.data.action==='zoom'){var c=document.querySelector('canvas');if(c)c.dispatchEvent(new WheelEvent('wheel',{deltaY:e.data.amount,bubbles:true,cancelable:true}));}});</script>`
+  return html.includes('</body>') ? html.replace('</body>', `${bridge}</body>`) : `${html}${bridge}`
+}
+
 interface X3DPreviewFrameProps {
   /** Absolute URL of the current revision's standalone HTML artifact, or
    * `null` before any revision has committed. */
@@ -45,7 +50,7 @@ function X3DPreviewFrame({ previewUrl, onStatusChange }: X3DPreviewFrameProps) {
       .then((html) => {
         if (cancelled) return
         onStatusChange?.('loading')
-        setBlobUrl(tracker.set(html))
+        setBlobUrl(tracker.set(withCameraBridge(html)))
       })
       .catch((err: unknown) => {
         if (cancelled) return
@@ -75,6 +80,12 @@ function X3DPreviewFrame({ previewUrl, onStatusChange }: X3DPreviewFrameProps) {
 
   return (
     <div className="viewer-frame">
+      <div className="viewer-frame__controls" aria-label="Camera controls">
+        <button type="button" onClick={() => document.querySelector<HTMLIFrameElement>('.viewer-frame__iframe')?.contentWindow?.postMessage({ type: 'ai-web3d-camera', action: 'zoom', amount: -120 }, '*')}>Zoom in</button>
+        <button type="button" onClick={() => document.querySelector<HTMLIFrameElement>('.viewer-frame__iframe')?.contentWindow?.postMessage({ type: 'ai-web3d-camera', action: 'zoom', amount: 120 }, '*')}>Zoom out</button>
+        <button type="button" onClick={() => document.querySelector<HTMLIFrameElement>('.viewer-frame__iframe')?.contentWindow?.postMessage({ type: 'ai-web3d-camera', action: 'fit' }, '*')}>Fit scene</button>
+        <button type="button" onClick={() => document.querySelector<HTMLIFrameElement>('.viewer-frame__iframe')?.contentWindow?.postMessage({ type: 'ai-web3d-camera', action: 'reset' }, '*')}>Reset camera</button>
+      </div>
       <iframe
         className="viewer-frame__iframe"
         title="3D preview"

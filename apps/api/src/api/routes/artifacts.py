@@ -65,6 +65,7 @@ async def get_html_artifact(
                 revision=snapshot.revision,
                 x3d_content=snapshot.x3d_content,
                 requested_revision=snapshot.revision,
+                title=snapshot.model_spec.scene.title,
                 max_bytes=settings.max_artifact_bytes,
             )
         return artifact.content
@@ -76,7 +77,7 @@ async def get_html_artifact(
         media_type="text/html; charset=utf-8",
         headers={
             "Content-Disposition": _content_disposition(
-                normalized_artifact_filename(project_id, snapshot.revision, "html"), download
+                normalized_artifact_filename(project_id, snapshot.revision, "html", title=snapshot.model_spec.scene.title), download
             )
         },
     )
@@ -109,6 +110,7 @@ async def get_download_artifact(
             revision=revision,
             model_spec=session.model_spec.model_copy(deep=True),
             requested_revision=revision,
+            title=session.model_spec.scene.title,
             max_bytes=settings.max_artifact_bytes,
         )
     else:
@@ -122,6 +124,7 @@ async def get_download_artifact(
                 revision=snapshot.revision,
                 x3d_content=snapshot.x3d_content,
                 requested_revision=revision,
+                title=snapshot.model_spec.scene.title,
                 max_bytes=settings.max_artifact_bytes,
             )
         else:
@@ -136,6 +139,7 @@ async def get_download_artifact(
                         revision=snapshot.revision,
                         x3d_content=snapshot.x3d_content,
                         requested_revision=snapshot.revision,
+                        title=snapshot.model_spec.scene.title,
                         max_bytes=settings.max_artifact_bytes,
                     )
                 return converted.content
@@ -146,7 +150,7 @@ async def get_download_artifact(
                 media_type="model/x3d-vrml",
                 headers={
                     "Content-Disposition": _content_disposition(
-                        normalized_artifact_filename(project_id, snapshot.revision, format), True
+                        normalized_artifact_filename(project_id, snapshot.revision, format, title=snapshot.model_spec.scene.title), True
                     )
                 },
             )

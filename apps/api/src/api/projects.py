@@ -151,7 +151,7 @@ def _empty_model_spec(
         projectId=project_id,
         revision=0,
         units=units,
-        scene=Scene(displayScale=display_scale),
+        scene=Scene(title="Untitled model", titleSource="default", displayScale=display_scale),
         objects=[],
     )
 
@@ -243,6 +243,19 @@ class ProjectSessionService:
         session = self.get_project(project_id)
         if session.revision == revision:
             session.html_artifacts[revision] = content
+
+    def set_scene_title(self, project_id: str, expected_revision: int, title: str) -> ProjectSession:
+        session = self.get_project(project_id)
+        if session.revision != expected_revision:
+            raise RevisionConflictError(project_id, expected_revision, session.revision)
+        scene = session.model_spec.scene.model_copy(update={"title": title.strip(), "titleSource": "user"})
+        next_revision = expected_revision + 1
+        session.model_spec = session.model_spec.model_copy(update={"scene": scene, "revision": next_revision})
+        x3d = session.validated_x3d.get(expected_revision)
+        session.validated_x3d = {next_revision: x3d} if x3d is not None else {}
+        session.html_artifacts = {}
+        self._artifact_cache.remove_project(project_id)
+        return session
 
     def snapshot_revision(self, project_id: str, revision: int) -> RevisionSnapshot | None:
         """Captures all route inputs before an await can observe a later commit."""

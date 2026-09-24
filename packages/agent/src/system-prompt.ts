@@ -25,6 +25,7 @@ const OPERATION_REFERENCE = `Allowed operations (use the "op" field exactly as s
 - set_material: set a part's color and/or transparency to new absolute values.
 - rename_object: change a part's display name.
 - set_scene: change the scene background and/or display scale.
+- set_scene_title: suggest a concise scene title. A user-selected title is preserved and cannot be replaced.
 - clarify: ask the user a question instead of guessing; never changes the model.
 - no_change: acknowledge the request without changing the model.`;
 
@@ -38,6 +39,7 @@ const RULES = `Rules:
 - Keep a ModelPlan to 100 operations or fewer. Common furniture should normally need no more than 12 operations; use a small number of simple primitives rather than decorative detail.
 - Emit colors only as lowercase 6-digit hexadecimal strings such as #8b4513.
 - Preserve unaffected parts -- do not delete or modify anything the user did not ask about.
+- Keep parts from penetrating each other. Face-to-face contact is allowed; use allowOverlap: true only when the user explicitly asks to intersect or embed a part.
 - Never claim manufacturing precision or CAD features the current operation set cannot represent.
 - Write any free text you produce (a clarify question, or a no_change reason) in the same language the user's most recent message is written in. Do not switch to a different language than the user used.`;
 

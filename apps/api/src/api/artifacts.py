@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import re
 from typing import Literal
 
 from domain.model_spec import ModelSpec
@@ -97,9 +98,12 @@ class Artifact:
     content: str
 
 
-def normalized_artifact_filename(project_id: str, revision: int, extension: str) -> str:
+def normalized_artifact_filename(project_id: str, revision: int, extension: str, *, title: str | None = None) -> str:
     """`{project_id}-r{revision:04d}.{extension}`, e.g. `chair-r0007.x3d` (FR-21)."""
-    return f"{project_id}-r{revision:04d}.{extension}"
+    if title is None:
+        return f"{project_id}-r{revision:04d}.{extension}"
+    stem = re.sub(r"[^a-z0-9]+", "-", title.strip().lower()).strip("-")[:64] or "model"
+    return f"{stem}-r{revision:04d}.{extension}"
 
 
 def _check_revision(project_id: str, requested_revision: int, current_revision: int) -> None:
@@ -122,14 +126,15 @@ async def build_html_artifact(
     revision: int,
     x3d_content: str,
     requested_revision: int,
+    title: str | None = None,
     max_bytes: int | None = None,
 ) -> Artifact:
     """Standalone X3DOM HTML for `x3d_content` (FR-18, UC-07)."""
     _check_revision(project_id, requested_revision, revision)
-    html = await client.generate_x3dom_page(x3d_content, title=project_id)
+    html = await client.generate_x3dom_page(x3d_content, title=title or project_id)
     _check_size("html", html, max_bytes)
     return Artifact(
-        filename=normalized_artifact_filename(project_id, revision, "html"),
+        filename=normalized_artifact_filename(project_id, revision, "html", title=title),
         media_type=_HTML_MEDIA_TYPE,
         content=html,
     )
@@ -141,13 +146,14 @@ def build_x3d_artifact(
     revision: int,
     x3d_content: str,
     requested_revision: int,
+    title: str | None = None,
     max_bytes: int | None = None,
 ) -> Artifact:
     """The validated revision's X3D XML, ready for download (FR-19, UC-08)."""
     _check_revision(project_id, requested_revision, revision)
     _check_size("x3d", x3d_content, max_bytes)
     return Artifact(
-        filename=normalized_artifact_filename(project_id, revision, "x3d"),
+        filename=normalized_artifact_filename(project_id, revision, "x3d", title=title),
         media_type=_X3D_MEDIA_TYPE,
         content=x3d_content,
     )
@@ -161,6 +167,7 @@ async def build_converted_artifact(
     revision: int,
     x3d_content: str,
     requested_revision: int,
+    title: str | None = None,
     max_bytes: int | None = None,
 ) -> Artifact:
     """The validated revision converted to `format` (`x3dj` or `x3dv`), via
@@ -180,7 +187,7 @@ async def build_converted_artifact(
             raise ArtifactConversionError(format, str(exc)) from exc
     _check_size(format, converted, max_bytes)
     return Artifact(
-        filename=normalized_artifact_filename(project_id, revision, format),
+        filename=normalized_artifact_filename(project_id, revision, format, title=title),
         media_type=_CONVERSION_MEDIA_TYPES[format],
         content=converted,
     )
@@ -192,6 +199,7 @@ def build_model_spec_artifact(
     revision: int,
     model_spec: ModelSpec,
     requested_revision: int,
+    title: str | None = None,
     max_bytes: int | None = None,
 ) -> Artifact:
     """The current `ModelSpec` as a downloadable JSON manifest (FR-36, UC-09).
@@ -210,7 +218,7 @@ def build_model_spec_artifact(
     content = model_spec.model_dump_json(indent=2, exclude_none=True)
     _check_size("json", content, max_bytes)
     return Artifact(
-        filename=normalized_artifact_filename(project_id, revision, "json"),
+        filename=normalized_artifact_filename(project_id, revision, "json", title=title),
         media_type=_MANIFEST_MEDIA_TYPE,
         content=content,
     )

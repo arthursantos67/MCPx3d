@@ -42,7 +42,8 @@ function omissionNotice(count: number): string {
 }
 
 export function summarizeModelSpec(spec: ModelSpec, options?: ModelSpecSummaryOptions): string {
-  if (spec.objects.length === 0) return "(empty scene -- no objects yet)";
+  const title = spec.scene.title ?? "Untitled model";
+  if (spec.objects.length === 0) return `Scene title: ${JSON.stringify(title)}\n(empty scene -- no objects yet)`;
 
   const maxCharacters = boundedPositiveInteger(
     options?.maxCharacters,
@@ -69,6 +70,6 @@ export function summarizeModelSpec(spec: ModelSpec, options?: ModelSpecSummaryOp
     lines.push(line);
   }
 
-  const summary = [...lines, ...(omitted > 0 ? [omissionNotice(omitted)] : [])].join("\n");
+  const summary = [`Scene title: ${JSON.stringify(title)}`, ...lines, ...(omitted > 0 ? [omissionNotice(omitted)] : [])].join("\n");
   return summary.length <= maxCharacters ? summary : summary.slice(0, maxCharacters);
 }

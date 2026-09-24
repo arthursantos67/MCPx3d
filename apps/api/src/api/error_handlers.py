@@ -44,6 +44,7 @@ from api.errors import error_response
 from api.limits import ComplexityLimitError
 from api.mcp_client import X3DMcpError
 from api.mutation import MutationError, UnknownTargetError
+from api.overlap import UnintendedOverlapError
 from api.projects import (
     ProjectNotFoundError,
     RevisionConflictError,
@@ -126,6 +127,10 @@ def register_error_handlers(app: FastAPI) -> None:
         return error_response(
             422, "DOMAIN_VALIDATION_FAILED", str(exc), correlation_id=_correlation_id(request)
         )
+
+    @app.exception_handler(UnintendedOverlapError)
+    async def _unintended_overlap(request: Request, exc: UnintendedOverlapError) -> JSONResponse:
+        return error_response(422, "UNINTENDED_OVERLAP", str(exc), correlation_id=_correlation_id(request))
 
     @app.exception_handler(ComplexityLimitError)
     async def _complexity_limit(request: Request, exc: ComplexityLimitError) -> JSONResponse:

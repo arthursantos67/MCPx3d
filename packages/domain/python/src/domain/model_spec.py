@@ -30,6 +30,8 @@ Vec3 = Annotated[tuple[float, float, float], BeforeValidator(_json_array_to_tupl
 class Scene(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
+    title: str = Field(default="Untitled model", min_length=1, max_length=80)
+    titleSource: Literal["default", "agent", "user"] = "default"
     background: str | None = Field(default=None, min_length=1)
     displayScale: float = Field(gt=0, allow_inf_nan=False)
 
