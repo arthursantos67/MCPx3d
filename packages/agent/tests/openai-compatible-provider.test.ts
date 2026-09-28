@@ -6,6 +6,7 @@ import {
   type FetchLike,
   type OpenAICompatibleProviderState,
 } from "../src/openai-compatible-provider.ts";
+import { StructuredOutputError, type CompletionMetadata } from "../src/provider.ts";
 
 const CONFIG = { baseUrl: "https://api.example.com/v1", apiKey: "sk-test", model: "test-model" };
 
@@ -176,7 +177,7 @@ test("strips description keys from the schema before sending it, without touchin
   });
 });
 
-test("defaults max_completion_tokens to a small cap when the caller doesn't specify one, and never sends max_tokens", async () => {
+test("defaults max_completion_tokens to the explicit 8192 cap when the caller doesn't specify one, and never sends max_tokens", async () => {
   let receivedInit: RequestInit = {};
   const provider = new OpenAICompatibleProvider(
     CONFIG,
@@ -191,29 +192,47 @@ test("defaults max_completion_tokens to a small cap when the caller doesn't spec
 
   const sentBody = JSON.parse(receivedInit.body as string) as Record<string, unknown>;
   assert.equal("max_tokens" in sentBody, false);
-  assert.equal(sentBody.max_completion_tokens, 2048);
+  assert.equal(sentBody.max_completion_tokens, 8192);
 });
 
-test("a non-2xx response throws a descriptive error without leaking the api key, and state returns to ready", async () => {
+test("a non-2xx response throws an actionable error without leaking the api key or raw body, and state returns to ready", async () => {
   let calls = 0;
   const provider = new OpenAICompatibleProvider(
     CONFIG,
     fakeFetch(async () => {
       calls += 1;
-      return { status: 401, body: {}, text: "invalid api key" };
+      return { status: 401, body: {}, text: "invalid api key sk-test for prompt SECRET_PROMPT" };
     }),
   );
   await provider.initialize();
 
   await assert.rejects(() => provider.generateStructured([], {}), (error: unknown) => {
     assert.ok(error instanceof Error);
-    assert.match(error.message, /401/);
-    assert.match(error.message, /invalid api key/);
-    assert.doesNotMatch(error.message, /sk-test/);
+    assert.match(error.message, /status 401.*Check the API key/);
+    assert.doesNotMatch(error.message, /sk-test|SECRET_PROMPT|invalid api key/);
     return true;
   });
   assert.equal(calls, 1);
   assert.deepEqual(provider.getState(), { phase: "ready" });
+});
+
+test("a JSON error body contributes only an identifier-shaped provider code", async () => {
+  const bodies = [
+    { error: { code: 400, status: "INVALID_ARGUMENT", message: "Invalid JSON payload near 'SECRET_PROMPT'" } },
+    { error: { status: "echo of SECRET_PROMPT", code: "model_not_found", message: "SECRET_PROMPT" } },
+  ];
+  const expected = [/status 400\) \(provider code: INVALID_ARGUMENT\)/, /status 400\) \(provider code: model_not_found\)/];
+  for (const [index, body] of bodies.entries()) {
+    const provider = new OpenAICompatibleProvider(CONFIG, fakeFetch(async () => ({ status: 400, body })));
+    await provider.initialize();
+
+    await assert.rejects(() => provider.generateStructured([], {}), (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.match(error.message, expected[index]!);
+      assert.doesNotMatch(error.message, /SECRET_PROMPT|Invalid JSON payload/);
+      return true;
+    });
+  }
 });
 
 test("retries transient 503 responses with exponential backoff and succeeds", async () => {
@@ -299,11 +318,14 @@ test("a fetch failure becomes an actionable provider request error without leaki
   assert.deepEqual(provider.getState(), { phase: "ready" });
 });
 
-test("a response with no message content throws a clear error", async () => {
+test("a response with no message content throws a classified empty-output error", async () => {
   const provider = new OpenAICompatibleProvider(CONFIG, fakeFetch(async () => ({ status: 200, body: { choices: [] } })));
   await provider.initialize();
 
-  await assert.rejects(() => provider.generateStructured([], {}), /no message content/);
+  await assert.rejects(
+    () => provider.generateStructured([], {}),
+    (error: unknown) => error instanceof StructuredOutputError && error.completion.failure === "empty",
+  );
 });
 
 test("state transitions idle -> ready -> generating -> ready are observable via onStateChange", async () => {
@@ -343,4 +365,54 @@ test("cancel before any request is a no-op", async () => {
   }));
 
   await assert.doesNotReject(() => provider.cancel());
+});
+
+test("finish_reason length is classified as truncation with safe completion metadata only", async () => {
+  const completions: CompletionMetadata[] = [];
+  const truncated = '{"intent":"create_model","operations":[{"op":"create_object","name":"SECRET_PART';
+  const provider = new OpenAICompatibleProvider(
+    CONFIG,
+    fakeFetch(async () => ({
+      status: 200,
+      body: {
+        choices: [{ message: { content: truncated }, finish_reason: "length" }],
+        usage: { prompt_tokens: 900, completion_tokens: 2048, completion_tokens_details: { reasoning_tokens: 1024 } },
+      },
+    })),
+  );
+  await provider.initialize();
+
+  const error = await provider
+    .generateStructured([{ role: "user", content: "a big kitchen" }], {}, { onCompletion: (c) => completions.push(c) })
+    .then(() => null, (reason: unknown) => reason);
+
+  assert.ok(error instanceof StructuredOutputError);
+  assert.equal(error.completion.failure, "truncated");
+  assert.doesNotMatch(error.message, /SECRET_PART|kitchen|sk-test/);
+  assert.deepEqual(completions, [{
+    finishReason: "length",
+    outputCharacters: truncated.length,
+    usage: { promptTokens: 900, completionTokens: 2048, reasoningTokens: 1024 },
+    failure: "truncated",
+    locallyRepaired: false,
+  }]);
+  assert.doesNotMatch(JSON.stringify(completions), /SECRET_PART|kitchen|sk-test/);
+});
+
+test("the requested completion budget never exceeds the provider's declared output ceiling", async () => {
+  let sentBudget: unknown;
+  const provider = new OpenAICompatibleProvider(
+    CONFIG,
+    fakeFetch(async (_url, init) => {
+      sentBudget = JSON.parse(String(init.body)).max_completion_tokens;
+      return { status: 200, body: { choices: [{ message: { content: "{}" }, finish_reason: "stop" }] } };
+    }),
+  );
+  await provider.initialize();
+
+  await provider.generateStructured([], {}, { maxTokens: 100_000 });
+
+  assert.equal(provider.maxOutputTokens, 8192);
+  assert.equal(sentBudget, 8192);
+  assert.equal(provider.model, "test-model");
 });

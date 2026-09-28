@@ -15,7 +15,7 @@ def test_settings_have_expected_defaults() -> None:
     assert settings.session_ttl_seconds == 3600
     assert settings.default_units == "mm"
     assert settings.default_display_scale == 0.001
-    assert settings.max_objects_per_project == 100
+    assert settings.max_objects_per_project == 300
     assert settings.max_operations_per_plan == 100
     assert settings.max_prompt_characters == 8000
     assert settings.max_artifact_bytes == 10_000_000

@@ -159,7 +159,7 @@ function checkDimensions(dimensions: Record<string, number>): void {
  * with `kind` directly on it); `set_dimensions` targets an existing object
  * whose kind isn't known from the plan alone, so it still relies on the
  * backend catching a wrong key set, same as before this check existed. */
-const DIMENSION_KEYS: Record<PrimitiveKind, ReadonlySet<string>> = {
+export const DIMENSION_KEYS: Record<PrimitiveKind, ReadonlySet<string>> = {
   box: new Set(["width", "height", "depth"]),
   sphere: new Set(["radius"]),
   cylinder: new Set(["radius", "height"]),

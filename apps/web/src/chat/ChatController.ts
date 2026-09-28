@@ -31,11 +31,14 @@
 import type { ApplyPlanRequestBody, ApplyPlanResponse } from "../api/client.ts";
 import { ApiError } from "../api/client.ts";
 import type { AgentMessage, LLMProvider } from "../../../../packages/agent/src/provider.ts";
+import { ModelPlanGenerationError } from "../../../../packages/agent/src/generate-model-plan.ts";
 import {
-  ModelPlanGenerationError,
-  generateModelPlan,
-} from "../../../../packages/agent/src/generate-model-plan.ts";
-import type { ModelPlan } from "../../../../packages/domain/ts/src/model-plan.ts";
+  SceneBatchError,
+  createSceneGenerationCounters,
+  generateScene,
+  type SceneGenerationCounters,
+  type SceneOutcome,
+} from "../../../../packages/agent/src/generate-scene.ts";
 import type { ModelSpec } from "../../../../packages/domain/ts/src/model-spec.ts";
 
 import type {
@@ -43,6 +46,7 @@ import type {
   ChatControllerState,
   ChatMessage,
   ChatMessageRole,
+  GenerationStats,
   SendGate,
 } from "./types.ts";
 
@@ -81,13 +85,12 @@ function describeError(error: unknown): string {
   if (error instanceof ApiError) {
     return error.correlationId ? `${error.message} (ref ${error.correlationId})` : error.message;
   }
+  if (error instanceof SceneBatchError && error.cause instanceof ApiError && error.cause.correlationId) {
+    return `${error.message} (ref ${error.cause.correlationId})`;
+  }
   if (error instanceof ModelPlanGenerationError) return error.message;
   if (error instanceof Error) return error.message;
   return String(error);
-}
-
-function isPureClarify(plan: ModelPlan): plan is ModelPlan & { operations: [{ op: "clarify"; question: string }] } {
-  return plan.operations.length === 1 && plan.operations[0]?.op === "clarify";
 }
 
 function summarizeApplyResult(response: ApplyPlanResponse): string {
@@ -95,6 +98,33 @@ function summarizeApplyResult(response: ApplyPlanResponse): string {
   const warningNote = warningCount > 0 ? ` with ${warningCount} warning(s)` : "";
   return `Updated the model to revision ${response.revision}${warningNote}.`;
 }
+
+function summarizeBatchedResult(outcome: SceneOutcome & { status: "applied" }): string {
+  const summary = `Built the scene in ${outcome.batches} validated batches; revision ${outcome.modelSpec.revision} is active.`;
+  const skipped = outcome.skippedBatches.map(({ batch, reason }) => ` Batch ${batch} was skipped: ${reason}`).join("");
+  const limit = outcome.complete
+    ? ""
+    : " The batch limit was reached before the scene was finished -- ask for the remaining parts in a follow-up request.";
+  return `${summary}${skipped}${limit}`;
+}
+
+function separatedPartCount(response: ApplyPlanResponse): number {
+  return response.validation.autofixes.filter((fix) => fix.type === "overlap_separation").length;
+}
+
+const EMPTY_GENERATION_STATS: GenerationStats = {
+  requests: 0,
+  truncatedRequests: 0,
+  recoveredRequests: 0,
+  continuedRequests: 0,
+  localRepairs: 0,
+  formatRepairs: 0,
+  applyRepairs: 0,
+  finalValidScenes: 0,
+  skippedBatches: 0,
+  overlapResolutions: 0,
+  validationFailures: {},
+};
 
 function failureSource(error: unknown): "provider" | "modeling" | "mcp" | "session" {
   if (error instanceof ModelPlanGenerationError) return "provider";
@@ -151,6 +181,8 @@ export class ChatController {
       pipelineStage: "idle",
       pipelineStartedAt: null,
       timings: {},
+      sceneBatch: null,
+      generationStats: {},
     };
 
     this.unsubscribeProvider = provider.onStateChange((next) => {
@@ -190,6 +222,7 @@ export class ChatController {
       failureSource: null,
       pipelineStage: "ready",
       pipelineStartedAt: null,
+      sceneBatch: null,
     });
   }
 
@@ -326,122 +359,158 @@ export class ChatController {
       pipelineStage: "provider-request",
       pipelineStartedAt: startedAt,
       timings: {},
+      sceneBatch: null,
     });
     const cancellation = new AbortController();
     this.activeCancellation = cancellation;
 
-    let plan: ModelPlan;
-    try {
-      plan = await generateModelPlan({ provider: this.provider, request: trimmed, modelSpec, recentMessages });
-    } catch (error) {
-      if (cancellation.signal.aborted) return;
-      if (this.activeCancellation === cancellation) this.activeCancellation = null;
-      this.patch({
-        isBusy: false,
-        requestStatus: "failed",
-        failureSource: failureSource(error),
-        pipelineStage: "failed",
-        timings: { provider_request: Math.max(0, this.now() - startedAt) },
-      });
-      this.appendMessage("error", describeError(error));
-      return;
-    }
-
-    if (cancellation.signal.aborted) return;
-    let providerRequestMs = Math.max(0, this.now() - startedAt);
-
-    if (isPureClarify(plan)) {
-      this.patch({
-        isBusy: false,
-        requestStatus: "succeeded",
-        pipelineStage: "ready",
-        timings: { provider_request: providerRequestMs },
-      });
-      this.appendMessage("assistant", plan.operations[0].question);
-      if (this.activeCancellation === cancellation) this.activeCancellation = null;
-      return;
-    }
-
-    this.patch({ pipelineStage: "plan-validation" });
+    const counters = createSceneGenerationCounters();
+    let finalValidScene = false;
+    let applyMs = 0;
+    let separatedParts = 0;
+    let lastResponse: ApplyPlanResponse | null = null;
+    const providerRequestMs = (): number => Math.max(0, this.now() - startedAt - applyMs);
 
     try {
-      let response: ApplyPlanResponse | null = null;
-      for (let applyAttempt = 0; applyAttempt < 2; applyAttempt += 1) {
-        this.patch({ pipelineStage: "api-mcp-build" });
-        try {
-          response = await this.api.applyPlan(projectId, {
-            expectedRevision: modelSpec.revision,
-            requestId: this.makeId(),
-            plan,
-          }, cancellation.signal);
-          break;
-        } catch (error) {
-          if (applyAttempt > 0 || !isRepairableApplyError(error)) throw error;
-
-          this.patch({ pipelineStage: "provider-request" });
-          const repairStartedAt = this.now();
-          plan = await generateModelPlan({
-            provider: this.provider,
-            request: trimmed,
-            modelSpec,
-            recentMessages,
-            priorValidationDiagnostics: `${error.code}: ${error.message}`,
-          });
-          providerRequestMs += Math.max(0, this.now() - repairStartedAt);
+      const outcome = await generateScene({
+        provider: this.provider,
+        request: trimmed,
+        modelSpec,
+        recentMessages,
+        signal: cancellation.signal,
+        counters,
+        describeRepairableApplyError: (error) =>
+          isRepairableApplyError(error) ? `${error.code}: ${error.message}` : null,
+        onProgress: (progress) => {
           if (cancellation.signal.aborted) return;
-
-          if (isPureClarify(plan)) {
-            this.patch({
-              isBusy: false,
-              requestStatus: "succeeded",
-              pipelineStage: "ready",
-              timings: { provider_request: providerRequestMs },
-            });
-            this.appendMessage("assistant", plan.operations[0].question);
-            return;
+          this.patch({
+            pipelineStage: progress.stage === "generating" ? "provider-request" : "plan-validation",
+            sceneBatch: progress.batch > 0
+              ? { batch: progress.batch, maxBatches: progress.maxBatches, committedBatches: progress.committedBatches }
+              : null,
+          });
+        },
+        applyPlan: async (plan, current, { resolveOverlaps }) => {
+          this.patch({ pipelineStage: "api-mcp-build" });
+          const applyStartedAt = this.now();
+          try {
+            const response = await this.api.applyPlan(projectId, {
+              expectedRevision: current.revision,
+              requestId: this.makeId(),
+              plan,
+              ...(resolveOverlaps ? { resolveOverlaps } : {}),
+            }, cancellation.signal);
+            lastResponse = response;
+            separatedParts += separatedPartCount(response);
+            this.commitApplyResponse(response, current);
+            return response.modelSpec;
+          } finally {
+            applyMs += Math.max(0, this.now() - applyStartedAt);
           }
-          this.patch({ pipelineStage: "plan-validation" });
-        }
+        },
+      });
+
+      if (cancellation.signal.aborted || outcome.status === "cancelled") return;
+
+      if (outcome.status === "clarify") {
+        this.patch({
+          isBusy: false,
+          requestStatus: "succeeded",
+          pipelineStage: "ready",
+          sceneBatch: null,
+          timings: { provider_request: providerRequestMs() },
+        });
+        this.appendMessage("assistant", outcome.question);
+        return;
       }
 
-      if (response === null) throw new Error("The plan could not be applied.");
-      if (cancellation.signal.aborted) return;
-      const unchanged = response.revision === modelSpec.revision;
+      finalValidScene = outcome.complete && outcome.skippedBatches.length === 0;
+      const response = lastResponse as ApplyPlanResponse | null;
+      const unchanged = outcome.modelSpec.revision === modelSpec.revision;
       this.patch({
         isBusy: false,
-        modelSpec: unchanged ? this.state.modelSpec : response.modelSpec,
-        projectName: response.modelSpec.scene.title ?? this.state.projectName,
-        previewUrl: unchanged
-          ? this.state.previewUrl
-          : response.preview
-            ? this.api.resolveArtifactUrl(response.preview.url)
-            : this.state.previewUrl,
-        artifacts: response.artifacts,
-        validation: response.validation,
-        correlationId: response.correlationId,
-        timings: { provider_request: providerRequestMs, ...response.timings },
+        sceneBatch: null,
+        timings: { provider_request: providerRequestMs(), ...response?.timings },
         requestStatus: unchanged ? "no-change" : "succeeded",
         pipelineStage: unchanged ? "ready" : "x3d-validation",
       });
+      const separatedNote = separatedParts > 0
+        ? ` ${separatedParts} part(s) were moved automatically so no parts overlap.`
+        : "";
       this.appendMessage(
         "assistant",
-        unchanged ? "No model changes were needed; the current revision remains active." : summarizeApplyResult(response),
+        unchanged
+          ? "No model changes were needed; the current revision remains active."
+          : `${outcome.batches > 0 || response === null ? summarizeBatchedResult(outcome) : summarizeApplyResult(response)}${separatedNote}`,
       );
     } catch (error) {
       if (cancellation.signal.aborted) return;
-      const source = failureSource(error);
+      const cause = error instanceof SceneBatchError ? error.cause : error;
+      const source = failureSource(cause);
       this.patch({
         isBusy: false,
-        projectError: source === "session" ? describeError(error) : this.state.projectError,
-        correlationId: error instanceof ApiError ? error.correlationId : this.state.correlationId,
+        projectError: source === "session" ? describeError(cause) : this.state.projectError,
+        correlationId: cause instanceof ApiError ? cause.correlationId : this.state.correlationId,
         requestStatus: source === "session" ? "session-expired" : "failed",
         failureSource: source,
         pipelineStage: "failed",
+        sceneBatch: null,
+        timings: { provider_request: providerRequestMs() },
       });
       this.appendMessage("error", describeError(error));
     } finally {
       if (this.activeCancellation === cancellation) this.activeCancellation = null;
+      this.recordGenerationStats(counters, finalValidScene);
     }
+  }
+
+  /** Every successful apply is a committed, validated revision -- including an
+   * earlier batch of a request that later fails or is cancelled -- so the
+   * model and preview always follow the server's last valid revision. */
+  private commitApplyResponse(response: ApplyPlanResponse, base: ModelSpec): void {
+    const unchanged = response.revision === base.revision;
+    this.patch({
+      modelSpec: unchanged ? this.state.modelSpec : response.modelSpec,
+      projectName: response.modelSpec.scene.title ?? this.state.projectName,
+      previewUrl: unchanged
+        ? this.state.previewUrl
+        : response.preview
+          ? this.api.resolveArtifactUrl(response.preview.url)
+          : this.state.previewUrl,
+      artifacts: response.artifacts,
+      validation: response.validation,
+      correlationId: response.correlationId,
+    });
+  }
+
+  private recordGenerationStats(counters: SceneGenerationCounters, finalValidScene: boolean): void {
+    const key = `${this.provider.id}/${this.provider.model ?? "default"}`;
+    const current = this.state.generationStats[key] ?? EMPTY_GENERATION_STATS;
+    const truncated = counters.truncations > 0;
+    this.patch({
+      generationStats: {
+        ...this.state.generationStats,
+        [key]: {
+          requests: current.requests + 1,
+          truncatedRequests: current.truncatedRequests + (truncated ? 1 : 0),
+          recoveredRequests: current.recoveredRequests + (truncated && finalValidScene ? 1 : 0),
+          continuedRequests: current.continuedRequests + (counters.continued ? 1 : 0),
+          localRepairs: current.localRepairs + counters.localRepairs,
+          formatRepairs: current.formatRepairs + counters.formatRepairs,
+          applyRepairs: current.applyRepairs + counters.applyRepairs,
+          finalValidScenes: current.finalValidScenes + (finalValidScene ? 1 : 0),
+          skippedBatches: current.skippedBatches + counters.skippedBatches,
+          overlapResolutions: current.overlapResolutions + counters.overlapResolutions,
+          validationFailures: Object.fromEntries(
+            [...new Set([...Object.keys(current.validationFailures), ...Object.keys(counters.validationFailures)])].map((category) => [
+              category,
+              (current.validationFailures[category] ?? 0) +
+                (counters.validationFailures[category as keyof typeof counters.validationFailures] ?? 0),
+            ]),
+          ),
+        },
+      },
+    });
   }
 
   private appendMessage(role: ChatMessageRole, text: string): void {

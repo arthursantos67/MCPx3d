@@ -61,6 +61,13 @@ function StatusBar({ state, mcpHealth }: StatusBarProps) {
           <p>MCP: {mcpHealth?.reachable ? 'connected' : mcpHealth?.detail ?? 'checking'}</p>
           <p>Autofixes: {autofixCount} · Warnings: {warningCount} · Errors: {errorCount}</p>
           <p>Correlation ID: {state.correlationId ?? 'Not available'}</p>
+          {Object.entries(state.generationStats).map(([providerModel, stats]) => (
+            <p key={providerModel}>
+              {providerModel}: {stats.requests} request(s) · truncated {stats.truncatedRequests} · recovered {stats.recoveredRequests} · continued {stats.continuedRequests} · repairs {stats.localRepairs} local / {stats.formatRepairs} format / {stats.applyRepairs} apply · valid scenes {stats.finalValidScenes} · skipped batches {stats.skippedBatches} · overlap auto-resolves {stats.overlapResolutions}
+              {Object.keys(stats.validationFailures).length > 0 &&
+                ` · rejected ${Object.entries(stats.validationFailures).map(([category, count]) => `${category} ${count}`).join(', ')}`}
+            </p>
+          ))}
           {Object.entries(state.timings).length > 0 && (
             <dl className="workspace-diagnostics__timings">
               {Object.entries(state.timings).map(([stage, milliseconds]) => (

@@ -54,7 +54,7 @@ from api.errors import api_error
 from api.limits import ComplexityLimitError
 from api.mcp_client import X3DMcpClient
 from api.mutation import apply_plan
-from api.overlap import validate_no_unintended_overlap
+from api.overlap import resolve_unintended_overlaps, validate_no_unintended_overlap
 from api.projects import (
     ProjectSessionService,
     RevisionConflictError,
@@ -84,6 +84,8 @@ class ApplyPlanRequest(BaseModel):
     expectedRevision: int = Field(ge=0)
     requestId: str | None = None
     plan: ModelPlan
+    resolveOverlaps: bool = False
+    """Separate penetrating parts deterministically instead of rejecting (Issue #71 follow-up)."""
 
 
 class ValidationSummary(BaseModel):
@@ -180,7 +182,11 @@ async def apply_plan_endpoint(
             session.model_spec, plan_request.plan, max_objects=settings.max_objects_per_project
         )
 
-    validate_no_unintended_overlap(candidate, plan_request.plan)
+    overlap_fixes: list[dict[str, object]] = []
+    if plan_request.resolveOverlaps:
+        candidate, overlap_fixes = resolve_unintended_overlaps(session.model_spec, candidate, plan_request.plan)
+    else:
+        validate_no_unintended_overlap(candidate, plan_request.plan)
 
     if all(isinstance(operation, NoChange) for operation in plan_request.plan.operations):
         return ApplyPlanResponse(
@@ -232,7 +238,9 @@ async def apply_plan_endpoint(
         projectId=project_id,
         revision=updated_session.revision,
         modelSpec=updated_session.model_spec,
-        validation=ValidationSummary.model_validate(validation.to_summary()),
+        validation=ValidationSummary.model_validate(
+            {**validation.to_summary(), "autofixes": [*overlap_fixes, *validation.autofixes]}
+        ),
         preview=PreviewInfo(
             url=f"/api/projects/{project_id}/artifacts/html?revision={updated_session.revision}"
         ),

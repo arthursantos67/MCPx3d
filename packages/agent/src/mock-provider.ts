@@ -7,11 +7,30 @@
  */
 
 import type { AgentMessage, GenerationOptions, JsonSchema, LLMProvider } from "./provider.ts";
+import { parseStructuredCompletion } from "./structured-output.ts";
+
+/** Raw completion text plus the provider's `finish_reason`, parsed exactly
+ * as a real provider parses it (Issue #71: scripts truncation). */
+export class MockCompletion {
+  readonly content: string;
+  readonly finishReason: string;
+
+  constructor(content: string, finishReason = "stop") {
+    this.content = content;
+    this.finishReason = finishReason;
+  }
+}
+
+export function mockCompletion(content: string, finishReason?: string): MockCompletion {
+  return new MockCompletion(content, finishReason);
+}
 
 /** A JSON-shaped value a mocked call can resolve to. A `string` is re-parsed
- * as JSON (so a test can script malformed JSON, e.g. `"not json{{{"`); any
- * other value is returned as-is. */
+ * as JSON (so a test can script malformed JSON, e.g. `"not json{{{"`), a
+ * `MockCompletion` is parsed with its scripted `finish_reason`; any other
+ * value is returned as-is. */
 export type MockResponseValue =
+  | MockCompletion
   | string
   | number
   | boolean
@@ -34,15 +53,22 @@ export interface MockCall {
 
 export class MockLLMProvider implements LLMProvider {
   readonly id = "mock";
+  readonly model?: string;
+  readonly maxOutputTokens?: number;
   readonly calls: MockCall[] = [];
 
   private readonly responses: readonly MockResponse[];
   private readonly available: boolean;
   private cursor = 0;
 
-  constructor(responses: readonly MockResponse[], options?: { available?: boolean }) {
+  constructor(
+    responses: readonly MockResponse[],
+    options?: { available?: boolean; model?: string; maxOutputTokens?: number },
+  ) {
     this.responses = responses;
     this.available = options?.available ?? true;
+    this.model = options?.model;
+    this.maxOutputTokens = options?.maxOutputTokens;
   }
 
   async isAvailable(): Promise<boolean> {
@@ -65,9 +91,18 @@ export class MockLLMProvider implements LLMProvider {
     this.cursor += 1;
 
     const value = typeof scripted === "function" ? scripted(messages, schema) : scripted;
-    if (typeof value === "string") {
-      return JSON.parse(value) as T;
+    if (value instanceof MockCompletion) {
+      return parseStructuredCompletion(value.content, { finishReason: value.finishReason }, options?.onCompletion) as T;
     }
+    if (typeof value === "string") {
+      return parseStructuredCompletion(value, { finishReason: "stop" }, options?.onCompletion) as T;
+    }
+    options?.onCompletion?.({
+      finishReason: "stop",
+      outputCharacters: JSON.stringify(value)?.length ?? 0,
+      failure: null,
+      locallyRepaired: false,
+    });
     return value as T;
   }
 

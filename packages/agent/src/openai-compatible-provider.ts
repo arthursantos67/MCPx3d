@@ -15,7 +15,8 @@
  * model instead of a local one. The API key is only ever placed in this
  * request's `Authorization` header; it is never sent to `apps/api` and never
  * included in a thrown error message (error messages include the response
- * status/body text only).
+ * status and, at most, an identifier-shaped provider error code -- never the
+ * response body, which can echo request content).
  */
 
 import {
@@ -25,6 +26,7 @@ import {
   type JsonSchema,
   type LLMProvider,
 } from "./provider.ts";
+import { parseStructuredCompletion, readCompletionUsage } from "./structured-output.ts";
 
 export interface OpenAICompatibleConfig {
   readonly baseUrl: string;
@@ -47,11 +49,15 @@ function isConfigComplete(config: OpenAICompatibleConfig): boolean {
   return config.baseUrl.trim().length > 0 && config.apiKey.trim().length > 0 && config.model.trim().length > 0;
 }
 
-/** A ModelPlan JSON response is at most a few hundred tokens even for a
- * plan with several operations; this default leaves generous headroom
- * without inviting a model's much larger implicit default completion
- * budget to eat into a free-tier tokens-per-minute limit. */
-const DEFAULT_MAX_COMPLETION_TOKENS = 2048;
+/** This provider's declared `maxOutputTokens` ceiling, so
+ * `generateModelPlan`'s explicit per-request budget never exceeds it. Raised
+ * from 2048 to 8192 (Issue #71 follow-up): a complete multi-part scene with
+ * a reasoning model did not fit in 2048 tokens, forcing batch mode for
+ * requests the provider could answer in one response. Trade-off: a
+ * free-tier endpoint that counts the requested completion budget against a
+ * small tokens-per-minute limit (e.g. Groq's 8K TPM) now rejects most
+ * requests with 429. */
+export const DEFAULT_MAX_COMPLETION_TOKENS = 8192;
 const CHAT_COMPLETIONS_PATH = "/chat/completions";
 const MAX_TRANSIENT_RETRIES = 4;
 const BASE_RETRY_DELAY_MS = 1000;
@@ -94,6 +100,23 @@ function sleepWithAbort(milliseconds: number, signal: AbortSignal): Promise<void
   });
 }
 
+/** Only an identifier-shaped provider error code (e.g. `INVALID_ARGUMENT`,
+ * `model_not_found`) is ever surfaced -- never the response body itself,
+ * which can echo request content. */
+function safeProviderErrorCode(bodyText: string): string | null {
+  let body: unknown;
+  try {
+    body = JSON.parse(bodyText);
+  } catch {
+    return null;
+  }
+  const error = (body as { error?: { status?: unknown; code?: unknown; type?: unknown } } | null)?.error;
+  for (const candidate of [error?.status, error?.code, error?.type]) {
+    if (typeof candidate === "string" && /^[A-Za-z][A-Za-z0-9_.-]{0,63}$/.test(candidate)) return candidate;
+  }
+  return null;
+}
+
 function providerResponseMessage(status: number, bodyText: string): string {
   if (status === 503) {
     return "The AI model is temporarily unavailable after five attempts (status 503). Try again shortly or choose another model.";
@@ -101,11 +124,24 @@ function providerResponseMessage(status: number, bodyText: string): string {
   if (status === 429) {
     return "The AI provider rate limit was reached after five attempts (status 429). Try again shortly or check the provider quota.";
   }
-  return `OpenAI-compatible request failed with status ${status}${bodyText ? `: ${bodyText}` : ""}`;
+  const code = safeProviderErrorCode(bodyText);
+  const suffix = code ? ` (provider code: ${code})` : "";
+  if (status === 401 || status === 403) {
+    return `The AI provider rejected the credentials (status ${status})${suffix}. Check the API key in the AI provider settings.`;
+  }
+  if (status === 404) {
+    return `The AI endpoint or model was not found (status 404)${suffix}. Check the Base URL and model name.`;
+  }
+  if (status === 400) {
+    return `The AI provider rejected the request (status 400)${suffix}. Check the model name and that it supports JSON-schema output.`;
+  }
+  return `The AI provider request failed with status ${status}${suffix}.`;
 }
 
 export class OpenAICompatibleProvider implements LLMProvider {
   readonly id = "openai-compatible";
+  readonly model: string;
+  readonly maxOutputTokens = DEFAULT_MAX_COMPLETION_TOKENS;
 
   private readonly config: OpenAICompatibleConfig;
   private readonly chatCompletionsUrl: string;
@@ -129,6 +165,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
     random: () => number = Math.random,
   ) {
     this.config = { ...config, baseUrl: config.baseUrl.trim() };
+    this.model = config.model.trim();
     this.chatCompletionsUrl = toChatCompletionsUrl(config.baseUrl);
     this.fetchImpl = fetchImpl;
     this.sleepImpl = sleepImpl;
@@ -210,7 +247,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
           // models reserve a much larger completion budget by default,
           // which can burn through a free-tier tokens-per-minute limit in a
           // single request.
-          max_completion_tokens: options?.maxTokens ?? DEFAULT_MAX_COMPLETION_TOKENS,
+          max_completion_tokens: Math.min(options?.maxTokens ?? DEFAULT_MAX_COMPLETION_TOKENS, this.maxOutputTokens),
           // Reasoning-capable models (e.g. Groq's openai/gpt-oss family) can
           // reserve a large hidden token budget for chain-of-thought before
           // ever producing the visible JSON answer, on top of (not capped
@@ -247,12 +284,16 @@ export class OpenAICompatibleProvider implements LLMProvider {
 
       if (response === null) throw new ProviderRequestError("The AI provider returned no response.");
 
-      const body = (await response.json()) as { choices?: { message?: { content?: string | null } }[] };
-      const content = body.choices?.[0]?.message?.content;
-      if (content == null) {
-        throw new Error("OpenAI-compatible response had no message content");
-      }
-      return JSON.parse(content) as T;
+      const body = (await response.json()) as {
+        choices?: { message?: { content?: string | null }; finish_reason?: string | null }[];
+        usage?: unknown;
+      };
+      const choice = body.choices?.[0];
+      return parseStructuredCompletion(
+        choice?.message?.content,
+        { finishReason: choice?.finish_reason, usage: readCompletionUsage(body.usage) },
+        options?.onCompletion,
+      ) as T;
     } finally {
       this.inFlight = null;
       this.setState({ phase: "ready" });

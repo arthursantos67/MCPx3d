@@ -44,6 +44,30 @@ export type SendGate =
   | { readonly canSend: true }
   | { readonly canSend: false; readonly reason: string };
 
+/** Progress of a request that is continuing in bounded batches (Issue #71). */
+export interface SceneBatchStatus {
+  readonly batch: number;
+  readonly maxBatches: number;
+  readonly committedBatches: number;
+}
+
+/** Aggregate, content-free generation outcomes for one provider/model (Issue #71). */
+export interface GenerationStats {
+  readonly requests: number;
+  readonly truncatedRequests: number;
+  readonly recoveredRequests: number;
+  readonly continuedRequests: number;
+  readonly localRepairs: number;
+  readonly formatRepairs: number;
+  readonly applyRepairs: number;
+  readonly finalValidScenes: number;
+  readonly skippedBatches: number;
+  /** Final applies that asked the backend to separate overlapping parts. */
+  readonly overlapResolutions: number;
+  /** Rejected plan attempts by content-free category (e.g. `schema`, `dropped-operations`). */
+  readonly validationFailures: Readonly<Record<string, number>>;
+}
+
 export interface ChatControllerState {
   readonly messages: readonly ChatMessage[];
   readonly modelSpec: ModelSpec | null;
@@ -63,4 +87,7 @@ export interface ChatControllerState {
   readonly pipelineStage: PipelineStage;
   readonly pipelineStartedAt: number | null;
   readonly timings: Readonly<Record<string, number>>;
+  readonly sceneBatch: SceneBatchStatus | null;
+  /** Keyed by `provider/model`. */
+  readonly generationStats: Readonly<Record<string, GenerationStats>>;
 }

@@ -1880,6 +1880,60 @@ quality established by the benchmark.
 
 ---
 
+## Issue #71 — Prevent truncated ModelPlans and recover long scene generation
+
+**Labels:** `agent`, `frontend`, `provider`, `testing`, `priority:P1`
+
+### Objective
+
+Prevent long scene requests from failing when a provider truncates its JSON
+output, and continue safely from the last validated revision when a scenario
+needs more than one bounded generation step.
+
+### Scope
+
+- preserve safe provider completion metadata (`finish_reason`, usage when
+  available, output size and a classified failure reason) separately from
+  user-visible diagnostics;
+- recognize a length-limited or syntactically incomplete response as
+  truncation instead of a generic JSON parse failure;
+- make the completion budget explicit and bounded, selecting it from the
+  planned scene complexity and the configured provider's limits;
+- split large scenarios into deterministic, independently validated batches
+  of semantic operations when one valid ModelPlan would exceed the output
+  budget;
+- attempt local JSON repair only when the repaired result parses and passes
+  the normal schema/domain validation; otherwise request a bounded structured
+  continuation rather than executing a partial result;
+- retain the last-valid-scene rule through every batch and expose useful
+  progress such as the current batch and remaining scene work;
+- record aggregate truncation, repair, continuation and final-valid-scene
+  rates by provider/model without retaining credentials, raw prompts or raw
+  responses.
+
+### Acceptance criteria
+
+- [ ] `finish_reason: length` and unterminated JSON are classified as a safe,
+  actionable truncation failure.
+- [ ] raw provider output, prompt content and credentials are never exposed in
+  the UI, logs or persisted diagnostics.
+- [ ] a partial ModelPlan never reaches mutation, MCP calls or commit.
+- [ ] a multi-part kitchen or comparable large scenario completes as bounded,
+  validated batches, or reports the exact failed batch while preserving the
+  preceding valid revision and preview.
+- [ ] retry/repair/continuation attempts have documented finite limits.
+- [ ] unit and integration tests cover first-response truncation, truncation
+  during repair, safe local repair, continuation, cancellation and
+  last-valid-scene preservation.
+- [ ] benchmark reporting includes truncation and recovery rates by configured
+  provider/model.
+
+### Depends on
+
+#19, #20, #34, #43, #65, #67
+
+---
+
 ## Recommended implementation sequence for agent quality and responsiveness
 
 `#65 -> #43 -> #20 -> #67 -> #68 -> #69 -> #54 -> #70`

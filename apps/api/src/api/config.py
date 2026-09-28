@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     # sane on-screen scale by default (PRD §3.10).
     default_display_scale: float = Field(default=0.001, gt=0)
 
-    max_objects_per_project: int = Field(default=100, gt=0)
+    max_objects_per_project: int = Field(default=300, gt=0)
     max_operations_per_plan: int = Field(default=100, gt=0)
     max_prompt_characters: int = Field(default=8000, gt=0)
     max_artifact_bytes: int = Field(default=10_000_000, gt=0)

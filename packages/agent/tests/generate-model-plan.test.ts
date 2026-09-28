@@ -162,9 +162,9 @@ test("a create_object may target its own caller-proposed id later in the same pl
   assert.equal(provider.calls.length, 1);
 });
 
-test("a create_object with the wrong dimension keys for its kind is repaired once, then accepted if corrected", async () => {
+test("a create_object with unconvertible dimension keys for its kind is repaired once, then accepted if corrected", async () => {
   const provider = new MockLLMProvider([
-    { intent: "create_model", operations: [{ op: "create_object", name: "Table", kind: "box", dimensions: { x: 1200, y: 750, z: 700 } }] },
+    { intent: "create_model", operations: [{ op: "create_object", name: "Table", kind: "box", dimensions: { size: 1200, thickness: 40 } }] },
     { intent: "create_model", operations: [{ op: "create_object", name: "Table", kind: "box", dimensions: { width: 1200, height: 750, depth: 700 } }] },
   ]);
 

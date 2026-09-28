@@ -26,7 +26,11 @@ interface ChatPanelProps {
 function ChatPanel({ state, sendMessage, cancelGeneration, canSend, retryProject, onOpenProviderSettings }: ChatPanelProps) {
   const gate = canSend()
   const progressVisible = state.isBusy || state.agentPhase === 'loading'
-  const progressLabel = state.isBusy ? 'Generating…' : (state.agentDetail ?? 'Loading local model…')
+  const progressLabel = state.isBusy
+    ? state.sceneBatch
+      ? `Building the scene in batches: batch ${state.sceneBatch.batch} of up to ${state.sceneBatch.maxBatches} (${state.sceneBatch.committedBatches} committed)…`
+      : 'Generating…'
+    : (state.agentDetail ?? 'Loading local model…')
   const showProviderLink = state.agentPhase === 'unsupported' || state.agentPhase === 'error'
 
   return (

@@ -220,6 +220,70 @@ def test_valid_plan_commits_and_returns_validation_and_artifacts(
     assert project_service.get_project(session.project_id).revision == 1
 
 
+_OVERLAPPING_KITCHEN_PLAN = {
+    "intent": "create_model",
+    "operations": [
+        {
+            "op": "create_object",
+            "id": "countertop",
+            "name": "Countertop",
+            "kind": "box",
+            "dimensions": {"width": 600, "height": 30, "depth": 600},
+            "position": [0, 885, 0],
+            "color": "#9a9a9a",
+        },
+        {
+            "op": "create_object",
+            "id": "sink",
+            "name": "Sink",
+            "kind": "box",
+            "dimensions": {"width": 400, "height": 20, "depth": 350},
+            "position": [0, 880, 0],
+            "color": "#c0c0c0",
+        },
+    ],
+}
+
+
+def test_overlap_is_rejected_with_every_pair_unless_resolution_is_requested(
+    client_unreachable_mcp: TestClient, project_service: ProjectSessionService
+) -> None:
+    session = project_service.create_project()
+    body = {"expectedRevision": 0, "plan": _OVERLAPPING_KITCHEN_PLAN}
+
+    response = client_unreachable_mcp.post(f"/api/projects/{session.project_id}/plans", json=body)
+
+    assert response.status_code == 422
+    assert response.json()["code"] == "UNINTENDED_OVERLAP"
+    assert "'Countertop' (countertop) intersects 'Sink' (sink)" in response.json()["message"]
+    assert project_service.get_project(session.project_id).revision == 0
+
+
+def test_resolve_overlaps_separates_parts_validates_and_reports_autofixes(
+    x3d_mcp_server: str, project_service: ProjectSessionService
+) -> None:
+    app.dependency_overrides[get_settings] = lambda: Settings(mcp_base_url=AnyHttpUrl(x3d_mcp_server))
+    client = TestClient(app)
+    session = project_service.create_project()
+    body = {"expectedRevision": 0, "plan": _OVERLAPPING_KITCHEN_PLAN, "resolveOverlaps": True}
+
+    response = client.post(f"/api/projects/{session.project_id}/plans", json=body)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["revision"] == 1
+    assert payload["validation"]["schemaValid"] is True
+    assert payload["validation"]["semanticValid"] is True
+    sink = next(obj for obj in payload["modelSpec"]["objects"] if obj["id"] == "sink")
+    assert sink["transform"]["position"] == [0.0, 910.0, 0.0]
+    assert payload["validation"]["autofixes"][0] == {
+        "type": "overlap_separation",
+        "objectId": "sink",
+        "offset": [0.0, 30.0, 0.0],
+        "separatedFrom": ["countertop"],
+    }
+
+
 def test_mcp_tool_error_maps_to_503_and_does_not_mutate(
     x3d_mcp_server: str, project_service: ProjectSessionService, monkeypatch: pytest.MonkeyPatch
 ) -> None:

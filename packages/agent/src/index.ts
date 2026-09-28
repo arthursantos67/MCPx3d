@@ -7,3 +7,6 @@ export * from "./schemas.ts";
 export * from "./model-spec-summary.ts";
 export * from "./system-prompt.ts";
 export * from "./generate-model-plan.ts";
+export * from "./structured-output.ts";
+export * from "./generate-scene.ts";
+export * from "./plan-diagnostics.ts";

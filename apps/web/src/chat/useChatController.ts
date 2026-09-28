@@ -58,6 +58,8 @@ function toAgentStatus(state: WebLLMProviderState): AgentStatus {
 function toAgentProvider(webllm: WebLLMProvider): AgentProvider {
   return {
     id: webllm.id,
+    model: webllm.model,
+    maxOutputTokens: webllm.maxOutputTokens,
     isAvailable: () => webllm.isAvailable(),
     initialize: () => webllm.initialize(),
     generateStructured: (messages, schema, options) => webllm.generateStructured(messages, schema, options),
@@ -74,6 +76,8 @@ function toOpenAiCompatibleStatus(state: OpenAICompatibleProviderState): AgentSt
 function toOpenAiCompatibleAgentProvider(provider: OpenAICompatibleProvider): AgentProvider {
   return {
     id: provider.id,
+    model: provider.model,
+    maxOutputTokens: provider.maxOutputTokens,
     isAvailable: () => provider.isAvailable(),
     initialize: () => provider.initialize(),
     generateStructured: (messages, schema, options) => provider.generateStructured(messages, schema, options),

@@ -21,22 +21,120 @@ class Bounds:
     maximum: tuple[float, float, float]
 
 
+MAX_REPORTED_OVERLAPS = 10
+MAX_SEPARATION_STEPS = 200
+
+OverlapPair = tuple[ModelObject, ModelObject]
+
+
 class UnintendedOverlapError(Exception):
-    def __init__(self, first: ModelObject, second: ModelObject) -> None:
-        super().__init__(f"'{first.name}' ({first.id}) intersects '{second.name}' ({second.id}); move one part or set allowOverlap to true for the requested intersection.")
-        self.first = first
-        self.second = second
+    """Every penetrating pair (bounded), so one repair can fix all of them at once."""
+
+    def __init__(self, pairs: list[OverlapPair]) -> None:
+        described = "; ".join(
+            f"'{first.name}' ({first.id}) intersects '{second.name}' ({second.id})"
+            for first, second in pairs[:MAX_REPORTED_OVERLAPS]
+        )
+        more = f" (and {len(pairs) - MAX_REPORTED_OVERLAPS} more)" if len(pairs) > MAX_REPORTED_OVERLAPS else ""
+        super().__init__(
+            f"{described}{more}; move the listed parts apart or set allowOverlap to true for a requested intersection."
+        )
+        self.pairs = pairs
 
 
-def validate_no_unintended_overlap(spec: ModelSpec, plan: ModelPlan) -> None:
+def find_unintended_overlaps(spec: ModelSpec, plan: ModelPlan) -> list[OverlapPair]:
     allowed = _allowed_object_ids(plan)
+    pairs: list[OverlapPair] = []
     for index, first in enumerate(spec.objects):
         first_bounds = bounds_for(first)
         for second in spec.objects[index + 1:]:
             if first.id in allowed or second.id in allowed:
                 continue
             if _penetrates(first_bounds, bounds_for(second)):
-                raise UnintendedOverlapError(first, second)
+                pairs.append((first, second))
+    return pairs
+
+
+def validate_no_unintended_overlap(spec: ModelSpec, plan: ModelPlan) -> None:
+    pairs = find_unintended_overlaps(spec, plan)
+    if pairs:
+        raise UnintendedOverlapError(pairs)
+
+
+def resolve_unintended_overlaps(
+    previous: ModelSpec, spec: ModelSpec, plan: ModelPlan
+) -> tuple[ModelSpec, list[dict[str, object]]]:
+    """Deterministically separates penetrating parts by the smallest translation.
+
+    Only parts this plan created or changed are moved -- never a part committed
+    by an earlier revision -- and never downward, so nothing is pushed through
+    the floor. Returns the adjusted spec and one autofix record per moved part;
+    raises `UnintendedOverlapError` if the overlaps cannot be resolved within
+    `MAX_SEPARATION_STEPS`.
+    """
+    existing = {obj.id for obj in previous.objects}
+    movable = {obj.id for obj in spec.objects if obj.id not in existing} | _plan_touched_ids(plan)
+    offsets: dict[str, list[float]] = {}
+    separated_from: dict[str, list[str]] = {}
+    current = spec
+    for _ in range(MAX_SEPARATION_STEPS):
+        pairs = find_unintended_overlaps(current, plan)
+        if not pairs:
+            return current, [
+                {
+                    "type": "overlap_separation",
+                    "objectId": object_id,
+                    "offset": [round(value, 6) for value in offset],
+                    "separatedFrom": separated_from[object_id],
+                }
+                for object_id, offset in offsets.items()
+            ]
+        first, second = pairs[0]
+        if second.id in movable:
+            mover, anchor = second, first
+        elif first.id in movable:
+            mover, anchor = first, second
+        else:
+            raise UnintendedOverlapError(pairs)
+        delta = _separation(bounds_for(mover), bounds_for(anchor))
+        position = mover.transform.position
+        moved = mover.model_copy(
+            update={
+                "transform": mover.transform.model_copy(
+                    update={"position": (position[0] + delta[0], position[1] + delta[1], position[2] + delta[2])}
+                )
+            }
+        )
+        current = current.model_copy(
+            update={"objects": [moved if obj.id == mover.id else obj for obj in current.objects]}
+        )
+        total = offsets.setdefault(mover.id, [0.0, 0.0, 0.0])
+        for axis in range(3):
+            total[axis] += delta[axis]
+        if anchor.id not in separated_from.setdefault(mover.id, []):
+            separated_from[mover.id].append(anchor.id)
+    raise UnintendedOverlapError(find_unintended_overlaps(current, plan))
+
+
+def _separation(mover: Bounds, anchor: Bounds) -> tuple[float, float, float]:
+    candidates: list[tuple[float, int, float]] = []
+    for axis in range(3):
+        candidates.append((anchor.maximum[axis] - mover.minimum[axis], axis, anchor.maximum[axis] - mover.minimum[axis]))
+        if axis != 1:
+            push = anchor.minimum[axis] - mover.maximum[axis]
+            candidates.append((-push, axis, push))
+    _, axis, push = min(candidates)
+    delta = [0.0, 0.0, 0.0]
+    delta[axis] = push
+    return (delta[0], delta[1], delta[2])
+
+
+def _plan_touched_ids(plan: ModelPlan) -> set[str]:
+    return {
+        operation.target
+        for operation in plan.operations
+        if isinstance(operation, (SetDimensions, TranslateObject, RotateObject, ScaleObject))
+    }
 
 
 def bounds_for(obj: ModelObject) -> Bounds:

@@ -23,6 +23,7 @@ import type { ChatCompletionMessageParam, MLCEngineInterface } from "@mlc-ai/web
 
 import type { AgentMessage, GenerationOptions, JsonSchema, LLMProvider } from "./provider.ts";
 import { DEFAULT_WEBLLM_MODEL_ID } from "./model-config.ts";
+import { parseStructuredCompletion, readCompletionUsage } from "./structured-output.ts";
 
 export interface WebLlmInitProgress {
   readonly progress: number;
@@ -60,6 +61,9 @@ const NO_ADAPTER_REASON =
 
 export class WebLLMProvider implements LLMProvider {
   readonly id = "webllm";
+  readonly model: string;
+  /** The small default local models share a ~4K-token context window with the prompt. */
+  readonly maxOutputTokens = 2048;
 
   private readonly modelId: string;
   private readonly detectWebGpu: DetectWebGpu;
@@ -76,6 +80,7 @@ export class WebLLMProvider implements LLMProvider {
     createEngine: CreateWebLlmEngine,
   ) {
     this.modelId = modelId;
+    this.model = modelId;
     this.detectWebGpu = detectWebGpu;
     this.createWorker = createWorker;
     this.createEngine = createEngine;
@@ -136,11 +141,12 @@ export class WebLLMProvider implements LLMProvider {
         temperature: options?.temperature,
         max_tokens: options?.maxTokens,
       });
-      const content = completion.choices[0]?.message.content;
-      if (content == null) {
-        throw new Error("WebLLM returned an empty response");
-      }
-      return JSON.parse(content) as T;
+      const choice = completion.choices[0];
+      return parseStructuredCompletion(
+        choice?.message.content,
+        { finishReason: choice?.finish_reason, usage: readCompletionUsage(completion.usage) },
+        options?.onCompletion,
+      ) as T;
     } finally {
       this.setState({ phase: "ready" });
     }

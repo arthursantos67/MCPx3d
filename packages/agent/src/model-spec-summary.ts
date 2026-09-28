@@ -10,10 +10,10 @@
 
 import type { ModelSpec } from "../../domain/ts/src/model-spec.ts";
 
-export const DEFAULT_MODEL_SPEC_SUMMARY_MAX_CHARACTERS = 4_000;
-export const DEFAULT_MODEL_SPEC_SUMMARY_MAX_OBJECTS = 32;
-export const MAX_MODEL_SPEC_SUMMARY_CHARACTERS = 8_000;
-export const MAX_MODEL_SPEC_SUMMARY_OBJECTS = 40;
+export const DEFAULT_MODEL_SPEC_SUMMARY_MAX_CHARACTERS = 48_000;
+export const DEFAULT_MODEL_SPEC_SUMMARY_MAX_OBJECTS = 300;
+export const MAX_MODEL_SPEC_SUMMARY_CHARACTERS = 64_000;
+export const MAX_MODEL_SPEC_SUMMARY_OBJECTS = 300;
 
 export interface ModelSpecSummaryOptions {
   readonly maxCharacters?: number;

@@ -28,12 +28,48 @@ import math
 from domain.model_spec import ModelSpec, PrimitiveKind, Vec3
 
 from api.mcp_client import X3DMcpClient
+from api.overlap import bounds_for
 
 AxisAngle = tuple[float, float, float, float]
 
 _DEF_PREFIX = "obj_"
 _DEFAULT_AXIS_ANGLE: AxisAngle = (0.0, 0.0, 1.0, 0.0)
 _ZERO_ROTATION_EPSILON = 1e-9
+
+_VIEW_YAW = math.radians(30.0)
+_VIEW_PITCH = math.radians(25.0)
+_X3D_DEFAULT_FIELD_OF_VIEW = math.pi / 4
+_VIEW_MARGIN = 1.05
+_MIN_VIEW_DISTANCE = 0.1
+
+
+def framing_viewpoint(spec: ModelSpec) -> dict[str, object] | None:
+    """An elevated front-right 3/4 view that frames every object (display units).
+
+    The camera sits outside the scene's bounding sphere far enough for the
+    whole sphere to fit X3D's default 45-degree field of view, so a large
+    scene opens fully visible instead of at X3DOM's fixed default camera.
+    Returns None for an empty scene, which keeps the viewer's default.
+    """
+    if not spec.objects:
+        return None
+    scale = spec.scene.displayScale
+    boxes = [bounds_for(obj) for obj in spec.objects]
+    low = [min(box.minimum[axis] for box in boxes) * scale for axis in range(3)]
+    high = [max(box.maximum[axis] for box in boxes) * scale for axis in range(3)]
+    center = [(low[axis] + high[axis]) / 2 for axis in range(3)]
+    radius = math.dist(low, high) / 2
+    distance = max(radius / math.sin(_X3D_DEFAULT_FIELD_OF_VIEW / 2) * _VIEW_MARGIN, _MIN_VIEW_DISTANCE)
+    direction = (
+        math.sin(_VIEW_YAW) * math.cos(_VIEW_PITCH),
+        math.sin(_VIEW_PITCH),
+        math.cos(_VIEW_YAW) * math.cos(_VIEW_PITCH),
+    )
+    return {
+        "position": [center[axis] + direction[axis] * distance for axis in range(3)],
+        "orientation": list(euler_xyz_to_axis_angle((-_VIEW_PITCH, _VIEW_YAW, 0.0))),
+        "description": "Scene overview",
+    }
 
 
 async def apply_model_spec(client: X3DMcpClient, spec: ModelSpec) -> dict[str, str]:
@@ -63,13 +99,17 @@ async def apply_model_spec(client: X3DMcpClient, spec: ModelSpec) -> dict[str, s
             if spec.scene.background is not None
             else None
         )
-        await client.compose_scene(objects, background=background)
+        await client.compose_scene(objects, background=background, viewpoint=framing_viewpoint(spec))
         return def_names
 
     await client.reset_scene()
 
     if spec.scene.background is not None:
         await client.create_background(_hex_to_rgb(spec.scene.background))
+
+    viewpoint = framing_viewpoint(spec)
+    if viewpoint is not None:
+        await client.create_viewpoint(viewpoint)
 
     for obj in spec.objects:
         def_name = _def_name(obj.id)

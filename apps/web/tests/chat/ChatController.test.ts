@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { MockLLMProvider, type MockResponse } from "../../../../packages/agent/src/mock-provider.ts";
+import { MockLLMProvider, mockCompletion, type MockResponse } from "../../../../packages/agent/src/mock-provider.ts";
 import type { ModelSpec } from "../../../../packages/domain/ts/src/model-spec.ts";
 
 import { ApiError, type ApplyPlanRequestBody, type ApplyPlanResponse } from "../../src/api/client.ts";
@@ -363,4 +363,142 @@ test("cancelling an API request aborts it without replacing the current model", 
   assert.equal(controller.getState().previewUrl, null);
   assert.equal(controller.getState().requestStatus, "cancelled");
   assert.equal(controller.getState().isBusy, false);
+});
+
+function cabinetBatch(from: number, count: number): Record<string, unknown> {
+  return {
+    intent: "create_model",
+    operations: Array.from({ length: count }, (_unused, offset) => ({
+      op: "create_object",
+      id: `cabinet_${from + offset}`,
+      name: `Cabinet ${from + offset}`,
+      kind: "box",
+      dimensions: { width: 600, height: 900, depth: 600 },
+      position: [(from + offset) * 700, 450, 0],
+      color: "#d9c7a7",
+    })),
+  };
+}
+
+const TRUNCATED_SECRET_KITCHEN = mockCompletion(
+  '{"intent":"create_model","operations":[{"op":"create_object","id":"SECRET_RAW_OUTPUT","name":"Cabi',
+  "length",
+);
+
+function committingApply(spec: ModelSpec, failOnCall?: number): (body: ApplyPlanRequestBody) => ApplyPlanResponse {
+  let calls = 0;
+  return (body) => {
+    calls += 1;
+    if (calls === failOnCall) {
+      throw new ApiError(503, { code: "MCP_UNAVAILABLE", message: "MCP is unavailable.", correlationId: "request-batch" });
+    }
+    const revision = body.expectedRevision + 1;
+    return {
+      projectId: "prj_test",
+      revision,
+      modelSpec: { ...spec, revision },
+      validation: { schemaValid: true, semanticValid: true, warnings: [], autofixes: [] },
+      preview: { url: `/api/projects/prj_test/artifacts/html?revision=${revision}` },
+      artifacts: [{ format: "html", available: true, reason: null }],
+      correlationId: `request-${revision}`,
+    };
+  };
+}
+
+test("a truncated scene request continues in validated batches and records provider/model stats", async () => {
+  const spec = emptySpec(0);
+  const { provider } = makeFakeProvider([
+    TRUNCATED_SECRET_KITCHEN,
+    cabinetBatch(1, 12),
+    cabinetBatch(13, 5),
+    { intent: "no_change", operations: [{ op: "no_change", reason: "Done." }] },
+  ]);
+  const { api, applyCalls } = makeFakeApi(spec, committingApply(spec));
+  const controller = new ChatController(provider, api);
+  const batchLabels: number[] = [];
+  controller.onChange(() => {
+    const batch = controller.getState().sceneBatch?.batch;
+    if (batch !== undefined && batchLabels.at(-1) !== batch) batchLabels.push(batch);
+  });
+  await controller.initialize();
+
+  await controller.sendMessage("create a full kitchen");
+
+  const state = controller.getState();
+  assert.deepEqual(applyCalls.map((call) => [call.expectedRevision, call.plan.operations.length]), [[0, 12], [1, 5]]);
+  assert.deepEqual(batchLabels, [1, 2, 3]);
+  assert.equal(state.modelSpec?.revision, 2);
+  assert.equal(state.previewUrl, "http://test/api/projects/prj_test/artifacts/html?revision=2");
+  assert.equal(state.requestStatus, "succeeded");
+  assert.equal(state.sceneBatch, null);
+  assert.match(state.messages.at(-1)?.text ?? "", /2 validated batches; revision 2/);
+  assert.doesNotMatch(JSON.stringify(state), /SECRET_RAW_OUTPUT/);
+  assert.deepEqual(state.generationStats["mock/default"], {
+    requests: 1,
+    truncatedRequests: 1,
+    recoveredRequests: 1,
+    continuedRequests: 1,
+    localRepairs: 0,
+    formatRepairs: 0,
+    applyRepairs: 0,
+    finalValidScenes: 1,
+    skippedBatches: 0,
+    overlapResolutions: 0,
+    validationFailures: { truncated: 1 },
+  });
+});
+
+test("a failed batch reports the exact batch and keeps the preceding valid revision and preview", async () => {
+  const spec = emptySpec(0);
+  const { provider } = makeFakeProvider([TRUNCATED_SECRET_KITCHEN, cabinetBatch(1, 12), cabinetBatch(13, 5)]);
+  const { api } = makeFakeApi(spec, committingApply(spec, 2));
+  const controller = new ChatController(provider, api);
+  await controller.initialize();
+
+  await controller.sendMessage("create a full kitchen");
+
+  const state = controller.getState();
+  assert.equal(state.modelSpec?.revision, 1);
+  assert.equal(state.previewUrl, "http://test/api/projects/prj_test/artifacts/html?revision=1");
+  assert.equal(state.requestStatus, "failed");
+  assert.equal(state.failureSource, "mcp");
+  assert.equal(state.correlationId, "request-batch");
+  assert.match(state.messages.at(-1)?.text ?? "", /Scene batch 2 failed: MCP is unavailable\..*\(ref request-batch\)/);
+  assert.doesNotMatch(JSON.stringify(state), /SECRET_RAW_OUTPUT/);
+  assert.equal(state.generationStats["mock/default"]?.recoveredRequests, 0);
+  assert.equal(controller.canSend().canSend, true);
+});
+
+test("cancelling during a later batch keeps the committed batch as the active scene", async () => {
+  const spec = emptySpec(0);
+  let resolveSecondBatch: ((value: unknown) => void) | undefined;
+  const mock = new MockLLMProvider([TRUNCATED_SECRET_KITCHEN, cabinetBatch(1, 12)]);
+  const provider: AgentProvider = {
+    id: "deferred",
+    isAvailable: async () => true,
+    initialize: async () => {},
+    generateStructured: async <T>(...args: Parameters<AgentProvider["generateStructured"]>) =>
+      mock.calls.length < 2
+        ? mock.generateStructured<T>(...args)
+        : new Promise<T>((resolve) => { resolveSecondBatch = resolve as (value: unknown) => void; }),
+    cancel: async () => {},
+    getState: () => ({ phase: "ready" }),
+    onStateChange: () => () => {},
+  };
+  const { api, applyCalls } = makeFakeApi(spec, committingApply(spec));
+  const controller = new ChatController(provider, api);
+  await controller.initialize();
+
+  const request = controller.sendMessage("create a full kitchen");
+  while (resolveSecondBatch === undefined) await new Promise((resolve) => setImmediate(resolve));
+  controller.cancelGeneration();
+  resolveSecondBatch(cabinetBatch(13, 5));
+  await request;
+
+  const state = controller.getState();
+  assert.equal(applyCalls.length, 1);
+  assert.equal(state.modelSpec?.revision, 1);
+  assert.equal(state.previewUrl, "http://test/api/projects/prj_test/artifacts/html?revision=1");
+  assert.equal(state.requestStatus, "cancelled");
+  assert.equal(state.sceneBatch, null);
 });

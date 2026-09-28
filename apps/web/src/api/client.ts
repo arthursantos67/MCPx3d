@@ -42,6 +42,8 @@ export interface ApplyPlanRequestBody {
   readonly expectedRevision: number;
   readonly requestId: string;
   readonly plan: ModelPlan;
+  /** Ask the backend to separate penetrating parts instead of rejecting the plan. */
+  readonly resolveOverlaps?: boolean;
 }
 
 interface ErrorDetail {

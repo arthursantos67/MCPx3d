@@ -106,10 +106,15 @@ class X3DMcpClient:
         return await self._call("reset_scene")
 
     async def compose_scene(
-        self, objects: list[dict[str, Any]], *, background: dict[str, Any] | None = None
+        self,
+        objects: list[dict[str, Any]],
+        *,
+        background: dict[str, Any] | None = None,
+        viewpoint: dict[str, Any] | None = None,
     ) -> str:
         content = await self._call(
-            "compose_scene", {"objects": objects, "background": background, "encoding": "xml"}
+            "compose_scene",
+            {"objects": objects, "background": background, "viewpoint": viewpoint, "encoding": "xml"},
         )
         self._composed_scene = content
         return content
@@ -164,6 +169,9 @@ class X3DMcpClient:
 
     async def create_background(self, color: tuple[float, float, float]) -> None:
         await self._create_node("Background", {"skyColor": [list(color)]})
+
+    async def create_viewpoint(self, viewpoint: dict[str, Any]) -> None:
+        await self._create_node("Viewpoint", viewpoint)
 
     async def get_scene(self, encoding: Literal["xml", "json", "vrml"] = "xml") -> str:
         """Return the session's current scene, serialized in `encoding`."""

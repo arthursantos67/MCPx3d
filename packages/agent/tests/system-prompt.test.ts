@@ -89,6 +89,9 @@ test("guides bounded named primitive decomposition with consistent furniture pla
   assert.match(prompt, /chair, table, or shelf/);
   assert.match(prompt, /specific, stable name and id/);
   assert.match(prompt, /100 operations or fewer/);
+  assert.match(prompt, /realistic detail/);
+  assert.match(prompt, /Refrigerator: Body, Upper door, Lower door/);
+  assert.doesNotMatch(prompt, /no more than 12 operations|rather than decorative detail/);
   assert.match(prompt, /positive Z is front/);
   assert.match(prompt, /Positions are primitive centers/);
   assert.match(prompt, /Y=0 as the floor/);

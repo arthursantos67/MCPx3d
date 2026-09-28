@@ -1,8 +1,8 @@
 # Golden benchmark
 
-The suite is run with the configured external Gemini-compatible reference provider and a local API/MCP service; it does not require WebGPU or Issue #17's local-model selection. It contains 30 English and Portuguese requests covering primitives, colours, position, composed objects, follow-ups, deletion, duplication, and ambiguity.
+The suite is run with the configured external Gemini-compatible reference provider and a local API/MCP service; it does not require WebGPU or Issue #17's local-model selection. It contains 32 English and Portuguese requests covering primitives, colours, position, composed objects, follow-ups, deletion, duplication, ambiguity, and large multi-part scenes that exceed one ModelPlan output budget (Issue #71).
 
-For each case the runner records only case ID, outcome, correlation ID, revision, safe API stage durations, total latency, and MCP call count. Prompts, credentials, and raw provider output are deliberately excluded from result files.
+For each case the runner records only case ID, outcome, correlation ID, revision, safe API stage durations, total latency, MCP call count, the configured provider/model identifiers, and content-free recovery counters (truncated, continued, committed batches, local/format/apply repairs, final valid scene, skipped batches, final applies that asked the backend to separate overlapping parts, and rejected attempts per validation category such as `schema` or `dropped-operations`). A case with a skipped batch is a failure (`errorCode: batches_skipped`), even though its other batches were committed. The report aggregates truncation, recovery (final valid scene among truncated cases), continuation, repair, and final-valid-scene rates by provider/model (Issue #71). Prompts, credentials, and raw provider output are deliberately excluded from result files.
 
 Reference budgets on a developer machine with a warmed local MCP service are: a simple primitive p95 below 10 seconds; a composed fixture p95 below 30 seconds; cache-hit artifact generation p95 below 2 seconds. Provider and retry time are reported separately and are not treated as a local-MCP regression.
 

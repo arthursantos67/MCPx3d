@@ -30,6 +30,8 @@
     {"id":"duplicate-en-02","prompt":"Copy the right leg to the left","category":"duplication","language":"en"},
     {"id":"duplicate-pt-01","prompt":"Duplique o cubo","category":"duplication","language":"pt"},
     {"id":"ambiguous-en-01","prompt":"Make it bigger","category":"ambiguity","language":"en"},
-    {"id":"ambiguous-pt-01","prompt":"Deixe maior","category":"ambiguity","language":"pt"}
+    {"id":"ambiguous-pt-01","prompt":"Deixe maior","category":"ambiguity","language":"pt"},
+    {"id":"large-scene-en-01","prompt":"Create a complete open-plan kitchen: six base cabinets under one countertop, four wall cabinets, a fridge, a stove, a sink, and a dining table with four chairs","category":"large-scene","language":"en"},
+    {"id":"large-scene-pt-01","prompt":"Crie uma cozinha completa: seis armários inferiores com bancada, quatro armários superiores, geladeira, fogão, pia e uma mesa de jantar com quatro cadeiras","category":"large-scene","language":"pt"}
   ]
 }
