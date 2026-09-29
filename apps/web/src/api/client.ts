@@ -515,6 +515,19 @@ export async function saveCadProgram(spec: CadProgramSpec, project?: CadProgramP
   return saved;
 }
 
+export async function checkCadProgram(spec: CadProgramSpec): Promise<string | null> {
+  const response = await fetch(`${baseUrl()}/api/cad/programs/inspect`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(spec),
+  });
+  if (response.ok) return null;
+  try {
+    return await throwCadApiError(response);
+  } catch (error) {
+    if (error instanceof ApiError && error.code === 'CAD_GEOMETRY_INVALID') return error.message;
+    throw error;
+  }
+}
+
 export async function meshCadProgram(spec: CadProgramSpec): Promise<CadProgramMesh> {
   validateCadProgram(spec);
   const response = await fetch(`${baseUrl()}/api/cad/programs/mesh`, {

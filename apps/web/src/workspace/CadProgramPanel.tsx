@@ -41,7 +41,12 @@ export default function CadProgramPanel({ spec, project, onChange, onSaved, onNe
     try {
       const result = await plan(request, project ? spec : spec.steps.length > 1 ? spec : undefined)
       if (result.kind === 'clarify') setMessage(result.question)
-      else { onChange(result.spec); setAssumptions(result.assumptions); setMessage('Programa gerado. Revise a geometria e salve a revisão.') }
+      else {
+        onChange(result.spec); setAssumptions(result.assumptions)
+        setMessage(result.geometryIssue
+          ? `Programa gerado, mas a geometria ainda falha: ${result.geometryIssue}. Ajuste a etapa indicada abaixo e salve.`
+          : 'Programa gerado. Revise a geometria e salve a revisão.')
+      }
     } catch (error) { setMessage(error instanceof Error ? error.message : String(error)) }
     finally { setBusy(false) }
   }

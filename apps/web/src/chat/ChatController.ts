@@ -68,6 +68,7 @@ export interface ChatApi {
   deleteProject(projectId: string): Promise<void>;
   updateSceneTitle?(projectId: string, expectedRevision: number, title: string): Promise<ModelSpec>;
   matchRecipe?(query: string): Promise<Recipe | null>;
+  checkCadProgram?(spec: CadProgramSpec): Promise<string | null>;
   resolveArtifactUrl(relativeUrl: string): string;
 }
 
@@ -406,7 +407,8 @@ export class ChatController {
     this.activeCancellation = cancellation;
     this.patch({ isBusy: true, requestStatus: "working", pipelineStage: "provider-request", pipelineStartedAt: this.now() });
     try {
-      const outcome = await generateCadProgram(this.provider, request, previous);
+      const inspect = this.api.checkCadProgram?.bind(this.api);
+      const outcome = await generateCadProgram(this.provider, request, previous, inspect && ((spec) => inspect(spec).catch(() => null)));
       if (cancellation.signal.aborted) throw new Error("CAD request cancelled.");
       return outcome;
     } finally {

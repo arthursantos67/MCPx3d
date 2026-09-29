@@ -125,6 +125,28 @@ test("CAD creation uses the configured provider before a CAD project exists", as
   assert.equal(controller.getState().isBusy, false);
 });
 
+test("CAD programs are checked by the API and an unreachable checker does not block generation", async () => {
+  const program = {
+    schemaVersion: "3.0", units: "mm", partId: "block",
+    steps: [{ id: "body", op: "base", shape: "box", position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 }, width: 40, depth: 20, height: 10 }],
+  };
+  const { provider } = makeFakeProvider([{ decision: "create", spec: program, question: "", assumptions: [] }]);
+  const { api } = makeFakeApi(emptySpec());
+  const checked: unknown[] = [];
+  const controller = new ChatController(provider, {
+    ...api,
+    checkCadProgram: async (spec) => { checked.push(spec); throw new ApiError(503, { code: "CAD_ENGINE_UNAVAILABLE", message: "offline" }); },
+  });
+  await controller.initialize();
+
+  const outcome = await controller.planCadProgram("Crie um bloco");
+
+  assert.equal(outcome.kind, "create");
+  if (outcome.kind === "create") assert.equal(outcome.geometryIssue, undefined);
+  assert.deepEqual(checked, [program]);
+  assert.equal(controller.getState().isBusy, false);
+});
+
 test("an exact recipe request applies saved geometry without calling the provider", async () => {
   const spec = emptySpec();
   const { provider, mock } = makeFakeProvider([]);

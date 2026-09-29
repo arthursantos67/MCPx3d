@@ -59,7 +59,18 @@ def test_program_rejects_disconnected_and_noop_operations(tmp_path) -> None:
     client = TestClient(app)
     disconnected = copy.deepcopy(SPEC)
     disconnected["steps"][1]["position"]["x"] = 100
-    assert client.post("/api/cad/programs/inspect", json=disconnected).status_code == 422
+    floating = client.post("/api/cad/programs/inspect", json=disconnected)
+    assert floating.status_code == 422
+    assert "CAD step boss (union) leaves 2 separate solids" in floating.text
+    zero = {"x": 0, "y": 0, "z": 0}
+    split = {"schemaVersion": "3.0", "units": "mm", "partId": "bar", "steps": [
+        {"id": "bar", "op": "base", "shape": "box", "position": zero, "rotation": zero, "width": 100, "depth": 10, "height": 10},
+        {"id": "slots", "op": "cut", "shape": "box", "position": {"x": -20, "y": 0, "z": 0}, "rotation": zero,
+         "width": 4, "depth": 20, "height": 20, "pattern": {"kind": "linear", "count": 2, "offset": {"x": 40, "y": 0, "z": 0}}},
+    ]}
+    severed = client.post("/api/cad/programs/inspect", json=split)
+    assert severed.status_code == 422
+    assert "CAD step slots instance 1 (cut) leaves 2 separate solids" in severed.text
     noop = copy.deepcopy(SPEC)
     noop["steps"][2]["position"]["x"] = 100
     assert client.post("/api/cad/programs/inspect", json=noop).status_code == 422

@@ -33,11 +33,17 @@ def _engine() -> Any:
         raise CadEngineUnavailableError("Start the API with uv run --extra cad api to enable CAD exports") from exc
 
 
-def _one_solid(workplane: Any) -> Any:
+def _one_solid(workplane: Any, context: str | None = None) -> Any:
     solids = workplane.solids().vals()
-    if len(solids) != 1 or not solids[0].isValid() or solids[0].Volume() <= 0:
+    if len(solids) == 1 and solids[0].isValid() and solids[0].Volume() > 0:
+        return solids[0]
+    if context is None:
         raise CadGeometryError("Each CAD step must produce one valid connected solid")
-    return solids[0]
+    if len(solids) > 1:
+        raise CadGeometryError(
+            f"CAD {context} leaves {len(solids)} separate solids; every union must overlap the part and no cut may split it"
+        )
+    raise CadGeometryError(f"CAD {context} produces an invalid or empty solid")
 
 
 def _instances(feature: Any, pattern: CircularPattern | LinearPattern | None) -> list[Any]:
@@ -87,11 +93,11 @@ def build_program_solid(spec: CadProgramSpec, cq: Any | None = None) -> Any:
                 for number, instance in enumerate(_instances(feature, step.pattern), start=1):
                     before = _one_solid(part).Volume()
                     part = part.union(instance) if step.op == "union" else part.cut(instance)
-                    after = _one_solid(part).Volume()
+                    after = _one_solid(part, f"step {step.id}{f' instance {number}' if step.pattern else ''} ({step.op})").Volume()
                     if not math.isfinite(after) or abs(after - before) <= max(1e-6, before * 1e-9):
                         raise CadGeometryError(f"CAD step {step.id} instance {number} does not change the solid")
                     _one_solid(part)
-            _one_solid(part)
+            _one_solid(part, f"step {step.id} ({step.op})")
         except CadGeometryError:
             raise
         except Exception as exc:
