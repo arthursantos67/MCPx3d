@@ -64,6 +64,61 @@ def _instances(feature: Any, pattern: CircularPattern | LinearPattern | None) ->
     return instances
 
 
+def _bounds(box: Any) -> str:
+    return ", ".join(
+        f"{axis}=[{getattr(box, axis + 'min'):.2f}, {getattr(box, axis + 'max'):.2f}]"
+        for axis in ("x", "y", "z")
+    )
+
+
+def _point(vector: Any) -> str:
+    return f"x={vector.x:.2f}, y={vector.y:.2f}, z={vector.z:.2f}"
+
+
+def _boxes_overlap(left: Any, right: Any) -> bool:
+    return all(
+        min(getattr(left, axis + "max"), getattr(right, axis + "max"))
+        > max(getattr(left, axis + "min"), getattr(right, axis + "min"))
+        for axis in ("x", "y", "z")
+    )
+
+
+def _profile_issue(points: list[Any]) -> str | None:
+    count = len(points)
+
+    def cross(a: Any, b: Any, c: Any) -> float:
+        return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x)
+
+    def on_segment(a: Any, b: Any, c: Any) -> bool:
+        return (min(a.x, b.x) <= c.x <= max(a.x, b.x)
+                and min(a.y, b.y) <= c.y <= max(a.y, b.y))
+
+    for index, point in enumerate(points):
+        following = points[(index + 1) % count]
+        if point.x == following.x and point.y == following.y:
+            return f"profile has a zero-length edge at points {index + 1} and {(index + 1) % count + 1}"
+
+    for first in range(count):
+        a, b = points[first], points[(first + 1) % count]
+        for second in range(first + 1, count):
+            if (first + 1) % count == second or (second + 1) % count == first:
+                continue
+            c, d = points[second], points[(second + 1) % count]
+            ab_c, ab_d = cross(a, b, c), cross(a, b, d)
+            cd_a, cd_b = cross(c, d, a), cross(c, d, b)
+            if ((ab_c > 0 > ab_d or ab_d > 0 > ab_c) and (cd_a > 0 > cd_b or cd_b > 0 > cd_a)) or (
+                ab_c == 0 and on_segment(a, b, c)
+            ) or (
+                ab_d == 0 and on_segment(a, b, d)
+            ) or (
+                cd_a == 0 and on_segment(c, d, a)
+            ) or (
+                cd_b == 0 and on_segment(c, d, b)
+            ):
+                return f"profile self-intersects between edges {first + 1} and {second + 1}"
+    return None
+
+
 def build_program_solid(spec: CadProgramSpec, cq: Any | None = None) -> Any:
     cq = cq or _engine()
     part = None
@@ -78,8 +133,12 @@ def build_program_solid(spec: CadProgramSpec, cq: Any | None = None) -> Any:
             elif isinstance(step, ConeStep):
                 feature = cq.Workplane("XY").newObject([cq.Solid.makeCone(step.bottomDiameter / 2, step.topDiameter / 2, step.height, cq.Vector(0, 0, -step.height / 2))])
             elif isinstance(step, PolygonStep):
+                if issue := _profile_issue(step.points):
+                    raise CadGeometryError(f"CAD step {step.id} ({step.op}) polygon_prism {issue}")
                 feature = cq.Workplane("XY").polyline([(point.x, point.y) for point in step.points]).close().extrude(step.height).translate((0, 0, -step.height / 2))
             elif isinstance(step, RevolveStep):
+                if issue := _profile_issue(step.points):
+                    raise CadGeometryError(f"CAD step {step.id} ({step.op}) revolve_profile {issue}")
                 feature = cq.Workplane("XZ").polyline([(point.x, point.y) for point in step.points]).close().revolve(360, (0, 0), (0, 1))
             else:
                 raise CadGeometryError(f"Unsupported CAD shape in step {step.id}")
@@ -91,11 +150,38 @@ def build_program_solid(spec: CadProgramSpec, cq: Any | None = None) -> Any:
                 part = feature
             else:
                 for number, instance in enumerate(_instances(feature, step.pattern), start=1):
-                    before = _one_solid(part).Volume()
+                    current = _one_solid(part)
+                    before = current.Volume()
+                    before_bounds = current.BoundingBox()
                     part = part.union(instance) if step.op == "union" else part.cut(instance)
+                    solid_count = len(part.solids().vals())
+                    if solid_count > 1:
+                        tool = _one_solid(instance)
+                        tool_bounds = tool.BoundingBox()
+                        if step.op == "union":
+                            hint = ("bounding boxes overlap, but the solids may be separated by an opening or earlier cut"
+                                    if _boxes_overlap(before_bounds, tool_bounds) else "bounding boxes do not overlap")
+                            if not _boxes_overlap(before_bounds, tool_bounds):
+                                try:
+                                    solid_point, tool_point = cq.occ_impl.shapes.closest(current, tool)
+                                    hint += f"; nearest solid point: {_point(solid_point)}; nearest tool point: {_point(tool_point)}"
+                                except Exception:
+                                    pass
+                        else:
+                            hint = "the cut disconnects the remaining material; preserve a material bridge"
+                        raise CadGeometryError(
+                            f"CAD step {step.id}{f' instance {number}' if step.pattern else ''} ({step.op}) leaves "
+                            f"{solid_count} separate solids; "
+                            f"current solid bounds: {_bounds(before_bounds)}; "
+                            f"tool bounds: {_bounds(tool_bounds)}; {hint}"
+                        )
                     after = _one_solid(part, f"step {step.id}{f' instance {number}' if step.pattern else ''} ({step.op})").Volume()
                     if not math.isfinite(after) or abs(after - before) <= max(1e-6, before * 1e-9):
-                        raise CadGeometryError(f"CAD step {step.id} instance {number} does not change the solid")
+                        raise CadGeometryError(
+                            f"CAD step {step.id} instance {number} does not change the solid; "
+                            f"current solid bounds: {_bounds(before_bounds)}; "
+                            f"tool bounds: {_bounds(_one_solid(instance).BoundingBox())}"
+                        )
                     _one_solid(part)
             _one_solid(part, f"step {step.id} ({step.op})")
         except CadGeometryError:

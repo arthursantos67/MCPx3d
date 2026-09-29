@@ -408,7 +408,8 @@ export class ChatController {
     this.patch({ isBusy: true, requestStatus: "working", pipelineStage: "provider-request", pipelineStartedAt: this.now() });
     try {
       const inspect = this.api.checkCadProgram?.bind(this.api);
-      const outcome = await generateCadProgram(this.provider, request, previous, inspect && ((spec) => inspect(spec).catch(() => null)));
+      if (!inspect) throw new Error('A verificação CAD não está disponível. Recarregue a página e tente novamente.');
+      const outcome = await generateCadProgram(this.provider, request, previous, (spec) => inspect(spec));
       if (cancellation.signal.aborted) throw new Error("CAD request cancelled.");
       return outcome;
     } finally {

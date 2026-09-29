@@ -71,9 +71,28 @@ def test_program_rejects_disconnected_and_noop_operations(tmp_path) -> None:
     severed = client.post("/api/cad/programs/inspect", json=split)
     assert severed.status_code == 422
     assert "CAD step slots instance 1 (cut) leaves 2 separate solids" in severed.text
+    assert "current solid bounds:" in severed.text
+    assert "tool bounds:" in severed.text
+    assert "preserve a material bridge" in severed.text
+
+    split["steps"][1]["depth"] = 8
+    assert client.post("/api/cad/programs/inspect", json=split).status_code == 200
     noop = copy.deepcopy(SPEC)
     noop["steps"][2]["position"]["x"] = 100
-    assert client.post("/api/cad/programs/inspect", json=noop).status_code == 422
+    no_change = client.post("/api/cad/programs/inspect", json=noop)
+    assert no_change.status_code == 422
+    assert "CAD step bore instance 1 does not change the solid" in no_change.text
+    assert "current solid bounds:" in no_change.text
+    assert "tool bounds:" in no_change.text
+
+    contained = copy.deepcopy(SPEC)
+    contained["steps"] = [contained["steps"][0], {
+        "id": "buried_boss", "op": "union", "shape": "cylinder", "position": zero, "rotation": zero,
+        "diameter": 10, "height": 4,
+    }]
+    redundant = client.post("/api/cad/programs/inspect", json=contained)
+    assert redundant.status_code == 422
+    assert "CAD step buried_boss instance 1 does not change the solid" in redundant.text
     invalid = copy.deepcopy(SPEC)
     invalid["steps"][1]["id"] = "foot"
     assert client.post("/api/cad/projects", json={"spec": invalid}).status_code == 400
@@ -92,6 +111,139 @@ def test_polygon_profile_supports_custom_outline_and_rotated_cut() -> None:
     response = client.post("/api/cad/programs/inspect", json=custom)
     assert response.status_code == 200, response.text
     assert response.json()["boundsMm"] == pytest.approx([60, 40, 12])
+
+
+def test_invalid_base_profiles_identify_self_intersections_and_duplicate_closure() -> None:
+    client = TestClient(app)
+    zero = {"x": 0, "y": 0, "z": 0}
+    crossing = [{"x": 0, "y": 0}, {"x": 6, "y": 0}, {"x": 6, "y": 6},
+                {"x": 0, "y": 6}, {"x": 4, "y": -2}]
+    program = {"schemaVersion": "3.0", "units": "mm", "partId": "profile", "steps": [
+        {"id": "c_frame", "op": "base", "shape": "polygon_prism", "position": zero,
+         "rotation": zero, "points": crossing, "height": 8},
+    ]}
+    crossed = client.post("/api/cad/programs/inspect", json=program)
+    assert crossed.status_code == 422
+    assert "CAD step c_frame (base) polygon_prism profile self-intersects between edges" in crossed.text
+
+    program["steps"][0]["points"] = [{"x": 0, "y": 0}, {"x": 6, "y": 0},
+                                      {"x": 6, "y": 6}, {"x": 0, "y": 6},
+                                      {"x": 0, "y": 0}]
+    repeated = client.post("/api/cad/programs/inspect", json=program)
+    assert repeated.status_code == 422
+    assert "profile has a zero-length edge" in repeated.text
+
+    program["steps"][0]["points"].pop()
+    corrected = client.post("/api/cad/programs/inspect", json=program)
+    assert corrected.status_code == 200, corrected.text
+
+
+def test_transverse_bore_must_cross_the_walls() -> None:
+    client = TestClient(app)
+    zero = {"x": 0, "y": 0, "z": 0}
+    program = {"schemaVersion": "3.0", "units": "mm", "partId": "wall_mount", "steps": [
+        {"id": "base", "op": "base", "shape": "box", "position": zero, "rotation": zero,
+         "width": 160, "depth": 110, "height": 12},
+        {"id": "pedestal", "op": "union", "shape": "box", "position": {"x": 0, "y": 0, "z": 15},
+         "rotation": zero, "width": 80, "depth": 55, "height": 18},
+        {"id": "left_wall", "op": "union", "shape": "box", "position": {"x": 0, "y": -24, "z": 61},
+         "rotation": zero, "width": 55, "depth": 12, "height": 75},
+        {"id": "right_wall", "op": "union", "shape": "box", "position": {"x": 0, "y": 24, "z": 61},
+         "rotation": zero, "width": 55, "depth": 12, "height": 75},
+        {"id": "transverse_bore", "op": "cut", "shape": "cylinder", "position": {"x": 0, "y": 0, "z": 150},
+         "rotation": {"x": 90, "y": 0, "z": 0}, "diameter": 24, "height": 70},
+    ]}
+    missed = client.post("/api/cad/programs/inspect", json=program)
+    assert missed.status_code == 422
+    assert "CAD step transverse_bore instance 1 does not change the solid" in missed.text
+    assert "tool bounds:" in missed.text
+
+    program["steps"][-1]["position"]["z"] = 79
+    corrected = client.post("/api/cad/programs/inspect", json=program)
+    assert corrected.status_code == 200, corrected.text
+    assert corrected.json()["solidCount"] == 1
+
+
+def test_spindle_union_reports_disconnection_and_prior_clearance_cut() -> None:
+    client = TestClient(app)
+    zero = {"x": 0, "y": 0, "z": 0}
+    frame = {"id": "top_beam", "op": "base", "shape": "box", "position": {"x": 0, "y": 0, "z": 160},
+             "rotation": zero, "width": 100, "depth": 60, "height": 20}
+    spindle = {"id": "spindle", "op": "union", "shape": "cylinder", "position": {"x": 150, "y": 0, "z": 135},
+               "rotation": zero, "diameter": 18, "height": 120}
+    program = {"schemaVersion": "3.0", "units": "mm", "partId": "press", "steps": [frame, spindle]}
+
+    misplaced = client.post("/api/cad/programs/inspect", json=program)
+    assert misplaced.status_code == 422
+    assert "CAD step spindle (union) leaves 2 separate solids" in misplaced.text
+    assert "current solid bounds:" in misplaced.text
+    assert "tool bounds:" in misplaced.text
+    assert "bounding boxes do not overlap" in misplaced.text
+
+    spindle["position"]["x"] = 0
+    connected = client.post("/api/cad/programs/inspect", json=program)
+    assert connected.status_code == 200, connected.text
+
+    guide = {"id": "guide_clearance", "op": "cut", "shape": "cylinder", "position": {"x": 0, "y": 0, "z": 160},
+             "rotation": zero, "diameter": 20, "height": 30}
+    program["steps"] = [frame, guide, spindle]
+    isolated = client.post("/api/cad/programs/inspect", json=program)
+    assert isolated.status_code == 422
+    assert "CAD step spindle (union) leaves 2 separate solids" in isolated.text
+    assert "bounding boxes overlap, but the solids may be separated" in isolated.text
+
+
+def test_handle_bar_gap_can_be_closed_without_changing_its_dimensions() -> None:
+    client = TestClient(app)
+    zero = {"x": 0, "y": 0, "z": 0}
+    program = {"schemaVersion": "3.0", "units": "mm", "partId": "press_handle", "steps": [
+        {"id": "body", "op": "base", "shape": "box", "position": {"x": 65, "y": 0, "z": 0},
+         "rotation": zero, "width": 130, "depth": 60, "height": 10},
+        {"id": "handle_bar", "op": "union", "shape": "box", "position": {"x": 67.5, "y": 120, "z": 0},
+         "rotation": zero, "width": 8, "depth": 100, "height": 8},
+    ]}
+    separated = client.post("/api/cad/programs/inspect", json=program)
+    assert separated.status_code == 422
+    assert "CAD step handle_bar (union) leaves 2 separate solids" in separated.text
+    assert "tool bounds: x=[63.50, 71.50], y=[70.00, 170.00]" in separated.text
+
+    program["steps"][1]["position"]["y"] = 75
+    joined = client.post("/api/cad/programs/inspect", json=program)
+    assert joined.status_code == 200, joined.text
+    assert joined.json()["solidCount"] == 1
+
+    program["steps"].append({"id": "upright", "op": "union", "shape": "box",
+                             "position": {"x": 67.5, "y": 0, "z": 54}, "rotation": zero,
+                             "width": 8, "depth": 8, "height": 100})
+    extended = client.post("/api/cad/programs/inspect", json=program)
+    assert extended.status_code == 200, extended.text
+    assert extended.json()["solidCount"] == 1
+
+
+def test_disconnected_handle_ball_reports_nearest_material_not_just_global_bounds() -> None:
+    client = TestClient(app)
+    zero = {"x": 0, "y": 0, "z": 0}
+    program = {"schemaVersion": "3.0", "units": "mm", "partId": "press_handle", "steps": [
+        {"id": "base", "op": "base", "shape": "box", "position": {"x": 35, "y": 25, "z": -25},
+         "rotation": zero, "width": 130, "depth": 120, "height": 10},
+        {"id": "upright", "op": "union", "shape": "box", "position": {"x": 35, "y": 25, "z": 50},
+         "rotation": zero, "width": 10, "depth": 10, "height": 150},
+        {"id": "handle_bar", "op": "union", "shape": "box", "position": {"x": 35, "y": 50, "z": 75},
+         "rotation": zero, "width": 8, "depth": 70, "height": 8},
+        {"id": "handle_ball_left", "op": "union", "shape": "sphere", "position": {"x": 35, "y": -50, "z": 75},
+         "rotation": zero, "diameter": 14},
+    ]}
+    separated = client.post("/api/cad/programs/inspect", json=program)
+    assert separated.status_code == 422
+    assert "current solid bounds: x=[-30.00, 100.00], y=[-35.00, 85.00], z=[-30.00, 125.00]" in separated.text
+    assert "tool bounds: x=[28.00, 42.00], y=[-57.00, -43.00], z=[68.00, 82.00]" in separated.text
+    assert "nearest solid point:" in separated.text
+    assert "nearest tool point:" in separated.text
+
+    program["steps"][-1]["position"]["y"] = 9
+    joined = client.post("/api/cad/programs/inspect", json=program)
+    assert joined.status_code == 200, joined.text
+    assert joined.json()["solidCount"] == 1
 
 
 def test_patterns_reuse_primitives_for_repeated_teeth_and_holes() -> None:

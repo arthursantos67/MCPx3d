@@ -125,7 +125,7 @@ test("CAD creation uses the configured provider before a CAD project exists", as
   assert.equal(controller.getState().isBusy, false);
 });
 
-test("CAD programs are checked by the API and an unreachable checker does not block generation", async () => {
+test("CAD generation stops when the geometry checker is unreachable", async () => {
   const program = {
     schemaVersion: "3.0", units: "mm", partId: "block",
     steps: [{ id: "body", op: "base", shape: "box", position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 }, width: 40, depth: 20, height: 10 }],
@@ -139,10 +139,7 @@ test("CAD programs are checked by the API and an unreachable checker does not bl
   });
   await controller.initialize();
 
-  const outcome = await controller.planCadProgram("Crie um bloco");
-
-  assert.equal(outcome.kind, "create");
-  if (outcome.kind === "create") assert.equal(outcome.geometryIssue, undefined);
+  await assert.rejects(controller.planCadProgram("Crie um bloco"), /offline/);
   assert.deepEqual(checked, [program]);
   assert.equal(controller.getState().isBusy, false);
 });

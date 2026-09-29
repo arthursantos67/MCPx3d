@@ -253,13 +253,13 @@ test('Gemini receives the compact construction schema and still returns a valida
   assert.doesNotMatch(sentSchema, /\$ref|\$defs|oneOf|anyOf/)
 })
 
-test('a geometry failure is sent back once with the exact issue and the corrected program is returned', async () => {
+test('a disconnected union is repaired at the named step and checked again', async () => {
   const floating = { ...spec, steps: [spec.steps[0],
     { id: 'boss', op: 'union', shape: 'cylinder', position: { x: 100, y: 0, z: 8 }, rotation: { x: 0, y: 0, z: 0 }, diameter: 30, height: 10 }] }
   const fixed = { ...floating, steps: [spec.steps[0], { ...floating.steps[1], position: { x: 0, y: 0, z: 8 } }] }
   const provider = new MockLLMProvider([
     { decision: 'create', spec: floating, question: '', assumptions: ['boss centered'] },
-    { decision: 'create', spec: fixed, question: '', assumptions: ['boss centered'] },
+    { position: { x: 0, y: 0, z: 8 }, rotation: { x: 0, y: 0, z: 0 } },
   ])
   const issue = 'CAD step boss (union) leaves 2 separate solids; every union must overlap the part and no cut may split it'
   const checked: unknown[] = []
@@ -270,36 +270,257 @@ test('a geometry failure is sent back once with the exact issue and the correcte
   assert.equal(result.kind, 'create')
   if (result.kind === 'create') {
     assert.deepEqual(result.spec, fixed)
-    assert.equal(result.geometryIssue, undefined)
   }
   assert.equal(checked.length, 2)
   assert.equal(provider.calls.length, 2)
   const correction = provider.calls[1].messages.at(-1)?.content ?? ''
-  assert.match(correction, /Current CAD program:/)
+  assert.match(correction, /Failed step: boss/)
   assert.ok(correction.includes(issue))
 })
 
-test('a persistent geometry failure returns the last program with the issue after two corrections', async () => {
+test('repairs a self-intersecting base profile without changing the other steps', async () => {
+  const zero = { x: 0, y: 0, z: 0 }
+  const crossed = [{ x: 0, y: 0 }, { x: 6, y: 0 }, { x: 6, y: 6 }, { x: 0, y: 6 }, { x: 4, y: -2 }]
+  const outline = [{ x: 0, y: 0 }, { x: 6, y: 0 }, { x: 6, y: 6 }, { x: 0, y: 6 }]
+  const invalid = { ...spec, steps: [
+    { id: 'c_frame', op: 'base', shape: 'polygon_prism', position: zero, rotation: zero, points: crossed, height: 8 },
+    { id: 'hole', op: 'cut', shape: 'cylinder', position: { x: 3, y: 3, z: 0 }, rotation: zero, diameter: 2, height: 20 },
+  ] }
+  const provider = new MockLLMProvider([
+    { decision: 'create', spec: invalid, question: '', assumptions: [] },
+    { points: outline },
+  ])
+  const issue = 'CAD step c_frame (base) polygon_prism profile self-intersects between edges 1 and 4'
+  const result = await generateCadProgram(provider, 'Perfil com furo', undefined, async (candidate) =>
+    candidate.steps[0].shape === 'polygon_prism' && candidate.steps[0].points.length === 5 ? issue : null)
+  assert.equal(result.kind, 'create')
+  if (result.kind === 'create') {
+    assert.deepEqual(result.spec.steps[0], { ...invalid.steps[0], points: outline })
+    assert.deepEqual(result.spec.steps[1], invalid.steps[1])
+  }
+  assert.equal(provider.calls.length, 2)
+  assert.match(provider.calls[1].messages[0].content, /Edges must not cross/)
+})
+
+test('removes a duplicate closing point from an invalid base profile without another model call', async () => {
+  const zero = { x: 0, y: 0, z: 0 }
+  const outline = [{ x: 0, y: 0 }, { x: 6, y: 0 }, { x: 6, y: 6 }, { x: 0, y: 6 }]
+  const invalid = { ...spec, steps: [{
+    id: 'outline', op: 'base', shape: 'polygon_prism', position: zero, rotation: zero,
+    points: [...outline, outline[0]], height: 8,
+  }] }
+  const provider = new MockLLMProvider([{ decision: 'create', spec: invalid, question: '', assumptions: [] }])
+  const result = await generateCadProgram(provider, 'Perfil quadrado', undefined, async (candidate) =>
+    candidate.steps[0].shape === 'polygon_prism' && candidate.steps[0].points.length === 5
+      ? 'CAD step outline (base) produces an invalid or empty solid' : null)
+  assert.equal(result.kind, 'create')
+  if (result.kind === 'create' && result.spec.steps[0].shape === 'polygon_prism') {
+    assert.deepEqual(result.spec.steps[0].points, outline)
+  }
+  assert.equal(provider.calls.length, 1)
+})
+
+test('disjoint unions on different axes are moved to verified overlap when model repairs repeat the error', async () => {
+  const zero = { x: 0, y: 0, z: 0 }
+  const handleBar = { id: 'handle_bar', op: 'union', shape: 'box', position: { x: 67.5, y: 120, z: 0 },
+    rotation: zero, width: 8, depth: 100, height: 8 }
+  const upright = { id: 'upright', op: 'union', shape: 'box', position: { x: 67.5, y: 0, z: 120 },
+    rotation: zero, width: 8, depth: 8, height: 100 }
+  const disconnected = { ...spec, steps: [
+    { id: 'body', op: 'base', shape: 'box', position: { x: 65, y: 0, z: 0 }, rotation: zero,
+      width: 130, depth: 60, height: 10 },
+    handleBar, upright,
+  ] }
+  const response = { decision: 'create', spec: disconnected, question: '', assumptions: [] }
+  const provider = new MockLLMProvider([
+    response, { position: handleBar.position, rotation: zero }, response,
+    { position: handleBar.position, rotation: zero }, response,
+  ])
+  const handleIssue = 'CAD step handle_bar (union) leaves 2 separate solids; current solid bounds: x=[0.00, 130.00], y=[-30.00, 30.00], z=[-5.00, 5.00]; tool bounds: x=[63.50, 71.50], y=[70.00, 170.00], z=[-4.00, 4.00]; bounding boxes do not overlap'
+  const uprightIssue = 'CAD step upright (union) leaves 2 separate solids; current solid bounds: x=[0.00, 130.00], y=[-30.00, 125.00], z=[-5.00, 5.00]; tool bounds: x=[63.50, 71.50], y=[-4.00, 4.00], z=[70.00, 170.00]; bounding boxes do not overlap'
+  const result = await generateCadProgram(provider, 'Prensa com duas barras conectadas', undefined, async (candidate) => {
+    if (candidate.steps[1].position.y > 75) return handleIssue
+    if (candidate.steps[2].position.z > 54) return uprightIssue
+    return null
+  })
+  assert.equal(result.kind, 'create')
+  if (result.kind === 'create') {
+    assert.equal(result.spec.steps[1].position.y, 75)
+    assert.equal(result.spec.steps[2].position.z, 54)
+    assert.equal(result.assumptions.length, 2)
+  }
+  assert.equal(provider.calls.length, 5)
+})
+
+test('automatic overlap repair does not override an explicit requested coordinate', async () => {
+  const disconnected = { ...spec, steps: [spec.steps[0], {
+    id: 'handle_bar', op: 'union', shape: 'box', position: { x: 0, y: 120, z: 0 },
+    rotation: { x: 0, y: 0, z: 0 }, width: 8, depth: 100, height: 8,
+  }] }
+  const response = { decision: 'create', spec: disconnected, question: '', assumptions: [] }
+  const provider = new MockLLMProvider([
+    response, { position: disconnected.steps[1].position, rotation: { x: 0, y: 0, z: 0 } }, response,
+    { position: disconnected.steps[1].position, rotation: { x: 0, y: 0, z: 0 } }, response,
+  ])
+  const issue = 'CAD step handle_bar (union) leaves 2 separate solids; current solid bounds: x=[-40.00, 40.00], y=[-25.00, 25.00], z=[-5.00, 5.00]; tool bounds: x=[-4.00, 4.00], y=[70.00, 170.00], z=[-4.00, 4.00]; bounding boxes do not overlap'
+  await assert.rejects(generateCadProgram(provider, 'Barra em y=120 mm', undefined, async () => issue), /CAD step handle_bar/)
+  assert.equal(provider.calls.length, 5)
+})
+
+test('a disconnected ball follows the nearest real material rather than the global bounding box', async () => {
+  const zero = { x: 0, y: 0, z: 0 }
+  const ball = { id: 'handle_ball_left', op: 'union', shape: 'sphere',
+    position: { x: 35, y: -50, z: 75 }, rotation: zero, diameter: 14 }
+  const disconnected = { ...spec, steps: [
+    { id: 'base', op: 'base', shape: 'box', position: { x: 35, y: 25, z: -25 },
+      rotation: zero, width: 130, depth: 120, height: 10 },
+    { id: 'upright', op: 'union', shape: 'box', position: { x: 35, y: 25, z: 50 },
+      rotation: zero, width: 10, depth: 10, height: 150 },
+    { id: 'handle_bar', op: 'union', shape: 'box', position: { x: 35, y: 50, z: 75 },
+      rotation: zero, width: 8, depth: 70, height: 8 },
+    ball,
+  ] }
+  const response = { decision: 'create', spec: disconnected, question: '', assumptions: [] }
+  const provider = new MockLLMProvider([
+    response, { position: ball.position, rotation: zero }, response,
+    { position: ball.position, rotation: zero }, response,
+  ])
+  const issue = 'CAD step handle_ball_left (union) leaves 2 separate solids; current solid bounds: x=[-30.00, 100.00], y=[-35.00, 85.00], z=[-30.00, 125.00]; tool bounds: x=[28.00, 42.00], y=[-57.00, -43.00], z=[68.00, 82.00]; bounding boxes do not overlap; nearest solid point: x=35.00, y=15.00, z=75.00; nearest tool point: x=35.00, y=-43.00, z=75.00'
+  const result = await generateCadProgram(provider, 'Prensa manual com manopla esférica', undefined, async (candidate) =>
+    candidate.steps[3].position.y < 9 ? issue : null)
+  assert.equal(result.kind, 'create')
+  if (result.kind === 'create') {
+    assert.equal(result.spec.steps[3].position.y, 9)
+    assert.deepEqual(result.spec.steps.slice(0, 3), disconnected.steps.slice(0, 3))
+    assert.match(result.assumptions.at(-1) ?? '', /handle_ball_left/)
+  }
+})
+
+test('a clearance cut that isolates the spindle can be removed during full-program repair', async () => {
+  const zero = { x: 0, y: 0, z: 0 }
+  const frame = { id: 'top_beam', op: 'base', shape: 'box', position: { x: 0, y: 0, z: 160 },
+    rotation: zero, width: 100, depth: 60, height: 20 }
+  const guide = { id: 'guide_clearance', op: 'cut', shape: 'cylinder', position: { x: 0, y: 0, z: 160 },
+    rotation: zero, diameter: 20, height: 30 }
+  const spindle = { id: 'spindle', op: 'union', shape: 'cylinder', position: { x: 0, y: 0, z: 135 },
+    rotation: zero, diameter: 18, height: 120 }
+  const isolated = { ...spec, steps: [frame, guide, spindle] }
+  const connected = { ...spec, steps: [frame, spindle] }
+  const issue = 'CAD step spindle (union) leaves 2 separate solids; current solid bounds: x=[-50, 50], y=[-30, 30], z=[150, 170]; tool bounds: x=[-9, 9], y=[-9, 9], z=[75, 195]; bounding boxes overlap, but the solids may be separated by an opening or earlier cut'
+  const check = async (candidate: typeof isolated) => candidate.steps.some((step) => step.id === 'guide_clearance') ? issue : null
+  const provider = new MockLLMProvider([
+    { decision: 'create', spec: isolated, question: '', assumptions: [] },
+    { position: spindle.position, rotation: spindle.rotation },
+    { decision: 'create', spec: connected, question: '', assumptions: [] },
+  ])
+
+  const result = await generateCadProgram(provider, 'Prensa manual monobloco com fuso unido à travessa', undefined, check as never)
+  assert.equal(result.kind, 'create')
+  if (result.kind === 'create') assert.deepEqual(result.spec, connected)
+  assert.equal(provider.calls.length, 3)
+  assert.match(provider.calls[2].messages.at(-1)?.content ?? '', /remove or revise that step/)
+})
+
+test('an invalid unsaved press draft can be rebuilt on the next generation request', async () => {
+  const zero = { x: 0, y: 0, z: 0 }
+  const frame = { id: 'top_beam', op: 'base', shape: 'box', position: { x: 0, y: 0, z: 160 },
+    rotation: zero, width: 100, depth: 60, height: 20 }
+  const guide = { id: 'guide_clearance', op: 'cut', shape: 'cylinder', position: { x: 0, y: 0, z: 160 },
+    rotation: zero, diameter: 20, height: 30 }
+  const spindle = { id: 'spindle', op: 'union', shape: 'cylinder', position: { x: 0, y: 0, z: 135 },
+    rotation: zero, diameter: 18, height: 120 }
+  const isolated = { ...spec, steps: [frame, guide, spindle] }
+  const connected = { ...spec, steps: [frame, spindle] }
+  const issue = 'CAD step spindle (union) leaves 2 separate solids'
+  const provider = new MockLLMProvider([{ decision: 'create', spec: connected, question: '', assumptions: [] }])
+  const result = await generateCadProgram(provider, 'Prensa manual monobloco', isolated as never,
+    async (candidate) => candidate.steps.some((step) => step.id === 'guide_clearance') ? issue : null)
+  assert.equal(result.kind, 'create')
+  if (result.kind === 'create') assert.deepEqual(result.spec, connected)
+  assert.match(provider.calls[0].messages.at(-1)?.content ?? '', /existing CAD draft failed validation/)
+})
+
+test('automatic topology repair cannot hide a failure by deleting an existing union', async () => {
+  const previous = { ...spec, steps: [...spec.steps, {
+    id: 'support', op: 'union', shape: 'box', position: { x: 0, y: 0, z: 8 },
+    rotation: { x: 0, y: 0, z: 0 }, width: 20, depth: 20, height: 10,
+  }] }
+  const response = { decision: 'create', spec, question: '', assumptions: [] }
+  const provider = new MockLLMProvider([response, response])
+  await assert.rejects(
+    generateCadProgram(provider, 'Suporte monobloco', previous as never, async () => 'CAD step support (union) leaves 2 separate solids'),
+    /unexpectedly removed an existing step/,
+  )
+  assert.equal(provider.calls.length, 2)
+})
+
+test('a cut that splits an unrelated solid is repaired without dropping the cut', async () => {
+  const zero = { x: 0, y: 0, z: 0 }
+  const severed = { ...spec, steps: [spec.steps[0], {
+    id: 'cross_slot', op: 'cut', shape: 'box', position: zero, rotation: zero,
+    width: 4, depth: 60, height: 20,
+  }] }
+  const connected = { ...severed, steps: [severed.steps[0], { ...severed.steps[1], depth: 40 }] }
+  const provider = new MockLLMProvider([
+    { decision: 'create', spec: severed, question: '', assumptions: [] },
+    { position: zero, rotation: zero, width: 4, depth: 40, height: 20 },
+  ])
+  const issue = 'CAD step cross_slot (cut) leaves 2 separate solids; current solid bounds: x=[-40, 40], y=[-25, 25], z=[-5, 5]; tool bounds: x=[-2, 2], y=[-30, 30], z=[-10, 10]; the cut disconnects the remaining material; preserve a material bridge'
+  let checks = 0
+  const result = await generateCadProgram(provider, 'Faça uma abertura parcial no bloco', undefined, async () => {
+    checks++
+    return checks === 1 ? issue : null
+  })
+  assert.equal(result.kind, 'create')
+  if (result.kind === 'create') assert.deepEqual(result.spec, connected)
+  assert.equal(checks, 2)
+  assert.match(provider.calls[1].messages[0].content, /leaving a continuous material bridge/)
+})
+
+test('repairs a no-op transverse bore by changing only its placement', async () => {
+  const zero = { x: 0, y: 0, z: 0 }
+  const bad = { ...spec, steps: [
+    { id: 'base', op: 'base', shape: 'box', position: zero, rotation: zero, width: 160, depth: 110, height: 12 },
+    { id: 'pedestal', op: 'union', shape: 'box', position: { x: 0, y: 0, z: 15 }, rotation: zero, width: 80, depth: 55, height: 18 },
+    { id: 'left_wall', op: 'union', shape: 'box', position: { x: 0, y: -24, z: 61 }, rotation: zero, width: 55, depth: 12, height: 75 },
+    { id: 'right_wall', op: 'union', shape: 'box', position: { x: 0, y: 24, z: 61 }, rotation: zero, width: 55, depth: 12, height: 75 },
+    { id: 'transverse_bore', op: 'cut', shape: 'cylinder', position: { x: 0, y: 0, z: 150 },
+      rotation: { x: 90, y: 0, z: 0 }, diameter: 24, height: 70 },
+  ] }
+  const fixed = { ...bad, steps: [...bad.steps.slice(0, -1), { ...bad.steps.at(-1)!, position: { x: 0, y: 0, z: 79 } }] }
+  const provider = new MockLLMProvider([
+    { decision: 'create', spec: bad, question: '', assumptions: [] },
+    { position: { x: 0, y: 0, z: 79 }, rotation: { x: 90, y: 0, z: 0 }, height: 70 },
+  ])
+  const issue = 'CAD step transverse_bore instance 1 does not change the solid; current solid bounds: x=[-80, 80], y=[-55, 55], z=[-6, 98.5]; tool bounds: x=[-12, 12], y=[-35, 35], z=[138, 162]'
+  const checked: unknown[] = []
+  const result = await generateCadProgram(provider, 'Furo transversal 55 mm acima do pedestal', undefined, async (candidate) => {
+    checked.push(candidate)
+    return checked.length === 1 ? issue : null
+  })
+  assert.equal(result.kind, 'create')
+  if (result.kind === 'create') assert.deepEqual(result.spec, fixed)
+  assert.equal(provider.calls.length, 2)
+  assert.equal(checked.length, 2)
+  assert.ok(provider.calls[1].messages.at(-1)?.content.includes(issue))
+})
+
+test('a persistent geometry failure rejects the invalid program after two corrections', async () => {
   const provider = new MockLLMProvider(Array(3).fill({ decision: 'create', spec, question: '', assumptions: [] }))
   let checks = 0
-  const result = await generateCadProgram(provider, 'Bloco', undefined, async () => { checks += 1; return `problem ${checks}` })
+  await assert.rejects(generateCadProgram(provider, 'Bloco', undefined, async () => { checks += 1; return `problem ${checks}` }), /problem 3/)
 
-  assert.equal(result.kind, 'create')
-  if (result.kind === 'create') assert.equal(result.geometryIssue, 'problem 3')
   assert.equal(checks, 3)
   assert.equal(provider.calls.length, 3)
 })
 
-test('a failed geometry correction keeps the previous program and reports its issue', async () => {
+test('a failed geometry correction does not return an invalid program', async () => {
   const provider = new MockLLMProvider([
     { decision: 'create', spec, question: '', assumptions: [] },
     'not json{{{', 'not json{{{',
   ])
-  const result = await generateCadProgram(provider, 'Bloco', undefined, async () => 'CAD step body (base) produces an invalid or empty solid')
-
-  assert.equal(result.kind, 'create')
-  if (result.kind === 'create') {
-    assert.deepEqual(result.spec, spec)
-    assert.equal(result.geometryIssue, 'CAD step body (base) produces an invalid or empty solid')
-  }
+  await assert.rejects(
+    generateCadProgram(provider, 'Bloco', undefined, async () => 'CAD step body (base) produces an invalid or empty solid'),
+    /A geração automática não conseguiu validar a peça/,
+  )
 })
