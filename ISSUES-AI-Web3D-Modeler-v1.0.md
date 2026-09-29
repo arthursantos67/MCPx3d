@@ -1584,6 +1584,10 @@ Do not expose as manufacturing-ready until mesh validity/manifold requirements a
 
 Define sketches, features, constraints, booleans, fillets, holes, patterns, and feature history without breaking ModelSpec v1 imports.
 
+**Progress (2026-09-28):** `CadPartSpec` v2 defines the first versioned feature subset: one extruded rectangular base and one through-hole, with millimeter bounds and clearance validation. General sketches, constraints, feature lists, assemblies and v1 migration remain open.
+
+`CadEditPlan` v1 now adds a closed six-parameter operation set for this subset. It does not yet represent a general sketch or assembly plan.
+
 ---
 
 ## Issue #61 — Build CadQuery/OpenCascade adapter spike
@@ -1592,6 +1596,8 @@ Define sketches, features, constraints, booleans, fillets, holes, patterns, and 
 
 Convert a constrained ParametricModel subset to CadQuery and export STEP/STL.
 
+**Progress (2026-09-28):** CadQuery builds the plate/hole solid, validates topology and dimensions, exports STEP and reimports it for verification. Real-engine API tests cover the round trip. STL and broader operations remain open.
+
 ---
 
 ## Issue #62 — Add STEP export through CAD adapter
@@ -1599,6 +1605,8 @@ Convert a constrained ParametricModel subset to CadQuery and export STEP/STL.
 **Priority:** P2
 
 Only after CAD geometry correctness and feature representation are validated.
+
+**Progress (2026-09-28):** A separate experimental API and web parameter editor expose validated STEP for the constrained plate/hole subset. CAD projects retain exact STEP artifacts for every validated revision. Export for general mechanical projects remains open.
 
 ---
 
@@ -1993,6 +2001,77 @@ If implementation starts immediately, execute in this order:
 10. #10 X3D validation pipeline
 
 After these, implement #11, #12, #19, #22, #25–#28 to complete the vertical slice.
+
+---
+
+## Issue #72 — Persist and reuse validated construction recipes
+
+**Status:** implemented 2026-09-28. **Scope:** post-MVP recipe memory, separate from project session persistence.
+
+- [x] Seed a data-only table recipe using the existing `ModelPlan` operation set.
+- [x] Store user-saved, validated nonempty models as plans in local SQLite.
+- [x] Search, exact-match and replay through the existing plan/X3D validation path.
+- [x] Expose browse/apply/save actions in the workspace.
+- [x] Test persistence, replay, invalid save rejection, frontend bypass of inference and real MCP validation.
+
+The catalog is shared by API callers. Per-user access control and parametric CAD recipes remain later work; see Issues #60–#62 and `docs/cad-readiness.md`.
+
+---
+
+## Issue #73 — Recover projects and close renderer input gaps
+
+**Status:** implemented 2026-09-28.
+
+- [x] Import a ModelSpec v1 manifest into a session with a bounded body, version/domain checks, revision guard and MCP validation before commit.
+- [x] Resume a live session after browser reload with preview, downloads and validation diagnostics.
+- [x] Clear a previous project's preview after reset, while retaining the last valid scene during a revision refresh.
+- [x] Require renderable hex background colors in JSON Schema, Python and TypeScript domain validation.
+- [x] Allow exact recipe requests when WebGPU is unavailable, while returning an actionable error for unmatched requests.
+- [x] Cover the import and recovery paths with API, domain and frontend tests.
+
+---
+
+## Issue #74 — Persist CAD revisions and enable typed CAD chat edits
+
+**Status:** implemented for the plate/through-hole subset on 2026-09-28.
+
+- [x] Define `CadEditPlan` v1 with a closed parameter set in JSON Schema, Python and TypeScript.
+- [x] Store CAD projects and validated STEP files by revision in SQLite.
+- [x] Reject stale and invalid edits without changing the current revision.
+- [x] Resume the last CAD project in the browser and download historical STEP revisions.
+- [x] Route CAD language requests through the configured AI provider, accepting only typed edits or clarification.
+- [x] Exercise real CadQuery persistence, conflicts, failed candidates and client/agent contracts.
+
+General feature history, assemblies, CAD preview, access control and parameterized CAD recipes remain in Issues #60–#62 and `docs/cad-readiness.md`.
+
+---
+
+## Issue #75 — Extend the CAD plate to real mounting geometry
+
+**Status:** implemented for the four-hole mounting plate on 2026-09-28.
+
+- [x] Version the CAD part contract to 2.1 with stable hole IDs, up to 16 holes, four corner chamfers and material-clearance checks.
+- [x] Version the closed CAD edit plan to 2.0 with hole upsert/removal and chamfer operations while retaining 2.0 part and 1.0 plan compatibility.
+- [x] Build, export, reimport and verify the multi-hole/chamfer solid before project revision commit.
+- [x] Add manual editing, top-view geometry and typed CAD chat for the new features.
+- [x] Publish a 120 × 80 × 10 mm four-hole STEP example and verify import, dimensions, volume, holes and chamfers with FreeCAD 1.1.3.
+- [x] Supply a native FreeCAD document with a selectable body, verify its placement can change, and document view versus object movement.
+
+General sketch constraints, assemblies, manufacturing annotations, 3D CAD preview, parameterized CAD recipes and access control remain Phase 4 work.
+
+---
+
+## Issue #76 — Create a constrained CAD part from a description
+
+**Status:** implemented for the mounting plate subset on 2026-09-29.
+
+- [x] Let the configured AI provider propose a complete `CadPartSpec` 2.1 before a CAD project exists.
+- [x] Allow inferred example dimensions and show the agent's assumptions next to the saved model.
+- [x] Return clarification for unsupported features instead of creating an unrelated solid.
+- [x] Validate the closed schema, domain geometry, B-rep and STEP before saving revision 0.
+- [x] Test valid proposals, clarification, malformed output, colliding holes and controller integration.
+
+This does not add unconstrained geometry, engineering sizing, material selection or manufacturing tolerances.
 
 ---
 

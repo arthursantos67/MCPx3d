@@ -217,6 +217,7 @@ export function validateModelPlanDomainRules(plan: ModelPlan): void {
         checkId(op.target);
         break;
       case "set_scene":
+        if (op.background !== undefined) checkColor(op.background);
         if (op.background === undefined && op.displayScale === undefined) {
           fail("set_scene requires background and/or displayScale");
         }

@@ -1,0 +1,13 @@
+{
+  "schemaVersion": "2.1",
+  "units": "mm",
+  "partId": "mounting_plate",
+  "base": { "kind": "extruded_rectangle", "width": 120, "depth": 80, "thickness": 10 },
+  "features": [
+    { "kind": "through_hole", "id": "hole_1", "x": -40, "y": -25, "diameter": 8 },
+    { "kind": "through_hole", "id": "hole_2", "x": 40, "y": -25, "diameter": 8 },
+    { "kind": "through_hole", "id": "hole_3", "x": -40, "y": 25, "diameter": 8 },
+    { "kind": "through_hole", "id": "hole_4", "x": 40, "y": 25, "diameter": 8 }
+  ],
+  "cornerChamfer": 4
+}

@@ -1,0 +1,7 @@
+{
+  "schemaVersion": "2.0",
+  "operations": [
+    { "op": "set_corner_chamfer", "value": 5 },
+    { "op": "upsert_hole", "holeId": "hole_5", "x": 0, "y": 0, "diameter": 6 }
+  ]
+}

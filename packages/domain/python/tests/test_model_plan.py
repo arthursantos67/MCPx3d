@@ -100,6 +100,11 @@ def test_infinite_translate_delta_is_rejected() -> None:
         )
 
 
+def test_named_background_plan_is_rejected() -> None:
+    with pytest.raises(ValidationError):
+        ModelPlan.model_validate({"intent": "background", "operations": [{"op": "set_scene", "background": "blue"}]})
+
+
 def test_clarify_and_no_change_do_not_require_a_target() -> None:
     plan = ModelPlan.model_validate(
         {

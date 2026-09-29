@@ -1,4 +1,5 @@
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
 from domain.model_spec import Units
@@ -28,9 +29,14 @@ class Settings(BaseSettings):
     max_artifact_bytes: int = Field(default=10_000_000, gt=0)
     artifact_cache_max_entries: int = Field(default=200, gt=0)
     artifact_cache_ttl_seconds: int = Field(default=3600, gt=0)
+    recipe_database_path: Path = Path(__file__).resolve().parents[2] / "data" / "recipes.sqlite3"
+    cad_database_path: Path = Path(__file__).resolve().parents[2] / "data" / "cad.sqlite3"
 
     cors_allow_origins: list[str] = Field(
-        default_factory=lambda: ["http://localhost:5173", "http://127.0.0.1:5173"]
+        default_factory=lambda: [
+            "http://localhost:5173", "http://127.0.0.1:5173",
+            "http://localhost:5174", "http://127.0.0.1:5174",
+        ]
     )
 
 

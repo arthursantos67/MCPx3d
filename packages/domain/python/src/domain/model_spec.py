@@ -42,6 +42,13 @@ class Scene(BaseModel):
     background: str | None = Field(default=None, min_length=1)
     displayScale: float = Field(gt=0, allow_inf_nan=False)
 
+    @field_validator("background")
+    @classmethod
+    def _background_color(cls, value: str | None) -> str | None:
+        if value is not None and not _COLOR_PATTERN.match(value):
+            raise ValueError("background must be a normalized lowercase 6-digit hex color")
+        return value
+
 
 class Transform(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)

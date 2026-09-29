@@ -1,0 +1,26 @@
+{
+  "schemaVersion": "3.0",
+  "units": "mm",
+  "partId": "profile_boss_bracket",
+  "steps": [
+    {
+      "id": "custom_l_profile", "op": "base", "shape": "polygon_prism",
+      "position": { "x": 0, "y": 0, "z": 0 }, "rotation": { "x": 0, "y": 0, "z": 0 },
+      "points": [
+        { "x": -30, "y": -20 }, { "x": 30, "y": -20 }, { "x": 30, "y": -10 },
+        { "x": -10, "y": -10 }, { "x": -10, "y": 20 }, { "x": -30, "y": 20 }
+      ],
+      "height": 12
+    },
+    {
+      "id": "raised_boss", "op": "union", "shape": "cylinder",
+      "position": { "x": -20, "y": 0, "z": 8 }, "rotation": { "x": 0, "y": 0, "z": 0 },
+      "diameter": 16, "height": 8
+    },
+    {
+      "id": "cross_bore", "op": "cut", "shape": "cylinder",
+      "position": { "x": -20, "y": 0, "z": 0 }, "rotation": { "x": 90, "y": 0, "z": 0 },
+      "diameter": 6, "height": 60
+    }
+  ]
+}

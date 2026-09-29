@@ -8,6 +8,10 @@ function withCameraBridge(html: string): string {
   return html.includes('</body>') ? html.replace('</body>', `${bridge}</body>`) : `${html}${bridge}`
 }
 
+function previewProject(url: string): string | null {
+  return /\/api\/projects\/([^/]+)\/artifacts\//.exec(url)?.[1] ?? null
+}
+
 interface X3DPreviewFrameProps {
   /** Absolute URL of the current revision's standalone HTML artifact, or
    * `null` before any revision has committed. */
@@ -31,18 +35,25 @@ function X3DPreviewFrame({ previewUrl, onStatusChange }: X3DPreviewFrameProps) {
     trackerRef.current = new BlobUrlTracker(browserObjectUrlFactory)
   }
 
-  const [blobUrl, setBlobUrl] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [loaded, setLoaded] = useState<{ source: string; blob: string } | null>(null)
+  const [error, setError] = useState<{ source: string; message: string } | null>(null)
+  const blobUrl = previewUrl && loaded && previewProject(loaded.source) !== null && previewProject(loaded.source) === previewProject(previewUrl)
+    ? loaded.blob
+    : null
+  const currentError = previewUrl && error?.source === previewUrl ? error.message : null
 
   useEffect(() => {
-    if (!previewUrl) return
+    if (!previewUrl) {
+      trackerRef.current?.clear()
+      return
+    }
     const tracker = trackerRef.current
     if (!tracker) return
     let cancelled = false
-    setError(null)
+    const abort = new AbortController()
     onStatusChange?.('artifact-generation')
 
-    fetch(previewUrl)
+    fetch(previewUrl, { signal: abort.signal })
       .then((response) => {
         if (!response.ok) throw new Error(`Preview request failed with status ${response.status}`)
         return response.text()
@@ -50,16 +61,17 @@ function X3DPreviewFrame({ previewUrl, onStatusChange }: X3DPreviewFrameProps) {
       .then((html) => {
         if (cancelled) return
         onStatusChange?.('loading')
-        setBlobUrl(tracker.set(withCameraBridge(html)))
+        setLoaded({ source: previewUrl, blob: tracker.set(withCameraBridge(html)) })
       })
       .catch((err: unknown) => {
         if (cancelled) return
-        setError(err instanceof Error ? err.message : String(err))
+        setError({ source: previewUrl, message: err instanceof Error ? err.message : String(err) })
         onStatusChange?.('failed')
       })
 
     return () => {
       cancelled = true
+      abort.abort()
     }
   }, [previewUrl, onStatusChange])
 
@@ -72,7 +84,7 @@ function X3DPreviewFrame({ previewUrl, onStatusChange }: X3DPreviewFrameProps) {
     return (
       <div className="viewer-frame">
         <p className="workspace-placeholder">
-          {error ? `Preview failed to load: ${error}` : 'The 3D viewer will appear here.'}
+          {currentError ? `Preview failed to load: ${currentError}` : 'The 3D viewer will appear here.'}
         </p>
       </div>
     )
@@ -96,9 +108,9 @@ function X3DPreviewFrame({ previewUrl, onStatusChange }: X3DPreviewFrameProps) {
           onStatusChange?.('ready')
         }}
       />
-      {error && (
+      {currentError && (
         <div className="viewer-frame__error" role="alert">
-          Preview failed to load: {error}
+          Preview failed to load: {currentError}
         </div>
       )}
     </div>

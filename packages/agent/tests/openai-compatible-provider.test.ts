@@ -7,6 +7,7 @@ import {
   type OpenAICompatibleProviderState,
 } from "../src/openai-compatible-provider.ts";
 import { StructuredOutputError, type CompletionMetadata } from "../src/provider.ts";
+import modelPlanSchema from "../../domain/schemas/model-plan.v1.schema.json" with { type: "json" };
 
 const CONFIG = { baseUrl: "https://api.example.com/v1", apiKey: "sk-test", model: "test-model" };
 
@@ -175,6 +176,64 @@ test("strips description keys from the schema before sending it, without touchin
       },
     },
   });
+});
+
+test("Gemini receives a supported schema shape while the local schema remains unchanged", async () => {
+  const schema = {
+    type: "object",
+    required: ["decision", "spec"],
+    properties: {
+      decision: { enum: ["create", "clarify"] },
+      spec: { anyOf: [
+        { type: "object", additionalProperties: false, properties: { kind: { const: "extruded_rectangle" }, partId: { type: "string", pattern: "^[A-Z]+$", maxLength: 64 } } },
+        { type: "null" },
+      ] },
+    },
+  };
+  let sentSchema: unknown;
+  let sentTemperature: unknown;
+  const provider = new OpenAICompatibleProvider(
+    { baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai/", apiKey: "test-key", model: "gemini-3.5-flash-lite" },
+    fakeFetch(async (_url, init) => {
+      const body = JSON.parse(String(init.body));
+      sentSchema = body.response_format.json_schema.schema;
+      sentTemperature = body.temperature;
+      return { status: 200, body: { choices: [{ message: { content: "{}" } }] } };
+    }),
+  );
+  await provider.initialize();
+  await provider.generateStructured([], schema, { temperature: 0 });
+
+  assert.deepEqual(sentSchema, {
+    type: "object",
+    required: ["decision", "spec"],
+    properties: {
+      decision: { type: "string", enum: ["create", "clarify"] },
+      spec: { type: ["object", "null"], additionalProperties: false, properties: { kind: { type: "string", enum: ["extruded_rectangle"] }, partId: { type: "string" } } },
+    },
+  });
+  assert.equal(sentTemperature, undefined);
+  assert.equal((schema.properties.spec.anyOf[0] as Record<string, unknown>).additionalProperties, false);
+  assert.equal((schema.properties.spec.anyOf[0] as { properties: { kind: { const: string } } }).properties.kind.const, "extruded_rectangle");
+});
+
+test("Gemini model-plan schema expands local references and drops unsupported keywords", async () => {
+  let sentSchema: unknown;
+  const provider = new OpenAICompatibleProvider(
+    { baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai/", apiKey: "test-key", model: "gemini-3.5-flash-lite" },
+    fakeFetch(async (_url, init) => {
+      sentSchema = JSON.parse(String(init.body)).response_format.json_schema.schema;
+      return { status: 200, body: { choices: [{ message: { content: "{}" } }] } };
+    }),
+  );
+  await provider.initialize();
+  await provider.generateStructured([], modelPlanSchema);
+
+  const json = JSON.stringify(sentSchema);
+  assert.doesNotMatch(json, /"(?:\$ref|\$defs|const|oneOf|pattern|exclusiveMinimum|not|minLength|maxLength)"/);
+  assert.match(json, /"anyOf"/);
+  assert.match(json, /"create_object"/);
+  assert.match(json, /"op":\{"enum":\["create_object"\],"type":"string"\}/);
 });
 
 test("defaults max_completion_tokens to the explicit 8192 cap when the caller doesn't specify one, and never sends max_tokens", async () => {

@@ -107,6 +107,8 @@ export interface GenerateSceneInput
   readonly signal?: AbortSignal;
   readonly onProgress?: (progress: SceneProgress) => void;
   readonly counters?: SceneGenerationCounters;
+  /** Explicit no-overlap requests must never trigger automatic part displacement. */
+  readonly allowOverlapResolution?: boolean;
 }
 
 export type SceneOutcome =
@@ -219,7 +221,7 @@ async function step(
     if (isPureClarify(plan)) return { kind: "clarify", question: plan.operations[0].question };
     if (continuation && isPureNoChange(plan)) return { kind: "done" };
 
-    const resolveOverlaps = applyAttempt === MAX_APPLY_REPAIRS;
+    const resolveOverlaps = applyAttempt === MAX_APPLY_REPAIRS && input.allowOverlapResolution !== false;
     progress("applying");
     try {
       const committed = await input.applyPlan(plan, modelSpec, { resolveOverlaps });

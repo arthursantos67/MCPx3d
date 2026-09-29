@@ -117,6 +117,13 @@ class ApplyPlanResponse(BaseModel):
     timings: dict[str, int] = Field(default_factory=dict)
 
 
+def artifact_descriptors() -> list[ArtifactDescriptor]:
+    return [
+        ArtifactDescriptor(format=fmt, available=available, reason=reason)
+        for fmt, available, reason in _ARTIFACT_AVAILABILITY
+    ]
+
+
 def _request_id(body: dict[str, object]) -> str:
     raw = body.get("requestId")
     return raw if isinstance(raw, str) and raw else str(uuid4())
@@ -201,10 +208,7 @@ async def apply_plan_endpoint(
                 if session.revision in session.validated_x3d
                 else None
             ),
-            artifacts=[
-                ArtifactDescriptor(format=fmt, available=available, reason=reason)
-                for fmt, available, reason in _ARTIFACT_AVAILABILITY
-            ],
+            artifacts=artifact_descriptors(),
             timings=timer.summary(),
         )
 
@@ -225,6 +229,7 @@ async def apply_plan_endpoint(
         plan_request.expectedRevision,
         candidate,
         validation.content,
+        {**validation.to_summary(), "autofixes": [*overlap_fixes, *validation.autofixes]},
     )
 
     logger.info(
@@ -244,9 +249,6 @@ async def apply_plan_endpoint(
         preview=PreviewInfo(
             url=f"/api/projects/{project_id}/artifacts/html?revision={updated_session.revision}"
         ),
-        artifacts=[
-            ArtifactDescriptor(format=fmt, available=available, reason=reason)
-            for fmt, available, reason in _ARTIFACT_AVAILABILITY
-        ],
+        artifacts=artifact_descriptors(),
         timings=timer.summary(),
     )

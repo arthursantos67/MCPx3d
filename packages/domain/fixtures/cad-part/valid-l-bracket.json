@@ -1,0 +1,20 @@
+{
+  "schemaVersion": "2.2",
+  "units": "mm",
+  "partId": "mounting_bracket",
+  "base": { "kind": "extruded_rectangle", "width": 120, "depth": 80, "thickness": 8 },
+  "features": [
+    { "kind": "through_hole", "id": "hole_1", "x": -40, "y": -20, "diameter": 8 },
+    { "kind": "through_hole", "id": "hole_2", "x": 40, "y": -20, "diameter": 8 }
+  ],
+  "cornerChamfer": 0,
+  "upright": {
+    "kind": "upright_wall",
+    "height": 70,
+    "thickness": 8,
+    "holes": [
+      { "id": "wall_hole_1", "x": -40, "z": 45, "diameter": 10 },
+      { "id": "wall_hole_2", "x": 40, "z": 45, "diameter": 10 }
+    ]
+  }
+}

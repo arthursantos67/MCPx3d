@@ -55,6 +55,26 @@ def test_get_project_returns_the_created_session(
     assert response.json()["projectId"] == created["projectId"]
 
 
+def test_project_state_restores_preview_and_downloads_for_validated_revision(
+    client: TestClient, project_service: ProjectSessionService
+) -> None:
+    project = project_service.create_project()
+    project_service.commit_revision(
+        project.project_id, 0, project.model_spec, "<X3D/>",
+        {"schemaValid": True, "semanticValid": True, "warnings": [{"check": "test", "message": "Check dimensions"}], "autofixes": []},
+    )
+
+    response = client.get(f"/api/projects/{project.project_id}/state")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["revision"] == 1
+    assert body["validation"]["schemaValid"] is True
+    assert body["validation"]["warnings"][0]["check"] == "test"
+    assert body["preview"]["url"].endswith("revision=1")
+    assert any(item["format"] == "x3d" and item["available"] for item in body["artifacts"])
+
+
 def test_get_unknown_project_returns_standardized_404(
     client: TestClient, project_service: ProjectSessionService
 ) -> None:

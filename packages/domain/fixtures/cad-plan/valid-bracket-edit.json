@@ -1,0 +1,7 @@
+{
+  "schemaVersion": "3.0",
+  "operations": [
+    { "op": "set_upright_parameter", "parameter": "height", "value": 90 },
+    { "op": "upsert_upright_hole", "holeId": "wall_hole_1", "x": -40, "z": 55, "diameter": 10 }
+  ]
+}

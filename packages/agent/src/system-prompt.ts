@@ -53,14 +53,14 @@ const DECOMPOSITION_RECIPES = `Semantic decomposition recipes (minimum parts; ad
 - Cabinet: top, bottom, left side, right side, back, Door left + Door right, and a Handle on each door.
 - Sofa: Seat, Backrest, Left arm, Right arm, seat cushions, and named feet when visible.
 - Table: Table top and four named corner legs. Chair: Seat, Backrest, four named corner legs, and backrest posts.
-- Refrigerator: Body, Upper door, Lower door, and a vertical Handle on each door.
+- Refrigerator: Body, Upper door, Lower door, and a vertical Handle on the outside front of each door. Keep nearby cabinets outside the refrigerator's body.
 - Stove with oven: Body, Cooktop, four Burners (short cylinders), Oven door, Oven window, Oven handle, and control Knobs.
-- Range hood: Canopy (cone or box) and Chimney duct.
-- Sink: Basin rim, Basin (slightly smaller, darker box inside the rim with allowOverlap), Faucet base, Faucet riser, and Faucet spout.
+- Range hood: Canopy (cone or box) and Chimney duct, centered above an actual stove and its burners. Never add a hood without the stove it serves.
+- Sink: leave a real opening in the countertop using separate strips around the cutout. Put a darker Basin floor below counter height, four thin Basin walls around it, Faucet base, Faucet riser, and Faucet spout. Do not cover the opening with a flat box.
 - Stool: Seat (cylinder), three or four Legs, and a Footrest ring or bar.
-- Pendant lamp: Cord (thin cylinder), Shade (cone), and Bulb (sphere).
+- Pendant lamp: Cord (thin cylinder), Shade (cone), and Bulb (sphere). Hang pairs above a separate island or dining area, with clear space below the shades; never merge them into wall cabinets or place them on the worktop.
 - Window: four Frame bars and a Glass pane; give the glass transparency with a separate set_material operation.
-- Kitchen cabinets and appliances stand on the floor against a wall, with a continuous Countertop on top of the base cabinets.
+- Kitchen cabinets and appliances stand on the floor against a wall, with a Countertop above the base cabinets and a cutout for the sink. Give every cabinet door a visible handle. Keep appliance, cabinet, sink, and island volumes in distinct zones so they do not penetrate each other.
 Use these names and matching lowercase underscore ids. They are visible structural and functional parts.`;
 
 export function buildSystemPrompt(modelSpec: ModelSpec, summaryOptions?: ModelSpecSummaryOptions): string {

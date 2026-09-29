@@ -1,0 +1,6 @@
+{
+  "schemaVersion": "5.0",
+  "operations": [
+    { "op": "upsert_boss", "bossId": "boss_1", "x": 0, "y": 0, "diameter": 45, "height": 25 }
+  ]
+}

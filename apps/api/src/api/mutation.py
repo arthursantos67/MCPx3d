@@ -158,6 +158,11 @@ def _check_dimension_keys(kind: PrimitiveKind, dimensions: dict[str, float]) -> 
         raise InvalidDimensionsError(kind, dimensions)
 
 
+def validate_spec_dimensions(spec: ModelSpec) -> None:
+    for obj in spec.objects:
+        _check_dimension_keys(obj.kind, obj.dimensions)
+
+
 def _generate_object_id(objects: dict[str, ModelObject]) -> str:
     for _ in range(_ID_GENERATION_ATTEMPTS):
         candidate = f"obj_{secrets.token_hex(6)}"

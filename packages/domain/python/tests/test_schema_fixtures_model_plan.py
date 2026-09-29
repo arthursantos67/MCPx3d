@@ -30,3 +30,9 @@ def test_model_plan_unknown_operation_fails_schema(schemas_dir: Path, fixtures_d
     instance = _load(fixtures_dir / "model-plan" / "invalid-unknown-operation.json")
 
     assert not Draft202012Validator(schema).is_valid(instance)
+
+
+def test_named_background_plan_fails_schema(schemas_dir: Path) -> None:
+    schema = _load(schemas_dir / "model-plan.v1.schema.json")
+    instance = {"intent": "background", "operations": [{"op": "set_scene", "background": "blue"}]}
+    assert not Draft202012Validator(schema).is_valid(instance)

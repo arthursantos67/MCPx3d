@@ -82,3 +82,10 @@ def test_nan_display_scale_is_rejected(fixtures_dir: Path) -> None:
 
     with pytest.raises(ValidationError):
         ModelSpec.model_validate(payload)
+
+
+def test_named_background_is_rejected_before_rendering(fixtures_dir: Path) -> None:
+    payload = _load(fixtures_dir / "model-spec" / "valid.json")
+    payload["scene"]["background"] = "blue"
+    with pytest.raises(ValidationError):
+        ModelSpec.model_validate(payload)

@@ -33,6 +33,11 @@ test("set_material without color or transparency is rejected", () => {
   assert.throws(() => validateModelPlanDomainRules(plan), ModelPlanValidationError);
 });
 
+test("named background plan is rejected", () => {
+  const plan: ModelPlan = { intent: "background", operations: [{ op: "set_scene", background: "blue" }] };
+  assert.throws(() => validateModelPlanDomainRules(plan), ModelPlanValidationError);
+});
+
 test("scale_object factor of zero is rejected", () => {
   const plan: ModelPlan = {
     intent: "modify_model",

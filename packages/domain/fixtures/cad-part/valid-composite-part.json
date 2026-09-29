@@ -1,0 +1,18 @@
+{
+  "schemaVersion": "2.4",
+  "units": "mm",
+  "partId": "composite_mount",
+  "base": { "kind": "extruded_rectangle", "width": 120, "depth": 80, "thickness": 10 },
+  "features": [
+    { "kind": "through_hole", "id": "hole_1", "x": 0, "y": 0, "diameter": 10 },
+    { "kind": "through_hole", "id": "hole_2", "x": -40, "y": -20, "diameter": 8 },
+    { "kind": "through_hole", "id": "hole_3", "x": 40, "y": -20, "diameter": 8 },
+    { "kind": "through_hole", "id": "hole_4", "x": -40, "y": 20, "diameter": 8 },
+    { "kind": "through_hole", "id": "hole_5", "x": 40, "y": 20, "diameter": 8 }
+  ],
+  "cornerChamfer": 0,
+  "cornerRadius": 12,
+  "bosses": [
+    { "kind": "cylindrical_boss", "id": "boss_1", "x": 0, "y": 0, "diameter": 40, "height": 20 }
+  ]
+}

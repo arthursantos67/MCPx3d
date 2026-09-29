@@ -22,6 +22,30 @@
   color: var(--text-h);
 }
 
+.workspace-topbar__modes {
+  display: flex;
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+}
+
+.workspace-topbar__modes button {
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: transparent;
+  border: 0;
+  border-radius: 5px;
+  padding: 4px 9px;
+  cursor: pointer;
+}
+
+.workspace-topbar__modes button[aria-pressed="true"] {
+  color: var(--text-h);
+  background: var(--accent-bg);
+}
+
 .workspace-topbar__settings-button {
   font: inherit;
   font-size: 13px;
@@ -53,6 +77,7 @@
 }
 
 .workspace-topbar__reset-button,
+.workspace-topbar__import-button,
 .download-menu button {
   font: inherit;
   font-size: 13px;
@@ -68,7 +93,87 @@
   margin-left: auto;
 }
 
+.cad-plate-panel {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 16px;
+  background: var(--bg);
+  font-size: 13px;
+}
+
+.cad-plate-panel__heading,
+.cad-plate-panel__actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.cad-plate-panel p {
+  margin: 10px 0;
+}
+
+.cad-plate-panel label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cad-plate-panel input,
+.cad-plate-panel select {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px;
+  color: var(--text-h);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+}
+
+.cad-plate-panel__fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 12px 0;
+}
+
+.cad-plate-panel button {
+  font: inherit;
+  cursor: pointer;
+}
+
+.cad-plate-panel__actions button {
+  padding: 6px 8px;
+}
+
+.cad-plate-panel__history {
+  border-top: 1px solid var(--border);
+  margin-top: 12px;
+  padding-top: 8px;
+  overflow-wrap: anywhere;
+}
+
+.cad-plate-panel__history button {
+  margin-top: 8px;
+}
+
+.cad-plate-panel__chat {
+  border-top: 1px solid var(--border);
+  margin-top: 12px;
+  padding-top: 12px;
+}
+
+.cad-plate-panel__chat button {
+  margin-top: 8px;
+  margin-right: 8px;
+}
+
+.cad-plate-panel__error {
+  color: #d33;
+}
+
 .workspace-topbar__reset-button:disabled,
+.workspace-topbar__import-button:disabled,
 .download-menu button:disabled {
   cursor: not-allowed;
   opacity: 0.55;
@@ -96,6 +201,101 @@
   display: flex;
   min-height: 0;
   min-width: 0;
+}
+
+.workspace-main--web3d .workspace-cad-sidebar,
+.workspace-main--web3d .workspace-cad-preview,
+.workspace-main--cad .workspace-panel-tabs,
+.workspace-main--cad .workspace-chat,
+.workspace-main--cad .workspace-viewer,
+.workspace-cad-sidebar[hidden] {
+  display: none;
+}
+
+.workspace-cad-sidebar {
+  flex: 0 0 360px;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  border-right: 1px solid var(--border);
+}
+
+.workspace-cad-preview {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--bg);
+}
+
+.workspace-cad-preview__canvas {
+  width: min(100%, 980px);
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+}
+
+.workspace-cad-preview__heading {
+  font-size: 13px;
+  color: var(--text);
+}
+
+.cad-program {
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+  font-size: 13px;
+}
+
+.cad-program h2,
+.cad-program h3,
+.cad-program p { margin: 0; }
+
+.cad-program textarea,
+.cad-program input,
+.cad-program select { width: 100%; box-sizing: border-box; font: inherit; }
+
+.cad-program__field { display: grid; gap: 4px; min-width: 0; }
+
+.cad-program__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 12px 0; }
+
+.cad-program__actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.cad-program__actions select { width: auto; max-width: 100px; }
+
+.cad-program details { border: 1px solid var(--border); border-radius: 6px; padding: 8px; }
+
+.cad-program details > summary { cursor: pointer; }
+
+.cad-orthographic {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr));
+  gap: 14px;
+  margin-top: 12px;
+}
+
+.cad-orthographic figure {
+  min-width: 0;
+  margin: 0;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.cad-orthographic figcaption {
+  font-size: 12px;
+  color: var(--text);
+}
+
+.workspace-cad-preview svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: calc(100vh - 180px);
 }
 
 .workspace-panel-tabs {
@@ -224,6 +424,26 @@
     flex-direction: column;
   }
 
+  .workspace-main--cad {
+    overflow-y: auto;
+  }
+
+  .workspace-main--cad .workspace-cad-preview {
+    order: 0;
+    flex: 0 0 auto;
+    min-height: 260px;
+    padding: 12px;
+  }
+
+  .workspace-main--cad .workspace-cad-sidebar {
+    order: 1;
+    flex: 0 0 auto;
+    width: 100%;
+    overflow: visible;
+    border-right: 0;
+    border-top: 1px solid var(--border);
+  }
+
   .workspace-panel-tabs {
     flex: 0 0 auto;
     display: flex;
@@ -232,6 +452,10 @@
     gap: 4px;
     padding: 8px 12px;
     border-bottom: 1px solid var(--border);
+  }
+
+  .workspace-main--cad .workspace-panel-tabs {
+    display: none;
   }
 
   .workspace-panel-tabs button {
@@ -288,6 +512,11 @@
     grid-column: 1 / -1;
   }
 
+  .workspace-topbar__modes {
+    grid-column: 1 / -1;
+    width: max-content;
+  }
+
   .workspace-topbar__project-name {
     grid-column: 1 / -1;
     width: 100%;
@@ -302,4 +531,39 @@
   .download-menu__error {
     display: none;
   }
+}
+.recipe-menu {
+  position: relative;
+  font-size: 13px;
+}
+
+.recipe-menu summary {
+  cursor: pointer;
+}
+
+.recipe-menu__body {
+  position: absolute;
+  z-index: 20;
+  right: 0;
+  top: 100%;
+  width: min(320px, 90vw);
+  padding: 1rem;
+  display: grid;
+  gap: .75rem;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: .5rem;
+  box-shadow: 0 8px 24px #0003;
+}
+
+.recipe-menu__body label,
+.recipe-menu__list {
+  display: grid;
+  gap: .35rem;
+}
+
+.recipe-menu__list {
+  max-height: 220px;
+  overflow: auto;
 }

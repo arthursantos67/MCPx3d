@@ -1,0 +1,68 @@
+﻿# CAD readiness and next stage
+
+The working source of truth is `ModelSpec` v1: named boxes, spheres, cylinders and cones with dimensions and transforms. `ModelPlan` is a finite data command set. The X3D adapter renders and validates those commands; the SQLite recipe catalog stores validated construction plans and replays them through the same path. This is enough to reuse a known table quickly and edit its named parts conversationally.
+
+ModelSpec manifests can now be exported and imported with fresh X3D validation, and the browser resumes a live session after reload. These two paths preserve current modeling work while the parametric domain is designed.
+
+`ModelSpec` v1 does not encode sketches, constraints, booleans, holes, assemblies, tolerances or feature history. X3D schema and semantic validation proves Web3D validity, not manufacturability. A CAD adapter must therefore consume a new parametric domain model rather than interpreting a rendered X3D file as a solid model.
+
+## Entry criteria for the CAD adapter
+
+1. Define `ParametricModel` v2 with explicit unit-bearing parameters, stable part IDs, sketch planes, profiles, constraints, feature history and assembly relationships. Add a migration from supported `ModelSpec` v1 primitives that labels inferred solids as approximate.
+2. Add typed CAD operations to a new versioned plan schema. Keep the no-code execution boundary: an AI response selects operations and parameters; server code invokes the CAD engine.
+3. Implement a narrow CadQuery/OpenCascade spike for box/cylinder primitives, one extrude and one hole. Validate dimensions, topology, solid count and failure cases before any STEP artifact is exposed.
+4. Extend saved recipes with versioned parameters (such as table width, depth and height), constraints and compatible engine version. Existing v1 recipes remain replayable as Web3D plans but cannot silently become manufacturing recipes.
+5. Add golden mechanical fixtures with expected dimensions and topology. Compare round-tripped STEP geometry against the parametric source, including invalid and non-manifold cases.
+
+The first CAD milestone should be a single parametrically dimensioned part with a through-hole, editable via chat and exportable to validated STEP. Assembly-scale projects follow only after part-level geometry and constraints are reliable.
+
+## Implemented first CAD slice (2026-09-28)
+
+`CadPartSpec` v2 currently represents one centered extruded rectangular plate and one positioned through-hole in millimeters. The Python and TypeScript domain models validate parameter bounds, feature count and edge clearance; the shared JSON Schema describes the wire format. The CadQuery adapter builds a B-rep solid, exports STEP, reimports it, and checks solid count, shape validity, volume, bounding box, hole center and cylindrical face area against the source dimensions. The API exposes inspection and STEP export, and the web workspace has a small parameter editor for direct use.
+
+CadQuery is an optional API dependency (`uv run --extra cad api`). CAD projects now persist validated specs and exact STEP files by revision in SQLite. `CadEditPlan` v1 supports six bounded parameter operations; stale plans fail with a revision conflict, and invalid geometry never replaces the current revision. The browser resumes the last CAD project and offers an explicit CAD chat field. The configured AI provider can propose only typed parameter edits or a clarification; server-side validation remains authoritative.
+
+## Mounting plate milestone (2026-09-28)
+
+`CadPartSpec` 2.1 adds 1–16 identified through-holes and equal straight chamfers at the four vertical corners of the extruded plate. The domain rejects overlapping holes, holes too close to the outer edge or chamfer, duplicate hole IDs and oversized chamfers. `CadEditPlan` 2.0 adds typed hole upsert/removal and chamfer edits alongside the original dimension operations. A 2.0 plate can be upgraded in a new revision while its older specs and STEP files stay intact. The browser editor starts with a 120 × 80 × 10 mm, four-hole mounting plate and shows the hole/chamfer outline from above. CAD chat can propose the new closed operations; the server still validates the resulting solid and STEP before committing.
+
+The reproducible sample is [`examples/cad/mounting_plate.step`](../examples/cad/mounting_plate.step). It was generated from [`valid-mounting-plate.json`](../packages/domain/fixtures/cad-part/valid-mounting-plate.json), then imported with the locally installed FreeCAD 1.1.3 command-line application. [`check_step_freecad.py`](../examples/cad/check_step_freecad.py) confirmed one valid solid, bounds, volume, four Ø8 holes at the requested centers and four 4 mm corner chamfers. This is an independent application import check in addition to the normal CadQuery STEP round trip.
+
+The [native FreeCAD document](../examples/cad/mounting_plate.FCStd) contains a selectable solid body. It was reopened and checked for its 10 mm thickness and movable placement. [FreeCAD instructions](../examples/cad/README.md) explain the view controls and the Transform command used to drag the body with a manipulator. The browser drawing remains a fixed top view.
+
+The CAD editor now accepts a natural-language creation request before a CAD project exists. The provider must return a complete `CadPartSpec` 2.1 and an assumptions list, or a clarification for unsupported geometry. Shared JSON Schema and domain checks run on the output, then the existing server-side CadQuery and STEP round-trip checks gate the revision-0 save. The creation scope is the current extruded mounting plate with plain through-holes and equal corner chamfers; it does not infer threads, slots, fit tolerances or load-bearing suitability.
+
+## Fused L bracket milestone (2026-09-29)
+
+`CadPartSpec` 2.2 adds one upright wall fused to the rear edge of a horizontal base. The wall has independent total height, thickness and up to eight identified through-holes along Y; base holes remain along Z. The domain enforces clearances from the base/wall junction and outer edges, unique hole IDs and a maximum of 16 holes total. The CadQuery adapter verifies a single valid solid, volume, bounding dimensions and each cylindrical hole face before and after STEP export/import. `CadEditPlan` 3.0 adds typed wall-dimension and wall-hole edits, and the browser can also save complete parameter revisions after manual field changes. The CAD preview now shows top, front and side views so wall height is visible.
+
+The [sample L bracket STEP](../examples/cad/mounting_bracket.step) was imported independently with FreeCAD 1.1.3. The check found one valid solid, 120 × 80 × 70 mm bounds, four cylindrical through-holes and the expected volume. Its [native FreeCAD document](../examples/cad/mounting_bracket.FCStd) was reopened and checked for a movable solid body.
+
+The bracket is a single fused solid with a sharp inside corner. It is not a sheet-metal bend with a specified radius, a weld specification, or an assembly. The CAD model still lacks general sketches, geometric constraints, arbitrary feature sequences, assemblies, tolerances, an interactive 3D CAD viewport, parameterized CAD recipes and access control. A validated solid and STEP file do not certify manufacturing suitability or fit.
+
+## Curved profiles milestone (2026-09-29)
+
+`CadPartSpec` 2.3 adds a rounded rectangular plate with a positive corner radius, plus a circular flange represented by an extruded disc. Both support identified axial through-holes. The Python and TypeScript validators check hole clearance against the actual curved outline, disc diameter consistency, and profile limits. CadQuery creates B-rep curves and independently checks area-derived volume, dimensions and curved cylindrical faces after STEP reimport. `CadEditPlan` 4.0 adds typed corner-radius and disc-diameter edits. The CAD menu has both part types, and the preview shows their curved top outlines and thickness.
+
+The [rounded plate STEP](../examples/cad/rounded_plate.step) and [circular flange STEP](../examples/cad/round_flange.step) were imported independently in FreeCAD 1.1.3 as one valid solid each, with expected bounds, curved faces and holes. Their [native FreeCAD documents](../examples/cad/README.md) were reopened and tested for movable bodies. The native documents contain imported shapes; the editable parameter history is held by this application's saved CAD revisions.
+
+This milestone supports curved XY outlines and cylindrical disc bodies. It does not yet support arbitrary sketches, raised hubs, slots, top/bottom edge fillets, thread geometry, toroidal surfaces, sheet-metal bend radii or assemblies. Those require separate feature definitions and geometric checks.
+
+## Fused composite milestone (2026-09-29)
+
+`CadPartSpec` 2.4 adds up to four identified cylindrical bosses fused above a rectangular, rounded or circular base. Existing identified axial through-holes now cut the full height of any boss they lie completely inside. The domain rejects bosses outside the base, overlapping bosses and holes that partially cross boss boundaries. `CadEditPlan` 5.0 adds typed boss upsert/removal. The browser offers a Composite part type, editable boss dimensions and a front view showing the combined height.
+
+CadQuery builds the union and cuts, then checks one valid solid, profile dimensions, expected volume, boss cylindrical faces and full-depth hole faces before and after STEP export/import. The [composite sample STEP](../examples/cad/composite_mount.step) was independently imported by FreeCAD 1.1.3 as one solid with a raised Ø40 boss and a Ø10 bore through its entire 30 mm height. Its [native FreeCAD document](../examples/cad/composite_mount.FCStd) was reopened and tested for movable placement.
+
+This is one fused part, not an arbitrary assembly or unrestricted Boolean feature tree. Cylindrical bosses must start on the base top, have a vertical axis and fit inside the base profile. Blind pockets, side cuts, freeform shapes, filleted unions and separately movable components still need new operations and checks.
+
+## General construction program (2026-09-29)
+
+`CadProgramSpec` 3.0 replaces the one-template-per-part path for new CAD work. A program has up to 32 ordered operations on boxes, cylinders, spheres, cones and extruded polygon profiles. Each shape has a position and three rotations; operations establish a base, fuse overlapping material or remove material. A non-base step may repeat its union or cut in a circular pattern around X, Y or Z, or in a linear pattern, up to 256 total instances. This permits custom outlines, bosses, blind pockets, side holes, bolt circles, rows of holes, repeated ribs and approximate toothed wheels without adding a part-specific schema each time.
+
+The agent returns a complete typed program from a request and can revise one while retaining unrelated steps. The browser makes this the default CAD editor, shows a rotatable mesh, exposes the operation list for manual edits, and saves revisions to the existing SQLite CAD project store. Every save requires a single valid connected CadQuery solid and a successful STEP export/import check with matching volume and bounds. The earlier part templates remain available under **Moldes**.
+
+The [construction program example](../examples/cad/construction_program.json) combines a custom L-shaped profile, a raised cylindrical boss and a transverse bore. Its [STEP file](../examples/cad/construction_program.step) was imported independently by FreeCAD 1.1.3 as one valid solid with 60 × 40 × 18 mm bounds and 14,475.3982 mm³ volume, checked by [the FreeCAD script](../examples/cad/check_construction_program_freecad.py).
+
+This construction language does not mathematically represent every possible shape. It currently lacks spline/NURBS surfaces, fillets, true threads and involute tooth profiles, sketch constraints, multiple separately movable bodies, assembly mates, tolerance annotations and manufacturing drawings. Circular patterns can make recognizable cog wheels, but the teeth are approximations and are not verified for meshing. The WebGL preview renders a mesh of the same solid used for STEP export with a depth buffer; the stored STEP is the B-rep exchange artifact. The next CAD stage should add constrained sketches, native feature operations and assemblies on top of this generic sequence.
+

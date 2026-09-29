@@ -1,0 +1,13 @@
+{
+  "schemaVersion": "2.3",
+  "units": "mm",
+  "partId": "round_flange",
+  "base": { "kind": "extruded_disc", "width": 100, "depth": 100, "thickness": 12 },
+  "features": [
+    { "kind": "through_hole", "id": "hole_1", "x": 0, "y": 0, "diameter": 20 },
+    { "kind": "through_hole", "id": "hole_2", "x": -30, "y": 0, "diameter": 8 },
+    { "kind": "through_hole", "id": "hole_3", "x": 30, "y": 0, "diameter": 8 }
+  ],
+  "cornerChamfer": 0,
+  "cornerRadius": 0
+}

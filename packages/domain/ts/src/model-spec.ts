@@ -59,6 +59,9 @@ function fail(message: string): never {
 
 /** Assumes `spec` already matches the ModelSpec shape (e.g. schema-validated JSON). */
 export function validateModelSpecDomainRules(spec: ModelSpec): void {
+  if (spec.scene.background !== undefined && !COLOR_PATTERN.test(spec.scene.background)) {
+    fail("scene.background must be a normalized lowercase 6-digit hex color");
+  }
   if (!(spec.scene.displayScale > 0) || !Number.isFinite(spec.scene.displayScale)) {
     fail("scene.displayScale must be a positive, finite number");
   }

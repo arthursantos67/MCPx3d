@@ -62,6 +62,7 @@ class ProjectSession:
     last_active_at: float
     validated_x3d: dict[int, str]
     html_artifacts: dict[int, str]
+    validation_summary: dict[str, object] | None
 
     @property
     def revision(self) -> int:
@@ -199,6 +200,7 @@ class ProjectSessionService:
             last_active_at=now,
             validated_x3d={},
             html_artifacts={},
+            validation_summary=None,
         )
         self._sessions[project_id] = session
         return session
@@ -222,6 +224,7 @@ class ProjectSessionService:
         expected_revision: int,
         model_spec: ModelSpec,
         validated_x3d: str | None = None,
+        validation_summary: dict[str, object] | None = None,
     ) -> ProjectSession:
         """Replaces the project's ModelSpec if `expected_revision` is still current.
 
@@ -236,6 +239,7 @@ class ProjectSessionService:
             update={"revision": expected_revision + 1}
         )
         session.validated_x3d = {session.revision: validated_x3d} if validated_x3d else {}
+        session.validation_summary = validation_summary if validated_x3d else None
         session.html_artifacts = {}
         return session
 

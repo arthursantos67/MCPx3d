@@ -180,6 +180,12 @@ class SetScene(BaseModel):
     displayScale: float | None = Field(default=None, gt=0, allow_inf_nan=False)
 
     @model_validator(mode="after")
+    def _valid_background(self) -> SetScene:
+        if self.background is not None:
+            _check_color(self.background)
+        return self
+
+    @model_validator(mode="after")
     def _at_least_one_field(self) -> SetScene:
         if self.background is None and self.displayScale is None:
             raise ValueError("set_scene requires background and/or displayScale")

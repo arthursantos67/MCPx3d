@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "2.0",
+  "units": "mm",
+  "partId": "plate_1",
+  "base": {
+    "kind": "extruded_rectangle",
+    "width": 100,
+    "depth": 80,
+    "thickness": 10
+  },
+  "features": [
+    { "kind": "through_hole", "x": 10, "y": 5, "diameter": 12 }
+  ]
+}

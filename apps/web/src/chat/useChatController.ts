@@ -33,6 +33,12 @@ import {
   type WebLLMProviderState,
 } from "../../../../packages/agent/src/webllm-provider.ts";
 import * as apiClient from "../api/client.ts";
+import type { Recipe } from "../api/client.ts";
+import type { CadPartSpec } from "../../../../packages/domain/ts/src/cad-part.ts";
+import type { CadEditOutcome } from "../../../../packages/agent/src/generate-cad-edit.ts";
+import type { CadCreateOutcome } from "../../../../packages/agent/src/generate-cad-part.ts";
+import type { CadProgramOutcome } from "../../../../packages/agent/src/generate-cad-program.ts";
+import type { CadProgramSpec } from "../../../../packages/domain/ts/src/cad-program.ts";
 import { isUsableByokConfig, loadProviderConfig } from "../settings/providerConfig.ts";
 
 import { ChatController, type AgentProvider, type ChatControllerState } from "./ChatController.ts";
@@ -101,6 +107,11 @@ export interface UseChatController {
   readonly state: ChatControllerState;
   readonly canSend: () => SendGate;
   readonly sendMessage: (text: string) => void;
+  readonly applyRecipe: (recipe: Recipe) => void;
+  readonly planCadEdit: (request: string, spec: CadPartSpec) => Promise<CadEditOutcome>;
+  readonly planCadCreate: (request: string, shape?: 'plate' | 'bracket' | 'rounded_plate' | 'flange' | 'composite') => Promise<CadCreateOutcome>;
+  readonly planCadProgram: (request: string, previous?: CadProgramSpec) => Promise<CadProgramOutcome>;
+  readonly importManifest: (contents: string) => void;
   readonly cancelGeneration: () => void;
   readonly retryProject: () => void;
   readonly resetProject: () => void;
@@ -133,6 +144,11 @@ export function useChatController(): UseChatController {
     },
     [controller],
   );
+  const applyRecipe = useCallback((recipe: Recipe) => { void controller.applyRecipe(recipe); }, [controller]);
+  const planCadEdit = useCallback((request: string, spec: CadPartSpec) => controller.planCadEdit(request, spec), [controller]);
+  const planCadCreate = useCallback((request: string, shape?: 'plate' | 'bracket' | 'rounded_plate' | 'flange' | 'composite') => controller.planCadCreate(request, shape), [controller]);
+  const planCadProgram = useCallback((request: string, previous?: CadProgramSpec) => controller.planCadProgram(request, previous), [controller]);
+  const importManifest = useCallback((contents: string) => { void controller.importManifest(contents); }, [controller]);
   const canSend = useCallback(() => controller.canSend(), [controller]);
   const cancelGeneration = useCallback(() => controller.cancelGeneration(), [controller]);
   const retryProject = useCallback(() => {
@@ -148,5 +164,5 @@ export function useChatController(): UseChatController {
     [controller],
   );
 
-  return { state, sendMessage, cancelGeneration, canSend, retryProject, resetProject, renameProject, persistProjectName, setViewerStatus };
+  return { state, sendMessage, applyRecipe, planCadEdit, planCadCreate, planCadProgram, importManifest, cancelGeneration, canSend, retryProject, resetProject, renameProject, persistProjectName, setViewerStatus };
 }

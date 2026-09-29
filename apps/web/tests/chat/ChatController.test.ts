@@ -3,8 +3,9 @@ import { test } from "node:test";
 
 import { MockLLMProvider, mockCompletion, type MockResponse } from "../../../../packages/agent/src/mock-provider.ts";
 import type { ModelSpec } from "../../../../packages/domain/ts/src/model-spec.ts";
+import type { CadPartSpec } from "../../../../packages/domain/ts/src/cad-part.ts";
 
-import { ApiError, type ApplyPlanRequestBody, type ApplyPlanResponse } from "../../src/api/client.ts";
+import { ApiError, type ApplyPlanRequestBody, type ApplyPlanResponse, type Recipe } from "../../src/api/client.ts";
 import { ChatController, type AgentProvider, type ChatApi } from "../../src/chat/ChatController.ts";
 import type { AgentStatus } from "../../src/chat/types.ts";
 
@@ -79,6 +80,207 @@ const REPAIRED_CUBE_PLAN = {
     },
   ],
 };
+
+test("CAD chat uses the configured provider without changing the Web3D scene", async () => {
+  const cadSpec: CadPartSpec = {
+    schemaVersion: "2.0", units: "mm", partId: "plate_1",
+    base: { kind: "extruded_rectangle", width: 100, depth: 80, thickness: 10 },
+    features: [{ kind: "through_hole", x: 10, y: 5, diameter: 12 }],
+  };
+  const { provider, mock } = makeFakeProvider([{
+    decision: "edit", question: "", operations: [{ op: "set_parameter", parameter: "width", value: 120 }],
+  }]);
+  const { api, applyCalls } = makeFakeApi(emptySpec());
+  const controller = new ChatController(provider, api);
+  await controller.initialize();
+
+  const outcome = await controller.planCadEdit("set width to 120 mm", cadSpec);
+
+  assert.equal(outcome.kind, "edit");
+  assert.equal(mock.calls.length, 1);
+  assert.equal(applyCalls.length, 0);
+  assert.equal(controller.getState().isBusy, false);
+  assert.equal(controller.getState().modelSpec?.revision, 0);
+});
+
+test("CAD creation uses the configured provider before a CAD project exists", async () => {
+  const spec = {
+    schemaVersion: "2.1", units: "mm", partId: "plate_from_prompt",
+    base: { kind: "extruded_rectangle", width: 120, depth: 80, thickness: 10 },
+    features: [{ kind: "through_hole", id: "hole_1", x: 0, y: 0, diameter: 8 }],
+    cornerChamfer: 4,
+  };
+  const { provider, mock } = makeFakeProvider([{
+    decision: "create", spec, question: "", assumptions: ["Thickness 10 mm was inferred."],
+  }]);
+  const { api, applyCalls } = makeFakeApi(emptySpec());
+  const controller = new ChatController(provider, api);
+  await controller.initialize();
+
+  const outcome = await controller.planCadCreate("Crie uma placa com um furo");
+
+  assert.equal(outcome.kind, "create");
+  assert.equal(mock.calls.length, 1);
+  assert.equal(applyCalls.length, 0);
+  assert.equal(controller.getState().isBusy, false);
+});
+
+test("an exact recipe request applies saved geometry without calling the provider", async () => {
+  const spec = emptySpec();
+  const { provider, mock } = makeFakeProvider([]);
+  const { api, applyCalls } = makeFakeApi(spec, () => ({
+    projectId: spec.projectId,
+    revision: 1,
+    modelSpec: { ...spec, revision: 1 },
+    validation: { schemaValid: true, semanticValid: true, warnings: [], autofixes: [] },
+    preview: { url: `/api/projects/${spec.projectId}/artifacts/html?revision=1` },
+    artifacts: [],
+    correlationId: null,
+  }));
+  const recipe: Recipe = {
+    id: "builtin_table", schemaVersion: "1.0", name: "Mesa de jantar", units: "mm", displayScale: 1, objectCount: 1,
+    plan: { intent: "create_table", operations: [{ op: "create_object", id: "top", name: "Tampo", kind: "box", dimensions: { width: 1200, height: 50, depth: 700 } }] },
+  };
+  api.matchRecipe = async () => recipe;
+  const controller = new ChatController(provider, api);
+  await controller.initialize();
+
+  await controller.sendMessage("quero uma mesa");
+
+  assert.equal(mock.calls.length, 0);
+  assert.equal(applyCalls.length, 1);
+  assert.deepEqual(applyCalls[0]?.plan, recipe.plan);
+  assert.equal(controller.getState().modelSpec?.revision, 1);
+  assert.match(controller.getState().messages[1]?.text ?? "", /Mesa de jantar/);
+});
+
+test("a specific request without a recipe continues through the planner", async () => {
+  const spec = emptySpec();
+  const { provider, mock } = makeFakeProvider([CREATE_CUBE_PLAN]);
+  const { api, applyCalls } = makeFakeApi(spec, () => ({
+    projectId: spec.projectId, revision: 1, modelSpec: { ...spec, revision: 1 },
+    validation: { schemaValid: true, semanticValid: true, warnings: [], autofixes: [] },
+    preview: null, artifacts: [], correlationId: null,
+  }));
+  api.matchRecipe = async () => null;
+  const controller = new ChatController(provider, api);
+  await controller.initialize();
+
+  await controller.sendMessage("mesa com furo de 20 mm");
+
+  assert.equal(mock.calls.length, 1);
+  assert.equal(applyCalls.length, 1);
+});
+
+test("an explicit no-overlap request removes model exemptions before applying", async () => {
+  const spec = emptySpec();
+  const plan = {
+    intent: "create_model",
+    operations: [{
+      op: "create_object", id: "cabinet", name: "Cabinet", kind: "box",
+      dimensions: { width: 600, height: 900, depth: 600 }, allowOverlap: true,
+    }],
+  };
+  const { provider } = makeFakeProvider([plan]);
+  const { api, applyCalls } = makeFakeApi(spec, () => ({
+    projectId: spec.projectId, revision: 1, modelSpec: { ...spec, revision: 1 },
+    validation: { schemaValid: true, semanticValid: true, warnings: [], autofixes: [] },
+    preview: null, artifacts: [], correlationId: null,
+  }));
+  const controller = new ChatController(provider, api);
+  await controller.initialize();
+
+  await controller.sendMessage("Crie uma cozinha sem sobreposição de objetos");
+
+  assert.equal(applyCalls.length, 1);
+  assert.equal((applyCalls[0]?.plan.operations[0] as { allowOverlap?: boolean }).allowOverlap, false);
+  assert.equal(applyCalls[0]?.resolveOverlaps, undefined);
+});
+
+test("a saved recipe remains usable when WebGPU is unavailable", async () => {
+  const spec = emptySpec();
+  const { provider, mock } = makeFakeProvider([], { phase: "unsupported", reason: "No WebGPU adapter." });
+  const { api, applyCalls } = makeFakeApi(spec, () => ({
+    projectId: spec.projectId, revision: 1, modelSpec: { ...spec, revision: 1 },
+    validation: { schemaValid: true, semanticValid: true, warnings: [], autofixes: [] },
+    preview: null, artifacts: [], correlationId: null,
+  }));
+  api.matchRecipe = async () => ({
+    id: "builtin_table", schemaVersion: "1.0", name: "Mesa de jantar", units: "mm", displayScale: 1,
+    objectCount: 1, plan: { intent: "table", operations: [{ op: "create_object", id: "top", name: "Tampo", kind: "box", dimensions: { width: 100, height: 10, depth: 50 } }] },
+  });
+  const controller = new ChatController(provider, api);
+  await controller.initialize();
+  assert.equal(controller.canSend().canSend, true);
+
+  await controller.sendMessage("quero uma mesa");
+
+  assert.equal(mock.calls.length, 0);
+  assert.equal(applyCalls.length, 1);
+  assert.equal(controller.getState().requestStatus, "succeeded");
+  assert.equal(controller.getState().isBusy, false);
+  assert.equal(controller.getState().pipelineStage, "ready");
+});
+
+test("manifest import replaces the project revision and clears old conversation context", async () => {
+  const spec = emptySpec();
+  const { provider } = makeFakeProvider([]);
+  const { api } = makeFakeApi(spec);
+  api.importManifest = async (_projectId, expectedRevision) => ({
+    projectId: spec.projectId,
+    revision: expectedRevision + 1,
+    modelSpec: { ...spec, revision: expectedRevision + 1, scene: { ...spec.scene, title: "Imported bracket" } },
+    validation: { schemaValid: true, semanticValid: true, warnings: [], autofixes: [] },
+    preview: { url: "/api/projects/prj_test/artifacts/html?revision=1" },
+    artifacts: [],
+    correlationId: "import-1",
+  });
+  const controller = new ChatController(provider, api);
+  await controller.initialize();
+  await controller.importManifest('{"schemaVersion":"1.0"}');
+
+  assert.equal(controller.getState().modelSpec?.revision, 1);
+  assert.equal(controller.getState().projectName, "Imported bracket");
+  assert.equal(controller.getState().messages.length, 1);
+  assert.match(controller.getState().messages[0]?.text ?? "", /Imported bracket/);
+});
+
+test("initialization resumes a live project with its preview", async () => {
+  const spec = emptySpec(4);
+  const { provider } = makeFakeProvider([]);
+  const { api } = makeFakeApi(emptySpec());
+  let created = false;
+  api.createProject = async () => { created = true; return emptySpec(); };
+  api.resumeProject = async () => ({
+    projectId: spec.projectId, revision: spec.revision, modelSpec: spec,
+    validation: { schemaValid: true, semanticValid: true, warnings: [], autofixes: [] },
+    preview: { url: `/api/projects/${spec.projectId}/artifacts/html?revision=4` },
+    artifacts: [{ format: "x3d", available: true, reason: null }],
+    correlationId: null,
+  });
+  const controller = new ChatController(provider, api);
+
+  await controller.initialize();
+
+  assert.equal(created, false);
+  assert.equal(controller.getState().modelSpec?.revision, 4);
+  assert.match(controller.getState().previewUrl ?? "", /revision=4/);
+  assert.equal(controller.getState().artifacts[0]?.format, "x3d");
+});
+
+test("failed manifest import keeps the last validated revision", async () => {
+  const spec = emptySpec(2);
+  const { provider } = makeFakeProvider([]);
+  const { api } = makeFakeApi(spec);
+  api.importManifest = async () => { throw new ApiError(400, { code: "INVALID_MANIFEST", message: "Invalid file" }); };
+  const controller = new ChatController(provider, api);
+  await controller.initialize();
+  await controller.importManifest('bad');
+
+  assert.equal(controller.getState().modelSpec?.revision, 2);
+  assert.equal(controller.getState().requestStatus, "failed");
+  assert.equal(controller.getState().messages.at(-1)?.role, "error");
+});
 
 test("a successful request updates modelSpec/previewUrl and appends an assistant message", async () => {
   const spec = emptySpec(0);

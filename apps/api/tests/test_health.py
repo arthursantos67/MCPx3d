@@ -51,7 +51,10 @@ def test_health_returns_ok() -> None:
     assert response.json() == {"status": "ok"}
 
 
-@pytest.mark.parametrize("origin", ["http://localhost:5173", "http://127.0.0.1:5173"])
+@pytest.mark.parametrize("origin", [
+    "http://localhost:5173", "http://127.0.0.1:5173",
+    "http://localhost:5174", "http://127.0.0.1:5174",
+])
 def test_cors_accepts_local_frontend_origins(origin: str) -> None:
     client = TestClient(app)
 

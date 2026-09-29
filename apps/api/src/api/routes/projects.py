@@ -14,6 +14,12 @@ from fastapi import APIRouter, Depends, Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from api.projects import ProjectSessionService, get_project_service
+from api.routes.plans import (
+    ApplyPlanResponse,
+    PreviewInfo,
+    ValidationSummary,
+    artifact_descriptors,
+)
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
 
@@ -42,6 +48,27 @@ async def get_project(
     # (api.error_handlers, Issue #23).
     session = project_service.get_project(project_id)
     return session.model_spec
+
+
+@router.get("/{project_id}/state", response_model=ApplyPlanResponse)
+async def get_project_state(
+    project_id: str,
+    project_service: Annotated[ProjectSessionService, Depends(get_project_service)],
+) -> ApplyPlanResponse:
+    session = project_service.get_project(project_id)
+    validated = session.revision in session.validated_x3d
+    return ApplyPlanResponse(
+        projectId=project_id,
+        revision=session.revision,
+        modelSpec=session.model_spec,
+        validation=(
+            ValidationSummary.model_validate(session.validation_summary)
+            if session.validation_summary is not None
+            else ValidationSummary(schemaValid=validated, semanticValid=validated, warnings=[], autofixes=[])
+        ),
+        preview=PreviewInfo(url=f"/api/projects/{project_id}/artifacts/html?revision={session.revision}") if validated else None,
+        artifacts=artifact_descriptors() if validated else [],
+    )
 
 
 @router.patch("/{project_id}/scene/title", response_model=ModelSpec)

@@ -1,0 +1,7 @@
+{
+  "schemaVersion": "1.0",
+  "operations": [
+    { "op": "set_parameter", "parameter": "width", "value": 120 },
+    { "op": "set_parameter", "parameter": "hole_diameter", "value": 16 }
+  ]
+}

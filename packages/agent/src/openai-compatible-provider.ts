@@ -67,6 +67,66 @@ function toChatCompletionsUrl(configuredUrl: string): string {
   return normalized.endsWith(CHAT_COMPLETIONS_PATH) ? normalized : `${normalized}${CHAT_COMPLETIONS_PATH}`;
 }
 
+function isGeminiEndpoint(configuredUrl: string): boolean {
+  try {
+    const url = new URL(configuredUrl);
+    return url.hostname === "generativelanguage.googleapis.com" && url.pathname.startsWith("/v1beta/openai");
+  } catch {
+    return false;
+  }
+}
+
+/** Gemini accepts only a subset of JSON Schema. Keep the original schema for
+ * local validation and send this smaller, equivalent-shape generation hint to
+ * Google's OpenAI-compatible endpoint. */
+function toGeminiSchema(schema: JsonSchema): unknown {
+  const definitions = (schema as Record<string, unknown>).$defs;
+  const defs = definitions && typeof definitions === "object" ? definitions as Record<string, unknown> : {};
+  const supported = new Set(["type", "properties", "required", "additionalProperties", "items", "enum", "minimum", "maximum", "minItems", "maxItems", "anyOf"]);
+
+  function visit(value: unknown, depth = 0): unknown {
+    if (depth > 40) throw new Error("JSON schema references are too deep for Gemini.");
+    if (Array.isArray(value)) return value.map((entry) => visit(entry, depth + 1));
+    if (value === null || typeof value !== "object") return value;
+    const source = value as Record<string, unknown>;
+    if (typeof source.$ref === "string") {
+      const name = source.$ref.match(/^#\/\$defs\/([A-Za-z0-9_-]+)$/)?.[1];
+      if (!name || !(name in defs)) throw new Error("Unsupported JSON schema reference for Gemini.");
+      return visit(defs[name], depth + 1);
+    }
+    const output: Record<string, unknown> = {};
+    if ("const" in source) output.enum = [source.const];
+    const values = Array.isArray(source.enum) ? source.enum : "const" in source ? [source.const] : [];
+    if (!source.type && values.length && values.every((entry) => typeof entry === "string")) output.type = "string";
+    if (!source.type && values.length && values.every((entry) => typeof entry === "number")) output.type = "number";
+    for (const [key, entry] of Object.entries(source)) {
+      if (key === "properties" && entry && typeof entry === "object" && !Array.isArray(entry)) {
+        output.properties = Object.fromEntries(Object.entries(entry as Record<string, unknown>).map(([name, child]) => [name, visit(child, depth + 1)]));
+      } else if (key === "oneOf" && Array.isArray(entry)) {
+        output.anyOf = visit(entry, depth + 1);
+      } else if (key === "anyOf" && Array.isArray(entry)) {
+        const nullable = entry.length === 2 && entry.some((branch) => (branch as Record<string, unknown> | null)?.type === "null");
+        if (nullable) {
+          const other = entry.find((branch) => (branch as Record<string, unknown> | null)?.type !== "null");
+          const converted = visit(other, depth + 1) as Record<string, unknown>;
+          if (typeof converted.type === "string") {
+            Object.assign(output, converted, { type: [converted.type, "null"] });
+            continue;
+          }
+        }
+        output.anyOf = visit(entry, depth + 1);
+      } else if (key === "items" || key === "additionalProperties") {
+        output[key] = visit(entry, depth + 1);
+      } else if (supported.has(key)) {
+        output[key] = entry;
+      }
+    }
+    return output;
+  }
+
+  return visit(schema);
+}
+
 function isTransientStatus(status: number): boolean {
   return status === 408 || status === 429 || status === 500 || status === 502 || status === 503 || status === 504;
 }
@@ -133,7 +193,7 @@ function providerResponseMessage(status: number, bodyText: string): string {
     return `The AI endpoint or model was not found (status 404)${suffix}. Check the Base URL and model name.`;
   }
   if (status === 400) {
-    return `The AI provider rejected the request (status 400)${suffix}. Check the model name and that it supports JSON-schema output.`;
+    return `The AI provider rejected the request (status 400)${suffix}. Check the model access and request format; the output schema may contain unsupported rules.`;
   }
   return `The AI provider request failed with status ${status}${suffix}.`;
 }
@@ -145,6 +205,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
 
   private readonly config: OpenAICompatibleConfig;
   private readonly chatCompletionsUrl: string;
+  private readonly geminiEndpoint: boolean;
   private readonly fetchImpl: FetchLike;
   private readonly sleepImpl: SleepLike;
   private readonly random: () => number;
@@ -167,6 +228,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
     this.config = { ...config, baseUrl: config.baseUrl.trim() };
     this.model = config.model.trim();
     this.chatCompletionsUrl = toChatCompletionsUrl(config.baseUrl);
+    this.geminiEndpoint = isGeminiEndpoint(config.baseUrl);
     this.fetchImpl = fetchImpl;
     this.sleepImpl = sleepImpl;
     this.random = random;
@@ -235,8 +297,10 @@ export class OpenAICompatibleProvider implements LLMProvider {
         body: JSON.stringify({
           model: this.config.model,
           messages: toOpenAiMessages(messages),
-          response_format: { type: "json_schema", json_schema: { name: "model_plan", schema: stripDescriptions(schema) } },
-          temperature: options?.temperature,
+          response_format: { type: "json_schema", json_schema: { name: "model_plan", schema: this.geminiEndpoint ? toGeminiSchema(schema) : stripDescriptions(schema) } },
+          // Gemini 3 models are tuned for their default sampling temperature.
+          // In particular, CAD generation requests used to send temperature 0.
+          temperature: this.geminiEndpoint ? undefined : options?.temperature,
           // Only the current-standard field name: some endpoints (Google's
           // Gemini OpenAI-compat layer, confirmed live) reject a request
           // that sets both `max_tokens` and `max_completion_tokens` at once

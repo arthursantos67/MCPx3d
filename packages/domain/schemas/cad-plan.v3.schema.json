@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mcp-x3d.local/schemas/cad-plan.v3.schema.json",
+  "title": "CadEditPlan v3: base and upright wall edits",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "operations"],
+  "properties": {
+    "schemaVersion": { "const": "3.0" },
+    "operations": {
+      "type": "array", "minItems": 1, "maxItems": 20,
+      "items": {
+        "oneOf": [
+          {
+            "type": "object", "additionalProperties": false,
+            "required": ["op", "parameter", "value"],
+            "properties": {
+              "op": { "const": "set_parameter" },
+              "parameter": { "enum": ["width", "depth", "thickness", "hole_x", "hole_y", "hole_diameter"] },
+              "value": { "type": "number" }
+            }
+          },
+          {
+            "type": "object", "additionalProperties": false,
+            "required": ["op", "value"],
+            "properties": { "op": { "const": "set_corner_chamfer" }, "value": { "type": "number" } }
+          },
+          {
+            "type": "object", "additionalProperties": false,
+            "required": ["op", "holeId", "x", "y", "diameter"],
+            "properties": {
+              "op": { "const": "upsert_hole" },
+              "holeId": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[A-Za-z0-9_-]+$" },
+              "x": { "type": "number" }, "y": { "type": "number" }, "diameter": { "type": "number" }
+            }
+          },
+          {
+            "type": "object", "additionalProperties": false,
+            "required": ["op", "holeId"],
+            "properties": {
+              "op": { "const": "remove_hole" },
+              "holeId": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[A-Za-z0-9_-]+$" }
+            }
+          },
+          {
+            "type": "object", "additionalProperties": false,
+            "required": ["op", "parameter", "value"],
+            "properties": {
+              "op": { "const": "set_upright_parameter" },
+              "parameter": { "enum": ["height", "thickness"] },
+              "value": { "type": "number" }
+            }
+          },
+          {
+            "type": "object", "additionalProperties": false,
+            "required": ["op", "holeId", "x", "z", "diameter"],
+            "properties": {
+              "op": { "const": "upsert_upright_hole" },
+              "holeId": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[A-Za-z0-9_-]+$" },
+              "x": { "type": "number" }, "z": { "type": "number" }, "diameter": { "type": "number" }
+            }
+          },
+          {
+            "type": "object", "additionalProperties": false,
+            "required": ["op", "holeId"],
+            "properties": {
+              "op": { "const": "remove_upright_hole" },
+              "holeId": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[A-Za-z0-9_-]+$" }
+            }
+          }
+        ]
+      }
+    }
+  },
+  "$comment": "Duplicate targets and geometric validity are checked by domain validators before a STEP revision is saved."
+}

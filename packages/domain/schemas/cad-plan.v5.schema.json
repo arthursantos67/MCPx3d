@@ -1,0 +1,278 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mcp-x3d.local/schemas/cad-plan.v5.schema.json",
+  "title": "CadEditPlan v5: composite boss and existing CAD edits",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "operations"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "5.0"
+    },
+    "operations": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 20,
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "op",
+              "parameter",
+              "value"
+            ],
+            "properties": {
+              "op": {
+                "const": "set_parameter"
+              },
+              "parameter": {
+                "enum": [
+                  "width",
+                  "depth",
+                  "thickness",
+                  "hole_x",
+                  "hole_y",
+                  "hole_diameter"
+                ]
+              },
+              "value": {
+                "type": "number"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "op",
+              "value"
+            ],
+            "properties": {
+              "op": {
+                "const": "set_corner_chamfer"
+              },
+              "value": {
+                "type": "number"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "op",
+              "holeId",
+              "x",
+              "y",
+              "diameter"
+            ],
+            "properties": {
+              "op": {
+                "const": "upsert_hole"
+              },
+              "holeId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "pattern": "^[A-Za-z0-9_-]+$"
+              },
+              "x": {
+                "type": "number"
+              },
+              "y": {
+                "type": "number"
+              },
+              "diameter": {
+                "type": "number"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "op",
+              "holeId"
+            ],
+            "properties": {
+              "op": {
+                "const": "remove_hole"
+              },
+              "holeId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "pattern": "^[A-Za-z0-9_-]+$"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "op",
+              "parameter",
+              "value"
+            ],
+            "properties": {
+              "op": {
+                "const": "set_upright_parameter"
+              },
+              "parameter": {
+                "enum": [
+                  "height",
+                  "thickness"
+                ]
+              },
+              "value": {
+                "type": "number"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "op",
+              "holeId",
+              "x",
+              "z",
+              "diameter"
+            ],
+            "properties": {
+              "op": {
+                "const": "upsert_upright_hole"
+              },
+              "holeId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "pattern": "^[A-Za-z0-9_-]+$"
+              },
+              "x": {
+                "type": "number"
+              },
+              "z": {
+                "type": "number"
+              },
+              "diameter": {
+                "type": "number"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "op",
+              "holeId"
+            ],
+            "properties": {
+              "op": {
+                "const": "remove_upright_hole"
+              },
+              "holeId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "pattern": "^[A-Za-z0-9_-]+$"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "op",
+              "value"
+            ],
+            "properties": {
+              "op": {
+                "const": "set_corner_radius"
+              },
+              "value": {
+                "type": "number"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "op",
+              "value"
+            ],
+            "properties": {
+              "op": {
+                "const": "set_disc_diameter"
+              },
+              "value": {
+                "type": "number"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "op",
+              "bossId",
+              "x",
+              "y",
+              "diameter",
+              "height"
+            ],
+            "properties": {
+              "op": {
+                "const": "upsert_boss"
+              },
+              "bossId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "pattern": "^[A-Za-z0-9_-]+$"
+              },
+              "x": {
+                "type": "number"
+              },
+              "y": {
+                "type": "number"
+              },
+              "diameter": {
+                "type": "number"
+              },
+              "height": {
+                "type": "number"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "op",
+              "bossId"
+            ],
+            "properties": {
+              "op": {
+                "const": "remove_boss"
+              },
+              "bossId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "pattern": "^[A-Za-z0-9_-]+$"
+              }
+            }
+          }
+        ]
+      }
+    }
+  },
+  "$comment": "Duplicate targets and geometric validity are checked by domain validators before a STEP revision is saved."
+}

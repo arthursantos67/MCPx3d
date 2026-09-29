@@ -1,0 +1,7 @@
+{
+  "schemaVersion": "4.0",
+  "operations": [
+    { "op": "set_disc_diameter", "value": 120 },
+    { "op": "upsert_hole", "holeId": "hole_2", "x": -35, "y": 0, "diameter": 8 }
+  ]
+}

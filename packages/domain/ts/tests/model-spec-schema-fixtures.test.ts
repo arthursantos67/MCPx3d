@@ -38,3 +38,10 @@ test("duplicate-id ModelSpec fixture passes schema (uniqueness is a domain rule,
 
   assert.equal(validate(instance), true, ajv.errorsText(validate.errors));
 });
+
+test("named scene background fails schema", () => {
+  const validate = ajv.compile(modelSpecSchema as object);
+  const instance = loadJson<{ scene: { background: string } }>(FIXTURES_DIR, "model-spec", "valid.json");
+  instance.scene.background = "blue";
+  assert.equal(validate(instance), false);
+});

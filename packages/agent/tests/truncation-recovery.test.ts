@@ -274,6 +274,28 @@ test("overlaps get repair rounds first, then one final apply asking the backend 
   assert.equal(provider.calls.length, MAX_APPLY_REPAIRS + 1);
 });
 
+test("explicit no-overlap mode never asks the backend to displace parts", async () => {
+  const provider = new MockLLMProvider(Array.from({ length: MAX_APPLY_REPAIRS + 1 }, () => batchPlan(1, 4)));
+  const requests: boolean[] = [];
+  const counters = createSceneGenerationCounters();
+
+  await assert.rejects(generateScene({
+    provider,
+    request: "four cabinets without overlap",
+    modelSpec: EMPTY_SPEC,
+    counters,
+    allowOverlapResolution: false,
+    describeRepairableApplyError: () => "UNINTENDED_OVERLAP",
+    applyPlan: async (_plan, _spec, { resolveOverlaps }) => {
+      requests.push(resolveOverlaps);
+      throw new Error("overlap");
+    },
+  }), /overlap/);
+
+  assert.deepEqual(requests, [false, false, false, false]);
+  assert.equal(counters.overlapResolutions, 0);
+});
+
 test("an apply rejection inside a batch gets one regeneration with the diagnostic", async () => {
   const provider = new MockLLMProvider([TRUNCATED_KITCHEN, batchPlan(1, 2), batchPlan(1, 2), DONE]);
   const applied: ModelPlan[] = [];

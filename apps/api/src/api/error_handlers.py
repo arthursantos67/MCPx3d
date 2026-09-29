@@ -194,10 +194,26 @@ def register_error_handlers(app: FastAPI) -> None:
     async def _request_validation_error(
         request: Request, exc: RequestValidationError
     ) -> JSONResponse:
+        cad_request = request.url.path.startswith("/api/cad/")
+        message = "The request could not be parsed."
+        code = "INVALID_PLAN"
+        if cad_request:
+            errors = exc.errors()
+            selected = errors[0]
+            try:
+                payload = await request.json()
+                spec = payload.get("spec", payload) if isinstance(payload, dict) else {}
+                is_program = isinstance(spec, dict) and spec.get("schemaVersion") == "3.0"
+            except ValueError:
+                is_program = False
+            if is_program:
+                selected = next((error for error in errors if any("CadProgramSpec" in str(segment) for segment in error["loc"])), selected)
+            message = f"The CAD request is invalid: {selected['msg']}"
+            code = "INVALID_CAD_PART" if request.url.path.startswith("/api/cad/parts/") else "INVALID_CAD_REQUEST"
         return error_response(
             400,
-            "INVALID_PLAN",
-            "The request could not be parsed.",
+            code,
+            message,
             details=[{"loc": list(error["loc"]), "message": error["msg"]} for error in exc.errors()],
             correlation_id=_correlation_id(request),
         )

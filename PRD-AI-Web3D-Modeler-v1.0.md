@@ -458,6 +458,10 @@ Server memory:
 
 State may be lost when the backend restarts unless the user downloads the project artifact. Persistent cloud projects are post-MVP.
 
+**Recovery extension (2026-09-28):** The browser remembers the last session ID and resumes it on reload while the API session remains live. The state endpoint returns current preview/artifact availability and the last validation summary. A downloaded ModelSpec manifest can be imported into a live session; import validates its version, structure, primitive dimensions, size and X3D output before an atomic revision commit. The original manifest project ID and revision are replaced. This is portable manual recovery, not persistent server-side project storage.
+
+**Post-MVP extension (2026-09-28): reusable construction recipes.** An optional local SQLite catalog stores versioned, data-only `ModelPlan` recipes, separate from temporary project sessions. The API seeds a nine-part table and saves only nonempty revisions with validated X3D. Recipe replay uses the existing plan mutation, MCP validation and revision commit; no recipe is executable code or a CAD manufacturing guarantee. Exact simple prompts may select a recipe before local AI inference. This local catalog is shared among API callers; user ownership and authorization are required before a multi-user deployment. `RECIPE_DATABASE_PATH` configures the file. This extension does not change the MVP's no-mandatory-database startup or project persistence guarantees.
+
 ---
 
 ## 4. Functional Requirements: Backend and Domain
@@ -716,6 +720,8 @@ The user shall be able to download a project manifest containing the current Mod
 ### FR-37 Project Manifest Import
 
 Post-MVP or late-MVP implementation may allow a previously exported compatible manifest to reconstruct a project. Import shall validate version and schema before mutation.
+
+**Implementation note (2026-09-28):** `POST /api/projects/{id}/import?expectedRevision=N` now implements this requirement. The frontend exposes Import and clears earlier conversation context only after a successful validated commit. Failed imports preserve the prior revision and preview.
 
 ### FR-38 Future Renderer Contract
 
@@ -1210,6 +1216,7 @@ interface ModelObject {
 **Implementation note (Issue #5, 2026-09-21):** Implemented as `packages/domain/schemas/model-spec.v1.schema.json` (JSON Schema, draft 2020-12), mirrored by `packages/domain/ts/src/model-spec.ts` and `packages/domain/python/src/domain/model_spec.py`. Concrete decisions the baseline above left open:
 
 - `material.color` must be a normalized lowercase 6-digit hex string (`^#[0-9a-f]{6}$`).
+- `scene.background` uses the same normalized hex format when present. This was enforced in JSON Schema and both language validators on 2026-09-28 because the X3D adapter converts it directly to RGB; a named color could otherwise fail during rendering.
 - `id` must match `^[A-Za-z0-9_-]+$`.
 - `dimensions` keys are kind-specific by convention, not schema-enforced per kind (keeps the schema renderer-independent): `box` → `width`/`height`/`depth`, `sphere` → `radius`, `cylinder` → `radius`/`height`, `cone` → `bottomRadius`/`height`. These match the `x3d_mcp` primitive tool parameters used by the Issue #4 `X3DMcpClient` (`services/x3d-mcp/vendor/src/tools/workflow.py`).
 - Unique `ModelObject.id` (§8.4) is not expressible in JSON Schema and is enforced by a domain validator in each language mirror, not by the schema file itself; see `packages/domain/README.md`.
@@ -1821,6 +1828,16 @@ This phase must not market STL output as manufacturing-ready without appropriate
 ### 14.5 Phase 4 — CAD adapter
 
 Goal: convert the same conversational/product architecture into a true CAD pipeline.
+
+**Readiness note (2026-09-28):** The recipe catalog accelerates reuse of the present primitive model. It does not supply sketches, constraints, B-rep topology or feature history. The next stage must define a versioned `ParametricModel` and typed CAD operations, then validate a narrow CadQuery/OpenCascade part and STEP round trip before exposing CAD output. The entry criteria and first milestone are recorded in `docs/cad-readiness.md`.
+
+**CAD slice implemented (2026-09-28):** A separate `CadPartSpec` v2 contract represents one millimeter-based extruded rectangle with a positioned through-hole. An optional CadQuery adapter validates the B-rep solid and STEP round trip before inspection, export or revision commit. `CadEditPlan` v1 limits edits to six numeric parameters. CAD projects and their exact validated STEP artifacts persist by revision in SQLite, independent of `ModelSpec` v1 sessions and Web3D recipes. The web editor resumes the last CAD project, applies manual parameter changes or typed plans proposed by the configured AI provider, and exposes historical STEP files. Sketch constraints, multiple features, assemblies, CAD preview, per-user access control and parameterized CAD recipes remain Phase 4 work.
+
+**Mounting plate extension (2026-09-28):** `CadPartSpec` 2.1 adds up to 16 stable-ID through-holes and four equal corner chamfers with clearance checks. `CadEditPlan` 2.0 has closed hole upsert/removal and chamfer operations. The API preserves existing 2.0 project revisions and upgrades a legacy part only when a 2.0 plan requests new geometry. The browser offers a four-hole mounting plate example, manual hole/chamfer editing and matching typed CAD chat. The sample STEP was imported and checked with FreeCAD 1.1.3 for one valid solid, dimensions, volume, four holes and four chamfers. General sketches, assembly constraints, tolerance annotations, manufacturing drawings, 3D CAD preview, CAD recipe variants and access control remain outside this extension.
+
+The example also includes a native FreeCAD document with a selectable body derived from the checked STEP. Its 3D thickness and movable placement were verified after reopening it; the document is a convenience for inspection and placement, while the application's CAD spec remains the editable source of hole and chamfer parameters.
+
+**CAD creation by description (2026-09-29):** The configured local-first or opt-in AI provider may propose a complete data-only `CadPartSpec` 2.1 from a new-project request. It records assumptions for dimensions absent from the request and clarifies geometry outside the supported plate/hole/chamfer set. The client validates the closed JSON Schema and domain rules; the API still builds and checks the B-rep and STEP before creating revision 0. AI-selected dimensions are visible in the editor and are example choices, not engineering calculations or manufacturing guarantees.
 
 Introduce:
 

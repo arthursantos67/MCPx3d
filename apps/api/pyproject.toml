@@ -18,6 +18,11 @@ dependencies = [
 [project.scripts]
 api = "api:main"
 
+[project.optional-dependencies]
+cad = [
+    "cadquery>=2.8,<3",
+]
+
 [tool.uv.sources]
 domain = { path = "../../packages/domain/python", editable = true }
 

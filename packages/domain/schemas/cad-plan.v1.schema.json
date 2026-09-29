@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mcp-x3d.local/schemas/cad-plan.v1.schema.json",
+  "title": "CadEditPlan v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "operations"],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "operations": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 6,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["op", "parameter", "value"],
+        "properties": {
+          "op": { "const": "set_parameter" },
+          "parameter": {
+            "enum": ["width", "depth", "thickness", "hole_x", "hole_y", "hole_diameter"]
+          },
+          "value": { "type": "number" }
+        }
+      }
+    }
+  },
+  "$comment": "Duplicate parameters are rejected by the domain validators."
+}

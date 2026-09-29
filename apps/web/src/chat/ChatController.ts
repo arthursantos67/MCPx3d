@@ -28,10 +28,14 @@
  * `createWebLLMProvider()` (PRD §3.6's one required provider).
  */
 
-import type { ApplyPlanRequestBody, ApplyPlanResponse } from "../api/client.ts";
+import type { ApplyPlanRequestBody, ApplyPlanResponse, Recipe } from "../api/client.ts";
 import { ApiError } from "../api/client.ts";
 import type { AgentMessage, LLMProvider } from "../../../../packages/agent/src/provider.ts";
 import { ModelPlanGenerationError } from "../../../../packages/agent/src/generate-model-plan.ts";
+import { generateCadEdit, type CadEditOutcome } from "../../../../packages/agent/src/generate-cad-edit.ts";
+import { generateCadPart, type CadCreateOutcome, type CadPartShape } from "../../../../packages/agent/src/generate-cad-part.ts";
+import { generateCadProgram, type CadProgramOutcome } from "../../../../packages/agent/src/generate-cad-program.ts";
+import type { CadProgramSpec } from "../../../../packages/domain/ts/src/cad-program.ts";
 import {
   SceneBatchError,
   createSceneGenerationCounters,
@@ -40,6 +44,7 @@ import {
   type SceneOutcome,
 } from "../../../../packages/agent/src/generate-scene.ts";
 import type { ModelSpec } from "../../../../packages/domain/ts/src/model-spec.ts";
+import type { CadPartSpec } from "../../../../packages/domain/ts/src/cad-part.ts";
 
 import type {
   AgentStatus,
@@ -57,9 +62,12 @@ export interface AgentProvider extends LLMProvider {
 
 export interface ChatApi {
   createProject(): Promise<ModelSpec>;
+  resumeProject?(): Promise<ApplyPlanResponse | null>;
   applyPlan(projectId: string, body: ApplyPlanRequestBody, signal?: AbortSignal): Promise<ApplyPlanResponse>;
+  importManifest?(projectId: string, expectedRevision: number, contents: string): Promise<ApplyPlanResponse>;
   deleteProject(projectId: string): Promise<void>;
   updateSceneTitle?(projectId: string, expectedRevision: number, title: string): Promise<ModelSpec>;
+  matchRecipe?(query: string): Promise<Recipe | null>;
   resolveArtifactUrl(relativeUrl: string): string;
 }
 
@@ -112,6 +120,11 @@ function separatedPartCount(response: ApplyPlanResponse): number {
   return response.validation.autofixes.filter((fix) => fix.type === "overlap_separation").length;
 }
 
+function demandsNoOverlap(request: string): boolean {
+  const normalized = request.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  return /\b(?:nao\s+sobrepo\w*|sem\s+sobrepos\w*|no\s+overlap\w*|without\s+overlap\w*)\b/.test(normalized);
+}
+
 const EMPTY_GENERATION_STATS: GenerationStats = {
   requests: 0,
   truncatedRequests: 0,
@@ -152,6 +165,7 @@ export class ChatController {
   private readonly now: () => number;
   private readonly makeId: () => string;
   private initialization: Promise<void> | null = null;
+  private initialProjectLookup = true;
   private readonly unsubscribeProvider: () => void;
   private activeCancellation: AbortController | null = null;
 
@@ -228,18 +242,24 @@ export class ChatController {
 
   async retryProject(): Promise<void> {
     try {
-      const modelSpec = await this.api.createProject();
+      const resumed = this.initialProjectLookup ? await this.api.resumeProject?.() ?? null : null;
+      const modelSpec = resumed?.modelSpec ?? await this.api.createProject();
+      this.initialProjectLookup = false;
       const recreatingExpiredProject = this.state.requestStatus === "session-expired";
       this.patch({
         modelSpec,
         projectName: modelSpec.scene.title ?? "Untitled model",
         projectId: modelSpec.projectId,
         projectError: null,
-        messages: recreatingExpiredProject ? [] : this.state.messages,
-        previewUrl: recreatingExpiredProject ? null : this.state.previewUrl,
-        artifacts: recreatingExpiredProject ? [] : this.state.artifacts,
-        validation: recreatingExpiredProject ? null : this.state.validation,
-        correlationId: recreatingExpiredProject ? null : this.state.correlationId,
+        messages: resumed
+          ? [{ id: this.makeId(), role: "assistant", text: `Resumed “${modelSpec.scene.title}” at revision ${modelSpec.revision}.`, createdAt: this.now() }]
+          : recreatingExpiredProject ? [] : this.state.messages,
+        previewUrl: resumed?.preview
+          ? this.api.resolveArtifactUrl(resumed.preview.url)
+          : recreatingExpiredProject ? null : this.state.previewUrl,
+        artifacts: resumed?.artifacts ?? (recreatingExpiredProject ? [] : this.state.artifacts),
+        validation: resumed?.validation ?? (recreatingExpiredProject ? null : this.state.validation),
+        correlationId: resumed?.correlationId ?? (recreatingExpiredProject ? null : this.state.correlationId),
         requestStatus: "idle",
         failureSource: null,
         pipelineStage: "idle",
@@ -333,10 +353,120 @@ export class ChatController {
     if (!this.state.modelSpec || !this.state.projectId) {
       return { canSend: false, reason: "Starting a new project…" };
     }
-    if (this.state.agentPhase !== "ready") {
+    if (this.state.agentPhase !== "ready" && !(
+      this.state.modelSpec.objects.length === 0 &&
+      this.api.matchRecipe &&
+      (this.state.agentPhase === "unsupported" || this.state.agentPhase === "error")
+    )) {
       return { canSend: false, reason: this.state.agentDetail ?? "Local AI is still starting up." };
     }
     return { canSend: true };
+  }
+
+  async planCadEdit(request: string, spec: CadPartSpec): Promise<CadEditOutcome> {
+    if (this.state.isBusy) throw new Error("Finish the current model request before editing CAD.");
+    if (this.state.agentPhase !== "ready") throw new Error("Configure an AI provider to edit CAD by chat.");
+    const cancellation = new AbortController();
+    this.activeCancellation = cancellation;
+    this.patch({ isBusy: true, requestStatus: "working", pipelineStage: "provider-request", pipelineStartedAt: this.now() });
+    try {
+      const outcome = await generateCadEdit(this.provider, request, spec);
+      if (cancellation.signal.aborted) throw new Error("CAD request cancelled.");
+      return outcome;
+    } finally {
+      if (this.activeCancellation === cancellation) this.activeCancellation = null;
+      if (!cancellation.signal.aborted) {
+        this.patch({ isBusy: false, requestStatus: "idle", pipelineStage: "idle", pipelineStartedAt: null });
+      }
+    }
+  }
+
+  async planCadCreate(request: string, shape: CadPartShape = 'plate'): Promise<CadCreateOutcome> {
+    if (this.state.isBusy) throw new Error("Finish the current model request before creating CAD.");
+    if (this.state.agentPhase !== "ready") throw new Error("Configure an AI provider to create CAD by chat.");
+    const cancellation = new AbortController();
+    this.activeCancellation = cancellation;
+    this.patch({ isBusy: true, requestStatus: "working", pipelineStage: "provider-request", pipelineStartedAt: this.now() });
+    try {
+      const outcome = await generateCadPart(this.provider, request, shape);
+      if (cancellation.signal.aborted) throw new Error("CAD request cancelled.");
+      return outcome;
+    } finally {
+      if (this.activeCancellation === cancellation) this.activeCancellation = null;
+      if (!cancellation.signal.aborted) {
+        this.patch({ isBusy: false, requestStatus: "idle", pipelineStage: "idle", pipelineStartedAt: null });
+      }
+    }
+  }
+
+  async planCadProgram(request: string, previous?: CadProgramSpec): Promise<CadProgramOutcome> {
+    if (this.state.isBusy) throw new Error("Finish the current model request before creating CAD.");
+    if (this.state.agentPhase !== "ready") throw new Error("Configure an AI provider to create CAD by chat.");
+    const cancellation = new AbortController();
+    this.activeCancellation = cancellation;
+    this.patch({ isBusy: true, requestStatus: "working", pipelineStage: "provider-request", pipelineStartedAt: this.now() });
+    try {
+      const outcome = await generateCadProgram(this.provider, request, previous);
+      if (cancellation.signal.aborted) throw new Error("CAD request cancelled.");
+      return outcome;
+    } finally {
+      if (this.activeCancellation === cancellation) this.activeCancellation = null;
+      if (!cancellation.signal.aborted) this.patch({ isBusy: false, requestStatus: "idle", pipelineStage: "idle", pipelineStartedAt: null });
+    }
+  }
+
+  async applyRecipe(recipe: Recipe): Promise<void> {
+    const spec = this.state.modelSpec;
+    const projectId = this.state.projectId;
+    if (!spec || !projectId || this.state.isBusy || spec.objects.length > 0) return;
+    this.patch({ isBusy: true, requestStatus: "working", pipelineStage: "api-mcp-build", pipelineStartedAt: this.now() });
+    try {
+      await this.commitRecipe(recipe, spec, projectId);
+    } catch (error) {
+      this.patch({ requestStatus: "failed", pipelineStage: "failed", failureSource: failureSource(error) });
+      this.appendMessage("error", describeError(error));
+    } finally {
+      this.patch({ isBusy: false });
+    }
+  }
+
+  async importManifest(contents: string): Promise<void> {
+    const spec = this.state.modelSpec;
+    const projectId = this.state.projectId;
+    if (!spec || !projectId || this.state.isBusy || !this.api.importManifest) return;
+    this.patch({ isBusy: true, requestStatus: "working", pipelineStage: "api-mcp-build", pipelineStartedAt: this.now() });
+    try {
+      const response = await this.api.importManifest(projectId, spec.revision, contents);
+      this.commitApplyResponse(response, spec);
+      this.patch({
+        messages: [],
+        requestStatus: "succeeded",
+        pipelineStage: "x3d-validation",
+        failureSource: null,
+        timings: response.timings ?? {},
+      });
+      this.appendMessage("assistant", `Imported and validated “${response.modelSpec.scene.title}” as revision ${response.revision}.`);
+    } catch (error) {
+      this.patch({ requestStatus: "failed", pipelineStage: "failed", failureSource: failureSource(error) });
+      this.appendMessage("error", describeError(error));
+    } finally {
+      this.patch({ isBusy: false });
+    }
+  }
+
+  private async commitRecipe(recipe: Recipe, spec: ModelSpec, projectId: string, signal?: AbortSignal): Promise<void> {
+    if (recipe.units !== spec.units || recipe.displayScale !== spec.scene.displayScale) {
+      throw new Error("Recipe units or display scale differ from this project.");
+    }
+    const response = await this.api.applyPlan(projectId, {
+      expectedRevision: spec.revision,
+      requestId: this.makeId(),
+      plan: recipe.plan,
+    }, signal);
+    if (signal?.aborted) return;
+    this.commitApplyResponse(response, spec);
+    this.patch({ requestStatus: "succeeded", pipelineStage: "x3d-validation", failureSource: null, timings: response.timings ?? {} });
+    this.appendMessage("assistant", `Applied recipe “${recipe.name}” and validated revision ${response.revision}.`);
   }
 
   async sendMessage(text: string): Promise<void> {
@@ -349,6 +479,7 @@ export class ChatController {
     if (!modelSpec || !projectId) return;
 
     const recentMessages = this.recentAgentMessages();
+    const strictNoOverlap = demandsNoOverlap(trimmed);
     this.appendMessage("user", trimmed);
 
     const startedAt = this.now();
@@ -369,15 +500,38 @@ export class ChatController {
     let applyMs = 0;
     let separatedParts = 0;
     let lastResponse: ApplyPlanResponse | null = null;
+    let attemptedProvider = false;
     const providerRequestMs = (): number => Math.max(0, this.now() - startedAt - applyMs);
 
     try {
+      if (modelSpec.objects.length === 0 && this.api.matchRecipe) {
+        let recipe: Recipe | null = null;
+        try {
+          recipe = await this.api.matchRecipe(trimmed);
+        } catch {
+          recipe = null;
+        }
+        if (cancellation.signal.aborted) return;
+        if (recipe) {
+          this.patch({ pipelineStage: "api-mcp-build" });
+          await this.commitRecipe(recipe, modelSpec, projectId, cancellation.signal);
+          if (!cancellation.signal.aborted) this.patch({ isBusy: false, pipelineStage: "ready", pipelineStartedAt: null });
+          return;
+        }
+      }
+      if (this.state.agentPhase !== "ready") {
+        this.patch({ requestStatus: "failed", failureSource: "provider", pipelineStage: "failed" });
+        this.appendMessage("error", "No matching recipe was found. Configure an AI provider to create this model.");
+        return;
+      }
+      attemptedProvider = true;
       const outcome = await generateScene({
         provider: this.provider,
         request: trimmed,
         modelSpec,
         recentMessages,
         signal: cancellation.signal,
+        allowOverlapResolution: !strictNoOverlap,
         counters,
         describeRepairableApplyError: (error) =>
           isRepairableApplyError(error) ? `${error.code}: ${error.message}` : null,
@@ -394,10 +548,14 @@ export class ChatController {
           this.patch({ pipelineStage: "api-mcp-build" });
           const applyStartedAt = this.now();
           try {
+            const guardedPlan = strictNoOverlap
+              ? { ...plan, operations: plan.operations.map((operation) =>
+                "allowOverlap" in operation ? { ...operation, allowOverlap: false } : operation) }
+              : plan;
             const response = await this.api.applyPlan(projectId, {
               expectedRevision: current.revision,
               requestId: this.makeId(),
-              plan,
+              plan: guardedPlan,
               ...(resolveOverlaps ? { resolveOverlaps } : {}),
             }, cancellation.signal);
             lastResponse = response;
@@ -460,7 +618,7 @@ export class ChatController {
       this.appendMessage("error", describeError(error));
     } finally {
       if (this.activeCancellation === cancellation) this.activeCancellation = null;
-      this.recordGenerationStats(counters, finalValidScene);
+      if (attemptedProvider) this.recordGenerationStats(counters, finalValidScene);
     }
   }
 

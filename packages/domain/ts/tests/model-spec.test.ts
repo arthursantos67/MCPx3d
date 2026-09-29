@@ -39,3 +39,9 @@ test("non-normalized color is rejected", () => {
 
   assert.throws(() => validateModelSpecDomainRules(spec), ModelSpecValidationError);
 });
+
+test("named background is rejected before rendering", () => {
+  const spec = loadJson<ModelSpec>(FIXTURES_DIR, "model-spec", "valid.json");
+  spec.scene.background = "blue";
+  assert.throws(() => validateModelSpecDomainRules(spec), ModelSpecValidationError);
+});

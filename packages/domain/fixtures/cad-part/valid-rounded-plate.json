@@ -1,0 +1,12 @@
+{
+  "schemaVersion": "2.3",
+  "units": "mm",
+  "partId": "rounded_plate",
+  "base": { "kind": "extruded_rectangle", "width": 120, "depth": 80, "thickness": 10 },
+  "features": [
+    { "kind": "through_hole", "id": "hole_1", "x": -35, "y": 0, "diameter": 8 },
+    { "kind": "through_hole", "id": "hole_2", "x": 35, "y": 0, "diameter": 8 }
+  ],
+  "cornerChamfer": 0,
+  "cornerRadius": 12
+}

@@ -41,3 +41,10 @@ def test_model_spec_duplicate_id_fixture_passes_schema_but_is_a_domain_error(
     instance = _load(fixtures_dir / "model-spec" / "invalid-duplicate-id.json")
 
     Draft202012Validator(schema).validate(instance)
+
+
+def test_named_background_fails_schema(schemas_dir: Path, fixtures_dir: Path) -> None:
+    schema = _load(schemas_dir / "model-spec.v1.schema.json")
+    instance = _load(fixtures_dir / "model-spec" / "valid.json")
+    instance["scene"]["background"] = "blue"
+    assert not Draft202012Validator(schema).is_valid(instance)

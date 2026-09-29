@@ -1,0 +1,155 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mcp-x3d.local/schemas/cad-part.v2.4.schema.json",
+  "title": "CadPartSpec v2.4: base plus fused cylindrical bosses and through cuts",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "units",
+    "partId",
+    "base",
+    "features",
+    "cornerChamfer",
+    "cornerRadius",
+    "bosses"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "2.4"
+    },
+    "units": {
+      "const": "mm"
+    },
+    "partId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[A-Za-z0-9_-]+$"
+    },
+    "base": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "width",
+        "depth",
+        "thickness"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "extruded_rectangle",
+            "extruded_disc"
+          ]
+        },
+        "width": {
+          "type": "number",
+          "minimum": 0.1,
+          "maximum": 10000
+        },
+        "depth": {
+          "type": "number",
+          "minimum": 0.1,
+          "maximum": 10000
+        },
+        "thickness": {
+          "type": "number",
+          "minimum": 0.1,
+          "maximum": 10000
+        }
+      }
+    },
+    "features": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 16,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "id",
+          "x",
+          "y",
+          "diameter"
+        ],
+        "properties": {
+          "kind": {
+            "const": "through_hole"
+          },
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9_-]+$"
+          },
+          "x": {
+            "type": "number"
+          },
+          "y": {
+            "type": "number"
+          },
+          "diameter": {
+            "type": "number",
+            "minimum": 0.1,
+            "maximum": 10000
+          }
+        }
+      }
+    },
+    "cornerChamfer": {
+      "const": 0
+    },
+    "cornerRadius": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 5000
+    },
+    "bosses": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 4,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "id",
+          "x",
+          "y",
+          "diameter",
+          "height"
+        ],
+        "properties": {
+          "kind": {
+            "const": "cylindrical_boss"
+          },
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9_-]+$"
+          },
+          "x": {
+            "type": "number"
+          },
+          "y": {
+            "type": "number"
+          },
+          "diameter": {
+            "type": "number",
+            "minimum": 0.1,
+            "maximum": 10000
+          },
+          "height": {
+            "type": "number",
+            "minimum": 0.1,
+            "maximum": 10000
+          }
+        }
+      }
+    }
+  },
+  "$comment": "Bosses rise from the base top and are fused. Through holes cut the base and any boss they lie inside. Domain and CAD checks enforce clearances and one solid."
+}

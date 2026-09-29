@@ -34,3 +34,8 @@ test("unknown-operation ModelPlan fixture fails schema", () => {
 
   assert.equal(validate(instance), false);
 });
+
+test("named scene background plan fails schema", () => {
+  const validate = ajv.compile(modelPlanSchema as object);
+  assert.equal(validate({ intent: "background", operations: [{ op: "set_scene", background: "blue" }] }), false);
+});

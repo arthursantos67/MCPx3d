@@ -9,4 +9,7 @@ export * from "./system-prompt.ts";
 export * from "./generate-model-plan.ts";
 export * from "./structured-output.ts";
 export * from "./generate-scene.ts";
+export * from "./generate-cad-edit.ts";
+export * from "./generate-cad-part.ts";
+export * from "./generate-cad-program.ts";
 export * from "./plan-diagnostics.ts";
