@@ -27,6 +27,7 @@ class CadArtifact:
     step: bytes
     volume_mm3: float
     bounds_mm: tuple[float, float, float]
+    solid_count: int = 1
 
 
 def _validated_solid(workplane: Any) -> Any:

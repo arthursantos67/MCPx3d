@@ -1,7 +1,7 @@
 import { Ajv2020 } from 'ajv/dist/2020.js'
 import programSchema from '../../domain/schemas/cad-program.v3.schema.json' with { type: 'json' }
 import { type CadProgramSpec, type CadProgramStep, validateCadProgram } from '../../domain/ts/src/cad-program.ts'
-import type { AgentMessage, LLMProvider } from './provider.ts'
+import { ProviderRequestError, type AgentMessage, type LLMProvider } from './provider.ts'
 
 const strictSpecSchema = Object.fromEntries(Object.entries(programSchema).filter(([key]) => !['$schema', '$id', 'title', '$defs'].includes(key)))
 const strictOutputSchema = {
@@ -260,42 +260,66 @@ function parseOutcome(raw: unknown, previous: CadProgramSpec | undefined, reques
 export async function generateCadProgram(
   provider: LLMProvider, request: string, previous?: CadProgramSpec,
   checkGeometry?: (spec: CadProgramSpec) => Promise<string | null>,
+  options?: { readonly maxOutputTokens?: number },
 ): Promise<CadProgramOutcome> {
+  const maxOutputTokens = options?.maxOutputTokens ?? 9000
   const previousIssue = previous && checkGeometry ? await checkGeometry(previous) : null
   const generationRequest = previousIssue
     ? `${request}\n\nThe existing CAD draft failed validation: ${previousIssue}. Repair or rebuild it. You may remove or revise an unrequested earlier step if it prevents a requested feature from joining, cutting or retaining one connected solid. Preserve all requested features and dimensions.`
     : request
-  const outcome = await generateOnce(provider, generationRequest, previous, !!previousIssue)
+  const outcome = await generateOnce(provider, generationRequest, previous, !!previousIssue, maxOutputTokens)
   if (outcome.kind !== 'create' || !checkGeometry) return outcome
   let current: Extract<CadProgramOutcome, { kind: 'create' }> = outcome
   let issue = await checkGeometry(current.spec)
-  for (let attempt = 0; issue && attempt < 2; attempt++) {
-    const repaired = await repairGeometryStep(provider, current.spec, request, issue).catch(() => null)
-    if (repaired) {
-      const repairedIssue = await checkGeometry(repaired)
-      if (!repairedIssue) return { ...current, spec: repaired }
-      current = { ...current, spec: repaired }
-      issue = repairedIssue
-    }
-    const baseGuidance = /^CAD step [A-Za-z0-9_-]+ \(base\) (?:produces an invalid or empty solid|(?:polygon_prism|revolve_profile) profile )/.test(issue)
-      ? 'The base itself is invalid. For polygon_prism or revolve_profile, trace one simple boundary with no crossing, duplicate closing vertex or zero-length edge. If a complex outline remains unstable, rebuild it as a simple base plus overlapping unions and non-splitting cuts, keeping the requested opening and dimensions.'
-      : ''
-    const correction = `${request}\n\nThe complete CAD program is ${JSON.stringify(current.spec)}. The CAD engine rejected it: ${issue}. ${baseGuidance} Fix the failed step and any dependencies, preserving every requested feature, dimension and the part ID. A union must intersect existing material by positive volume. A cut must remove positive volume without splitting the remaining solid. If an unrequested earlier cut, opening or clearance prevents this, you may remove or revise that step instead of moving a requested feature away from its intended location. Return a complete corrected program.`
-    const revised = await generateOnce(provider, correction, current.spec, true).catch(() => null)
-    if (revised?.kind === 'create') {
-      current = revised
-      issue = await checkGeometry(current.spec)
+  const repairLocally = async () => {
+    for (let remaining = current.spec.steps.length; issue && remaining > 0; remaining--) {
+      const moved = await repairNoOpPattern(current.spec, issue, checkGeometry)
+        ?? await repairMissedThroughCut(current.spec, request, issue, checkGeometry)
+        ?? await repairSeparatedUnion(current.spec, request, issue, checkGeometry)
+      if (!moved) break
+      current = { ...current, spec: moved.spec, assumptions: [...current.assumptions, moved.assumption] }
+      issue = moved.issue
     }
   }
-  for (let remaining = current.spec.steps.length; issue && remaining > 0; remaining--) {
-    const moved = await repairSeparatedUnion(current.spec, request, issue, checkGeometry)
-    if (!moved) break
-    current = {
-      ...current,
-      spec: moved.spec,
-      assumptions: [...current.assumptions, `A posição de ${moved.stepId} foi ajustada para conectar a peça.`],
+  const ignoreInvalidCorrection = (error: unknown): null => {
+    if (error instanceof ProviderRequestError ||
+        (error instanceof DOMException && error.name === 'AbortError')) throw error
+    return null
+  }
+  // A repair can reveal a later invalid step. Continue only when geometry has
+  // changed, with a fixed budget so a stubborn provider cannot loop forever.
+  for (let round = 0; issue && round < 4; round++) {
+    const startingSpec = JSON.stringify(current.spec)
+    await repairLocally()
+    for (let attempt = 0; issue && attempt < 2; attempt++) {
+      const repaired = await repairGeometryStep(provider, current.spec, request, issue).catch(ignoreInvalidCorrection)
+      if (repaired) {
+        const repairedIssue = await checkGeometry(repaired)
+        if (!repairedIssue) return { ...current, spec: repaired }
+        current = { ...current, spec: repaired }
+        issue = repairedIssue
+      }
+      const baseGuidance = /^CAD step [A-Za-z0-9_-]+ \(base\) (?:produces an invalid or empty solid|(?:polygon_prism|revolve_profile) profile )/.test(issue)
+        ? 'The base itself is invalid. For polygon_prism or revolve_profile, trace one simple boundary with no crossing, duplicate closing vertex or zero-length edge. If a complex outline remains unstable, rebuild it as a simple base plus overlapping unions and non-splitting cuts, keeping the requested opening and dimensions.'
+        : ''
+      const failingStep = current.spec.steps.find((step) => step.id === /^CAD step ([A-Za-z0-9_-]+)/.exec(issue ?? '')?.[1])
+      const patternGuidance = failingStep?.op === 'union' && failingStep.pattern &&
+        /CAD step [A-Za-z0-9_-]+ instance \d+ does not change the solid/.test(issue)
+        ? 'A repeated instance adds no material. Check whether a diameter-spanning primitive centered on the rotation axis coincides with an earlier instance; instead place one shorter radial feature at the outer wall and repeat it, preserving the requested count.'
+        : ''
+      const cutGuidance = failingStep?.op === 'cut' &&
+        /CAD step [A-Za-z0-9_-]+ instance \d+ does not change the solid/.test(issue)
+        ? 'The cutter does not remove material. Compare the tool and solid bounds on X, Y and Z. Align the cutter across the intended wall thickness while preserving its opening location on the other two axes; every patterned instance must remove material.'
+        : ''
+      const correction = `${request}\n\nThe complete CAD program is ${JSON.stringify(current.spec)}. The CAD engine rejected it: ${issue}. ${baseGuidance} ${patternGuidance} ${cutGuidance} Fix the failed step and any dependencies, preserving every requested feature, dimension and the part ID. A union must intersect existing material by positive volume. A cut must remove positive volume without splitting the remaining solid. If an unrequested earlier cut, opening or clearance prevents this, you may remove or revise that step instead of moving a requested feature away from its intended location. Return a complete corrected program.`
+      const revised = await generateOnce(provider, correction, current.spec, true, maxOutputTokens).catch(ignoreInvalidCorrection)
+      if (revised?.kind === 'create') {
+        current = revised
+        issue = await checkGeometry(current.spec)
+      }
     }
-    issue = moved.issue
+    await repairLocally()
+    if (JSON.stringify(current.spec) === startingSpec) break
   }
   if (issue) throw new Error(`A geração automática não conseguiu validar a peça. O rascunho anterior foi preservado. Última falha: ${issue}`)
   return current
@@ -325,11 +349,90 @@ function parseDiagnosticPoint(value: string): { x: number; y: number; z: number 
   return result
 }
 
+async function repairMissedThroughCut(
+  spec: CadProgramSpec, request: string, issue: string,
+  checkGeometry: (spec: CadProgramSpec) => Promise<string | null>,
+): Promise<{ spec: CadProgramSpec; issue: string | null; assumption: string } | null> {
+  const match = /^CAD step ([A-Za-z0-9_-]+) instance \d+ does not change the solid; current solid bounds: ([^;]+); tool bounds: ([^;]+)/.exec(issue)
+  if (!match) return null
+  const index = spec.steps.findIndex((step) => step.id === match[1])
+  if (index < 0 || spec.steps[index].op !== 'cut') return null
+  const solid = parseSolidBounds(match[2])
+  const tool = parseSolidBounds(match[3])
+  if (!solid || !tool) return null
+  const separated = axes.filter((axis) => tool[axis].min >= solid[axis].max || tool[axis].max <= solid[axis].min)
+  if (separated.length !== 1) return null
+  const axis = separated[0]
+  const solidSpan = solid[axis].max - solid[axis].min
+  const toolSpan = tool[axis].max - tool[axis].min
+  const gap = tool[axis].min >= solid[axis].max
+    ? tool[axis].min - solid[axis].max : solid[axis].min - tool[axis].max
+  // Centering a cutter through thin stock is safe to propose only when its
+  // length can span that stock and the missed distance is small relative to it.
+  if (toolSpan < solidSpan + 0.5 || gap > toolSpan / 2 ||
+      new RegExp(`\\b${axis}\\s*[:=]\\s*-?\\d`, 'i').test(request) ||
+      axes.some((other) => other !== axis &&
+        Math.min(tool[other].max, solid[other].max) <= Math.max(tool[other].min, solid[other].min))) return null
+
+  const old = spec.steps[index]
+  const offset = (solid[axis].min + solid[axis].max - tool[axis].min - tool[axis].max) / 2
+  const position = { ...old.position, [axis]: Number((old.position[axis] + offset).toFixed(6)) }
+  const revised: CadProgramSpec = { ...spec, steps: spec.steps.map((step, stepIndex) =>
+    stepIndex === index ? { ...step, position } as CadProgramStep : step) }
+  try { validateCadProgram(revised) } catch { return null }
+  const nextIssue = await checkGeometry(revised)
+  const nextIndex = spec.steps.findIndex((step) => step.id === /^CAD step ([A-Za-z0-9_-]+)/.exec(nextIssue ?? '')?.[1])
+  if (nextIssue && nextIndex <= index) return null
+  return { spec: revised, issue: nextIssue,
+    assumption: `O corte ${old.id} foi centralizado na espessura da peça ao longo de ${axis.toUpperCase()} e validado pelo motor CAD.` }
+}
+
+async function repairNoOpPattern(
+  spec: CadProgramSpec, issue: string,
+  checkGeometry: (spec: CadProgramSpec) => Promise<string | null>,
+): Promise<{ spec: CadProgramSpec; issue: string | null; assumption: string } | null> {
+  const match = /^CAD step ([A-Za-z0-9_-]+) instance (\d+) does not change the solid; current solid bounds: ([^;]+); tool bounds:/.exec(issue)
+  if (!match) return null
+  const index = spec.steps.findIndex((step) => step.id === match[1])
+  if (index < 0) return null
+  const step = spec.steps[index]
+  if (step.op !== 'union' || step.shape !== 'box' || step.pattern?.kind !== 'circular' ||
+      Object.values(step.rotation).some((angle) => Math.abs(angle) > 1e-6)) return null
+  const solid = parseSolidBounds(match[3])
+  if (!solid) return null
+  const pivot = step.pattern.center ?? { x: 0, y: 0, z: 0 }
+  const radialAxes = axes.filter((axis) => axis !== (step.pattern?.kind === 'circular' ? step.pattern.axis ?? 'z' : 'z'))
+  const dimension = { x: 'width', y: 'depth', z: 'height' } as const
+  for (const axis of radialAxes) {
+    const field = dimension[axis]
+    const extent = step[field]
+    const hostSpan = solid[axis].max - solid[axis].min
+    if (extent < hostSpan * 0.8 || Math.abs(step.position[axis] - pivot[axis]) > Math.max(1, extent * 0.1)) continue
+    // A centered feature spanning the diameter repeats onto itself after half a turn.
+    // Model one outward radial feature instead, then validate every patterned instance.
+    for (const fraction of [0.25, 0.33]) {
+      for (const side of [1, -1]) {
+        const position = { ...step.position, [axis]: side > 0 ? solid[axis].max : solid[axis].min }
+        const revisedStep = { ...step, [field]: Math.max(1, Math.min(extent * fraction, hostSpan / 3)), position }
+        const revised: CadProgramSpec = { ...spec, steps: spec.steps.map((item, itemIndex) => itemIndex === index ? revisedStep : item) }
+        try { validateCadProgram(revised) } catch { continue }
+        const nextIssue = await checkGeometry(revised)
+        const nextIndex = spec.steps.findIndex((item) => item.id === /^CAD step ([A-Za-z0-9_-]+)/.exec(nextIssue ?? '')?.[1])
+        if (!nextIssue || nextIndex > index) {
+          return { spec: revised, issue: nextIssue,
+            assumption: `A repetição de ${step.id} foi corrigida para usar um recurso radial externo, preservando a quantidade de instâncias.` }
+        }
+      }
+    }
+  }
+  return null
+}
+
 async function repairSeparatedUnion(
   spec: CadProgramSpec, request: string, issue: string,
   checkGeometry: (spec: CadProgramSpec) => Promise<string | null>,
-): Promise<{ spec: CadProgramSpec; issue: string | null; stepId: string } | null> {
-  const match = /^CAD step ([A-Za-z0-9_-]+)(?: instance \d+)? \(union\) leaves \d+ separate solids; current solid bounds: ([^;]+); tool bounds: ([^;]+); bounding boxes do not overlap/.exec(issue)
+): Promise<{ spec: CadProgramSpec; issue: string | null; assumption: string } | null> {
+  const match = /^CAD step ([A-Za-z0-9_-]+)(?: instance \d+)? \(union\) leaves \d+ separate solids; current solid bounds: ([^;]+); tool bounds: ([^;]+); bounding boxes (?:do not overlap|overlap, but the solids may be separated by an opening or earlier cut)/.exec(issue)
   if (!match) return null
   const index = spec.steps.findIndex((step) => step.id === match[1])
   if (index < 0 || spec.steps[index].op !== 'union') return null
@@ -337,7 +440,6 @@ async function repairSeparatedUnion(
   const tool = parseSolidBounds(match[3])
   if (!solid || !tool) return null
   const separated = axes.filter((axis) => tool[axis].min >= solid[axis].max || tool[axis].max <= solid[axis].min)
-  if (!separated.length) return null
   // Exact coordinates from the request take precedence over an automatic placement guess.
   const explicitCoordinate = (axis: Axis) => new RegExp(`\\b${axis}\\s*[:=]\\s*-?\\d`, 'i').test(request)
   if (separated.some(explicitCoordinate)) return null
@@ -354,7 +456,7 @@ async function repairSeparatedUnion(
     }
     const nextIssue = await checkGeometry(revised)
     if (!nextIssue || spec.steps.findIndex((step) => step.id === /^CAD step ([A-Za-z0-9_-]+)/.exec(nextIssue)?.[1]) > index) {
-      return { spec: revised, issue: nextIssue, stepId: match[1] }
+      return { spec: revised, issue: nextIssue, assumption: `A posição de ${match[1]} foi ajustada para conectar a peça.` }
     }
     return null
   }
@@ -369,7 +471,7 @@ async function repairSeparatedUnion(
       for (const requestedOverlap of [1, 3, 5]) {
         const overlap = Math.min(requestedOverlap, ...axes.map((axis) => (tool[axis].max - tool[axis].min) / 3))
         const position = { ...spec.steps[index].position }
-        for (const axis of axes) position[axis] += direction[axis] * (1 + overlap / distance)
+        for (const axis of axes) position[axis] = Number((position[axis] + direction[axis] * (1 + overlap / distance)).toFixed(6))
         const result = await tryPosition(position)
         if (result) return result
       }
@@ -430,7 +532,8 @@ async function repairGeometryStep(
   const step = spec.steps[index]
   const union = step.op === 'union'
   const splitCut = match[2].startsWith('(cut)')
-  const fields = union ? [] : shapeFields[step.shape].filter((field) => field !== 'points')
+  const noOpPattern = step.pattern && match[2] === 'does not change the solid'
+  const fields = union && !noOpPattern ? [] : shapeFields[step.shape].filter((field) => field !== 'points')
   const schema = {
     type: 'object', additionalProperties: false, required: ['position', 'rotation'],
     properties: {
@@ -439,8 +542,10 @@ async function repairGeometryStep(
     },
   }
   const patch = await provider.generateStructured<unknown>([
-    { role: 'system', content: union
-      ? 'Repair the placement of one disconnected CAD union. Return corrected position and rotation for the named step. Coordinates are absolute millimeters; cylinders start along Z. The feature must intersect the already built solid by positive volume, not just touch its surface. Preserve requested dimensions and axis. If an earlier cut or opening separates the pieces, placement alone may not solve it; the full-program repair will then revise that earlier step.'
+    { role: 'system', content: noOpPattern
+      ? 'Repair one patterned CAD feature whose named instance adds no material. Return corrected position, rotation and shape dimensions for the named step. Preserve the pattern count and axis. Every repeated instance must add positive volume; a feature centered on the rotation axis and spanning the full diameter can repeat onto itself. Make one short radial feature that overlaps the host wall and extends outside it before repeating. Preserve explicitly requested dimensions.'
+      : union
+        ? 'Repair the placement of one disconnected CAD union. Return corrected position and rotation for the named step. Coordinates are absolute millimeters; cylinders start along Z. The feature must intersect the already built solid by positive volume, not just touch its surface. Preserve requested dimensions and axis. If an earlier cut or opening separates the pieces, placement alone may not solve it; the full-program repair will then revise that earlier step.'
       : splitCut
         ? 'Repair one CAD cutting step that disconnected the remaining solid. Return its corrected position, rotation and optional dimensions. The cut must still remove the requested material while leaving a continuous material bridge. Respect explicit dimensions and do not replace the requested feature with an unrelated cut.'
       : 'Repair one CAD construction step. Return only corrected position, rotation and optional dimensions for the named step. Coordinates are absolute millimeters. Cylinders start along Z and rotations are degrees. A cut must intersect the solid that exists before that step; changing only Z is insufficient if X, Y, rotation or length is wrong. Preserve the requested feature, its explicitly requested location and all other steps. Do not move a bore into another component merely to make the Boolean operation pass.' },
@@ -466,14 +571,14 @@ function vectorHintValid(value: unknown): value is { x: number; y: number; z: nu
   return ['x', 'y', 'z'].every((axis) => typeof vector[axis] === 'number' && Number.isFinite(vector[axis]))
 }
 
-async function generateOnce(provider: LLMProvider, request: string, previous?: CadProgramSpec, allowCutRemoval = false): Promise<CadProgramOutcome> {
+async function generateOnce(provider: LLMProvider, request: string, previous?: CadProgramSpec, allowCutRemoval = false, maxOutputTokens = 9000): Promise<CadProgramOutcome> {
   if (!request.trim()) throw new Error('Describe the CAD part first')
   const instructions = [
     'You are a mechanical CAD construction planner. Return a single connected manufacturable solid in millimeters.',
     'Build it from ordered primitives: box, cylinder, sphere, cone, polygon_prism, revolve_profile. The first step uses base; each later step uses union or cut.',
     'polygon_prism is an extruded closed XY outline: points are local x,y coordinates, height is centered around local Z. List vertices once in continuous boundary order, without repeating the first vertex; non-neighboring edges must never cross or touch. Use it for custom flat profiles.',
     'revolve_profile rotates a closed cross-section 360 degrees around local Z. Its points use x as nonnegative radius and y as axial Z height, both in mm. Use a simple non-self-intersecting profile without a duplicate closing point. Use it for stepped axial forms, hubs, grooves, pulleys and turned profiles; do not provide a height field for it.',
-    'Any non-base primitive may include a pattern: {kind:"circular",count,axis:"z",center:{x:0,y:0,z:0},sweepAngle:360} or {kind:"linear",count,offset:{x,y,z}}. The pattern count includes the original primitive. Use circular patterns for evenly spaced teeth, spokes, ribs, bolt holes or slots; use linear patterns for rows and repeated cuts. The same union or cut applies to every instance. Omit pattern entirely for a primitive that is not repeated; never use a count below 2.',
+    'Any non-base primitive may include a pattern: {kind:"circular",count,axis:"z",center:{x:0,y:0,z:0},sweepAngle:360} or {kind:"linear",count,offset:{x,y,z}}. The pattern count includes the original primitive. Use circular patterns for evenly spaced teeth, spokes, ribs, bolt holes or slots; use linear patterns for rows and repeated cuts. The same union or cut applies to every instance. For circular ribs, fins or teeth, model ONE short feature offset radially from the rotation axis, reaching into the host by positive volume and extending outward. A full-diameter feature centered on the axis repeats onto itself. Omit pattern entirely for a primitive that is not repeated; never use a count below 2.',
     'Each primitive is centered at its position. Cylinder and cone axes start along Z. Rotation x, y, z is in degrees and applied in that order.',
     'Every union must overlap the current solid by positive volume; every cut must remove positive volume and keep one connected solid.',
     'Respect every explicit dimension, hole count, position and angle in the user request; never silently omit a requested feature.',
@@ -487,7 +592,7 @@ async function generateOnce(provider: LLMProvider, request: string, previous?: C
     { role: 'system', content: instructions },
     { role: 'user', content: previous ? `Current CAD program:\n${JSON.stringify(previous)}\n\nRequested change: ${request}` : request },
   ]
-  const options = { temperature: 0, maxTokens: 9000 }
+  const options = { temperature: 0, maxTokens: maxOutputTokens }
   const first = await provider.generateStructured<unknown>(messages, generationSchema, options)
   let candidate = first
   try {

@@ -144,6 +144,49 @@ test("CAD generation stops when the geometry checker is unreachable", async () =
   assert.equal(controller.getState().isBusy, false);
 });
 
+test("CAD design routes a moving mechanism to a checked assembly", async () => {
+  const zero = { x: 0, y: 0, z: 0 };
+  const fixed = { kind: "fixed", axis: "z", minimum: 0, maximum: 0, value: 0, pitch: 0, group: "" };
+  const rotary = { kind: "rotary", axis: "x", minimum: 0, maximum: 360, value: 0, pitch: 0, group: "" };
+  const box = (id: string) => ({ decision: "create", question: "", assumptions: [], spec: {
+    schemaVersion: "3.0", units: "mm", partId: id,
+    steps: [{ id: "body", op: "base", shape: "box", position: zero, rotation: zero, width: 50, depth: 30, height: 20 }],
+  } });
+  const { provider, mock } = makeFakeProvider([
+    { kind: "assembly", reason: "fixed housing and rotating rotor" },
+    { decision: "create", partId: "drive", question: "", assumptions: [], components: [
+      { id: "housing", action: "build", description: "Fixed housing.", position: zero, motion: fixed },
+      { id: "rotor", action: "build", description: "Rotating rotor.", position: zero, motion: rotary },
+    ] },
+    box("housing"), box("rotor"),
+  ]);
+  const { api } = makeFakeApi(emptySpec());
+  const checkedParts: string[] = [];
+  const progress: string[] = [];
+  let checkedAssembly = false;
+  const controller = new ChatController(provider, {
+    ...api,
+    checkCadProgram: async (spec) => { checkedParts.push(spec.partId); return null; },
+    checkCadAssembly: async () => { checkedAssembly = true; return null; },
+  });
+  await controller.initialize();
+
+  const result = await controller.planCadDesign("Crie um motor com rotor móvel", undefined,
+    (event) => progress.push(`${event.phase}:${event.completed}/${event.components.length}`));
+
+  assert.equal(result.mode, "assembly");
+  assert.equal(result.outcome.kind, "create");
+  if (result.outcome.kind === "create") assert.equal(result.outcome.spec.components.length, 2);
+  assert.deepEqual(checkedParts, ["housing", "rotor"]);
+  assert.equal(checkedAssembly, true);
+  assert.equal(mock.calls.length, 4);
+  assert.deepEqual(progress, [
+    "planning:0/0", "building:0/2", "checking-component:0/2",
+    "building:1/2", "checking-component:1/2", "checking-assembly:2/2", "complete:2/2",
+  ]);
+  assert.equal(controller.getState().isBusy, false);
+});
+
 test("an exact recipe request applies saved geometry without calling the provider", async () => {
   const spec = emptySpec();
   const { provider, mock } = makeFakeProvider([]);

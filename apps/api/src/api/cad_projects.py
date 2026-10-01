@@ -7,6 +7,7 @@ from contextlib import closing
 from dataclasses import dataclass
 from pathlib import Path
 
+from domain.cad_assembly import CadAssemblySpec
 from domain.cad_part import CadPartSpec
 from domain.cad_program import CadProgramSpec
 from pydantic import TypeAdapter
@@ -14,7 +15,7 @@ from pydantic import TypeAdapter
 from api.cad_adapter import CadArtifact
 from api.projects import RevisionConflictError
 
-CadSpec = CadPartSpec | CadProgramSpec
+CadSpec = CadPartSpec | CadProgramSpec | CadAssemblySpec
 _spec_adapter: TypeAdapter[CadSpec] = TypeAdapter(CadSpec)
 
 
@@ -53,10 +54,14 @@ class CadProjectStore:
                     step_blob BLOB NOT NULL,
                     volume_mm3 REAL NOT NULL,
                     bounds_json TEXT NOT NULL,
+                    solid_count INTEGER NOT NULL DEFAULT 1,
                     PRIMARY KEY (project_id, revision),
                     FOREIGN KEY (project_id) REFERENCES cad_projects(id) ON DELETE CASCADE
                 )
             """)
+            columns = {row["name"] for row in connection.execute("PRAGMA table_info(cad_revisions)")}
+            if "solid_count" not in columns:
+                connection.execute("ALTER TABLE cad_revisions ADD COLUMN solid_count INTEGER NOT NULL DEFAULT 1")
 
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.path, timeout=10)
@@ -75,6 +80,7 @@ class CadProjectStore:
                 step=row["step_blob"],
                 volume_mm3=row["volume_mm3"],
                 bounds_mm=(bounds[0], bounds[1], bounds[2]),
+                solid_count=row["solid_count"],
             ),
         )
 
@@ -84,9 +90,9 @@ class CadProjectStore:
         spec: CadSpec, artifact: CadArtifact,
     ) -> None:
         connection.execute(
-            "INSERT INTO cad_revisions VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO cad_revisions (project_id, revision, spec_json, step_blob, volume_mm3, bounds_json, solid_count) VALUES (?, ?, ?, ?, ?, ?, ?)",
             (project_id, revision, spec.model_dump_json(exclude_none=True), artifact.step,
-             artifact.volume_mm3, json.dumps(artifact.bounds_mm)),
+             artifact.volume_mm3, json.dumps(artifact.bounds_mm), artifact.solid_count),
         )
 
     def create(self, spec: CadSpec, artifact: CadArtifact) -> CadRevision:

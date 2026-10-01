@@ -1,7 +1,10 @@
 import { useState } from 'react'
 import type { CadProgramSpec, CadProgramStep } from '../../../../packages/domain/ts/src/cad-program.ts'
-import type { CadProgramOutcome } from '../../../../packages/agent/src/generate-cad-program.ts'
-import { downloadCadProgramStep, saveCadProgram, type CadProgramProject } from '../api/client.ts'
+import type { CadAssemblySpec } from '../../../../packages/domain/ts/src/cad-assembly.ts'
+import type { CadDesignOutcome } from '../../../../packages/agent/src/classify-cad-design.ts'
+import { CadAssemblyValidationError, type CadAssemblyOutcome, type CadAssemblyProgress } from '../../../../packages/agent/src/generate-cad-assembly.ts'
+import { downloadCadAssemblyDraft, downloadCadProgramStep, downloadCadRevisionStl, saveCadProgram, type CadProgramProject } from '../api/client.ts'
+import CadAssemblyProgressView, { type CadProgressStatus } from './CadAssemblyProgressView.tsx'
 
 interface Props {
   readonly spec: CadProgramSpec
@@ -9,17 +12,25 @@ interface Props {
   readonly onChange: (spec: CadProgramSpec) => void
   readonly onSaved: (project: CadProgramProject) => void
   readonly onNew: () => void
-  readonly plan: (request: string, previous?: CadProgramSpec) => Promise<CadProgramOutcome>
+  readonly planDesign: (request: string, previous?: CadProgramSpec) => Promise<CadDesignOutcome>
+  readonly onAssemblyGenerated: (outcome: Extract<CadAssemblyOutcome, { kind: 'create' }>) => void
   readonly agentReady: boolean
   readonly onOpenProviderSettings: () => void
+  readonly cadProgress: CadAssemblyProgress | null
+  readonly cadProgressStatus: CadProgressStatus | null
+  readonly cadProgressUpdatedAt: number | null
+  readonly onRequestChanged: () => void
+  readonly cancelGeneration: () => void
 }
 
-export default function CadProgramPanel({ spec, project, onChange, onSaved, onNew, plan, agentReady, onOpenProviderSettings }: Props) {
+export default function CadProgramPanel({ spec, project, onChange, onSaved, onNew, planDesign, onAssemblyGenerated, agentReady, onOpenProviderSettings, cadProgress, cadProgressStatus, cadProgressUpdatedAt, onRequestChanged, cancelGeneration }: Props) {
   const [request, setRequest] = useState('')
   const [message, setMessage] = useState<string | null>(null)
+  const [failedAssemblySpec, setFailedAssemblySpec] = useState<CadAssemblySpec | null>(null)
   const [busy, setBusy] = useState(false)
   const [assumptions, setAssumptions] = useState<readonly string[]>([])
   const [newShape, setNewShape] = useState<CadProgramStep['shape']>('cylinder')
+  const dirty = !!project && JSON.stringify(spec) !== JSON.stringify(project.spec)
 
   const updateStep = (index: number, patch: Partial<CadProgramStep>) => onChange({ ...spec, steps: spec.steps.map((step, i) => i === index ? { ...step, ...patch } as CadProgramStep : step) })
   const setNumber = (index: number, field: string, value: number) => updateStep(index, { [field]: value } as Partial<CadProgramStep>)
@@ -37,22 +48,27 @@ export default function CadProgramPanel({ spec, project, onChange, onSaved, onNe
   }
   const generate = async () => {
     if (!request.trim()) return
-    setBusy(true); setMessage(null)
+    setBusy(true); setMessage(null); setFailedAssemblySpec(null)
     try {
-      const result = await plan(request, project ? spec : spec.steps.length > 1 ? spec : undefined)
-      if (result.kind === 'clarify') setMessage(result.question)
+      const result = await planDesign(request, project ? spec : spec.steps.length > 1 ? spec : undefined)
+      if (result.outcome.kind === 'clarify') setMessage(result.outcome.question)
+      else if (result.mode === 'assembly') onAssemblyGenerated(result.outcome)
       else {
-        onChange(result.spec); setAssumptions(result.assumptions)
+        onChange(result.outcome.spec); setAssumptions(result.outcome.assumptions)
         setMessage('Programa validado. Revise a geometria e salve a revisão.')
       }
-    } catch (error) { setMessage(error instanceof Error ? error.message : String(error)) }
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error)
+      if (error instanceof CadAssemblyValidationError) setFailedAssemblySpec(error.spec)
+      setMessage(/status 429/.test(detail) ? `${detail} Aguarde a cota liberar e repita o mesmo pedido nesta aba. Se houver componentes concluídos, eles serão reutilizados.` : detail)
+    }
     finally { setBusy(false) }
   }
   const save = async () => {
     setBusy(true); setMessage(null)
     try {
       const saved = await saveCadProgram(spec, project?.spec.partId === spec.partId ? project : null)
-      onSaved(saved); setMessage(`Revisão ${saved.revision} salva. STEP disponível.`)
+      onSaved(saved); onChange(saved.spec); setMessage(`Revisão ${saved.revision} salva. STEP e STL disponíveis.`)
     } catch (error) { setMessage(error instanceof Error ? error.message : String(error)) }
     finally { setBusy(false) }
   }
@@ -62,14 +78,17 @@ export default function CadProgramPanel({ spec, project, onChange, onSaved, onNe
 
   return <div className="cad-program">
     <h2>Construção CAD</h2>
-    <button type="button" onClick={() => { onNew(); setMessage(null); setAssumptions([]); setRequest('') }}>Nova peça</button>
-    <p>Descreva a peça. O agente combina sólidos e cortes; cada etapa pode ser ajustada abaixo.</p>
-    <textarea aria-label="Describe CAD part" rows={5} value={request} onChange={(event) => setRequest(event.target.value)} placeholder="Ex.: suporte com base retangular, tubo inclinado e quatro furos de fixação..." />
+    <button type="button" disabled={busy} onClick={() => { onNew(); setMessage(null); setAssumptions([]); setRequest(''); setFailedAssemblySpec(null) }}>Nova peça</button>
+    <p>Descreva o projeto. Uma peça única usa sólidos e cortes; mecanismos com corpos independentes abrem automaticamente em Conjunto.</p>
+    <textarea aria-label="Describe CAD part" rows={5} value={request} disabled={busy} onChange={(event) => { setRequest(event.target.value); onRequestChanged() }} placeholder="Ex.: suporte com base retangular, tubo inclinado e quatro furos de fixação..." />
     <div className="cad-program__actions">
-      <button type="button" disabled={busy || !agentReady || !request.trim()} onClick={() => void generate()}>{project ? 'Modificar com IA' : 'Criar com IA'}</button>
+      <button type="button" disabled={busy || !agentReady || !request.trim()} onClick={() => void generate()}>{cadProgressStatus === 'paused' && !!cadProgress?.components.length ? 'Retomar geração' : project ? 'Modificar com IA' : 'Criar com IA'}</button>
+      {busy && <button type="button" onClick={cancelGeneration}>Cancelar geração</button>}
       {!agentReady && <button type="button" onClick={onOpenProviderSettings}>Configurar IA</button>}
     </div>
+    <CadAssemblyProgressView progress={cadProgress} status={cadProgressStatus} updatedAt={cadProgressUpdatedAt} compact />
     {message && <p role="status">{message}</p>}
+    {failedAssemblySpec && <button type="button" onClick={() => downloadCadAssemblyDraft(failedAssemblySpec)}>Baixar rascunho com erro (JSON)</button>}
     {assumptions.length > 0 && <div><strong>Premissas</strong><ul>{assumptions.map((item, i) => <li key={i}>{item}</li>)}</ul></div>}
     <label className="cad-program__field">Identificador
       <input value={spec.partId} onChange={(event) => onChange({ ...spec, partId: event.target.value })} disabled={!!project} />
@@ -134,7 +153,9 @@ export default function CadProgramPanel({ spec, project, onChange, onSaved, onNe
       <button type="button" disabled={spec.steps.length >= 32} onClick={() => addStep(newShape, 'cut')}>Cortar</button>
     </div>
     <div className="cad-program__actions"><button type="button" disabled={busy} onClick={() => void save()}>Salvar revisão</button>
-      <button type="button" disabled={!project || busy} onClick={() => project && void downloadCadProgramStep(project).catch((error: unknown) => setMessage(error instanceof Error ? error.message : String(error)))}>Baixar STEP</button></div>
+      <button type="button" disabled={!project || busy || dirty} onClick={() => project && void downloadCadProgramStep(project).catch((error: unknown) => setMessage(error instanceof Error ? error.message : String(error)))}>Baixar STEP</button>
+      <button type="button" disabled={!project || busy || dirty} onClick={() => project && void downloadCadRevisionStl(project, project.revision).catch((error: unknown) => setMessage(error instanceof Error ? error.message : String(error)))}>Baixar STL</button></div>
+    {dirty && <p>Salve a geometria atual para baixar esta revisão.</p>}
     {project && <p>Projeto {project.projectId} · revisão {project.revision} · volume {project.inspection.volumeMm3.toFixed(1)} mm³</p>}
   </div>
 }

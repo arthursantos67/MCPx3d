@@ -6,12 +6,16 @@ import ChatPanel from '../chat/ChatPanel.tsx'
 import { useChatController } from '../chat/useChatController.ts'
 import ProviderSettings from '../settings/ProviderSettings.tsx'
 import X3DPreviewFrame from '../viewer/X3DPreviewFrame.tsx'
-import { getMcpHealth, meshCadProgram, resumeCadProgram, type CadProgramMesh, type CadProgramProject, type CadPlateInput, type McpHealth } from '../api/client.ts'
+import { clearActiveCadAssembly, clearActiveCadProgram, getMcpHealth, meshCadProgram, meshCadAssembly, resumeCadProgram, resumeCadAssembly, type CadProgramMesh, type CadProgramProject, type CadAssemblyProject, type CadPlateInput, type McpHealth } from '../api/client.ts'
 import type { CadProgramSpec } from '../../../../packages/domain/ts/src/cad-program.ts'
+import type { CadAssemblySpec } from '../../../../packages/domain/ts/src/cad-assembly.ts'
+import type { CadAssemblyProgress } from '../../../../packages/agent/src/generate-cad-assembly.ts'
 import DownloadMenu from './DownloadMenu.tsx'
 import CadPlatePanel from './CadPlatePanel.tsx'
 import CadTopView from './CadTopView.tsx'
 import CadProgramPanel from './CadProgramPanel.tsx'
+import CadAssemblyPanel from './CadAssemblyPanel.tsx'
+import CadAssemblyProgressView, { type CadProgressStatus } from './CadAssemblyProgressView.tsx'
 import { initialCadProgram } from './cadProgramDraft.ts'
 import CadMeshView from './CadMeshView.tsx'
 import { initialCadPlate } from './cadPlateDraft.ts'
@@ -35,16 +39,24 @@ import StatusBar from './StatusBar.tsx'
  * as unavailable, it also offers a direct way to configure that alternative.
  */
 function WorkspaceShell() {
-  const { state, sendMessage, applyRecipe, planCadEdit, planCadCreate, planCadProgram, importManifest, cancelGeneration, canSend, retryProject, resetProject, renameProject, persistProjectName, setViewerStatus } = useChatController()
+  const { state, sendMessage, applyRecipe, planCadEdit, planCadCreate, planCadDesign, planCadAssembly, importManifest, cancelGeneration, canSend, retryProject, resetProject, renameProject, persistProjectName, setViewerStatus } = useChatController()
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [workspaceMode, setWorkspaceMode] = useState<'web3d' | 'cad'>('web3d')
   const [cadOpen, setCadOpen] = useState(false)
   const [cadDraft, setCadDraft] = useState<CadPlateInput>(initialCadPlate)
-  const [cadEditor, setCadEditor] = useState<'program' | 'templates'>('program')
+  const [cadEditor, setCadEditor] = useState<'program' | 'templates' | 'assembly'>('program')
   const [programSpec, setProgramSpec] = useState<CadProgramSpec>(initialCadProgram)
   const [programProject, setProgramProject] = useState<CadProgramProject | null>(null)
   const [programMesh, setProgramMesh] = useState<CadProgramMesh | null>(null)
   const [programError, setProgramError] = useState<string | null>(null)
+  const [assemblySpec, setAssemblySpec] = useState<CadAssemblySpec | null>(null)
+  const [assemblyProject, setAssemblyProject] = useState<CadAssemblyProject | null>(null)
+  const [assemblyMesh, setAssemblyMesh] = useState<CadProgramMesh | null>(null)
+  const [assemblyError, setAssemblyError] = useState<string | null>(null)
+  const [assemblyAssumptions, setAssemblyAssumptions] = useState<readonly string[]>([])
+  const [cadProgress, setCadProgress] = useState<CadAssemblyProgress | null>(null)
+  const [cadProgressStatus, setCadProgressStatus] = useState<CadProgressStatus | null>(null)
+  const [cadProgressUpdatedAt, setCadProgressUpdatedAt] = useState<number | null>(null)
   const [mcpHealth, setMcpHealth] = useState<McpHealth | null>(null)
   const [activePanel, setActivePanel] = useState<'chat' | 'viewer'>('chat')
   const [importError, setImportError] = useState<string | null>(null)
@@ -62,6 +74,9 @@ function WorkspaceShell() {
     void resumeCadProgram().then((saved) => {
       if (saved) { setProgramProject(saved); setProgramSpec(saved.spec) }
     }).catch((error: unknown) => setProgramError(error instanceof Error ? error.message : String(error)))
+    void resumeCadAssembly().then((saved) => {
+      if (saved) { setAssemblyProject(saved); setAssemblySpec(saved.spec) }
+    }).catch((error: unknown) => setAssemblyError(error instanceof Error ? error.message : String(error)))
   }, [])
 
   useEffect(() => {
@@ -76,7 +91,51 @@ function WorkspaceShell() {
     return () => { active = false; window.clearTimeout(timer) }
   }, [programSpec])
 
+  useEffect(() => {
+    if (!assemblySpec) { setAssemblyMesh(null); return }
+    let active = true
+    const timer = window.setTimeout(() => {
+      void meshCadAssembly(assemblySpec).then((mesh) => {
+        if (active) { setAssemblyMesh(mesh); setAssemblyError(null) }
+      }).catch((error: unknown) => {
+        if (active) { setAssemblyMesh(null); setAssemblyError(error instanceof Error ? error.message : String(error)) }
+      })
+    }, 400)
+    return () => { active = false; window.clearTimeout(timer) }
+  }, [assemblySpec])
+
   const hasProjectContent = state.messages.length > 0 || (state.modelSpec?.revision ?? 0) > 0
+  const clearCadProgress = () => { setCadProgress(null); setCadProgressStatus(null); setCadProgressUpdatedAt(null) }
+  const reportCadProgress = (progress: CadAssemblyProgress) => {
+    setCadProgress(progress)
+    setCadProgressUpdatedAt(Date.now())
+  }
+  const trackCadFailure = (error: unknown) => {
+    setCadProgressStatus(/status 429/.test(error instanceof Error ? error.message : String(error)) ? 'paused' : 'failed')
+  }
+  const cancelCadGeneration = () => { cancelGeneration(); setCadProgressStatus('failed') }
+  const planCadAssemblyWithProgress = async (request: string, previous?: CadAssemblySpec) => {
+    setCadProgress({ phase: 'planning', components: [], completed: 0 })
+    setCadProgressStatus('running')
+    setCadProgressUpdatedAt(Date.now())
+    try {
+      const result = await planCadAssembly(request, previous, reportCadProgress)
+      if (result.kind === 'create') setCadProgressStatus('complete')
+      else clearCadProgress()
+      return result
+    } catch (error) { trackCadFailure(error); throw error }
+  }
+  const planCadDesignWithProgress = async (request: string, previous?: CadProgramSpec) => {
+    setCadProgress({ phase: 'classifying', components: [], completed: 0 })
+    setCadProgressStatus('running')
+    setCadProgressUpdatedAt(Date.now())
+    try {
+      const result = await planCadDesign(request, previous, reportCadProgress)
+      if (result.mode === 'assembly' && result.outcome.kind === 'create') setCadProgressStatus('complete')
+      else clearCadProgress()
+      return result
+    } catch (error) { trackCadFailure(error); throw error }
+  }
   const requestReset = () => {
     if (!hasProjectContent || window.confirm('Reset this project? The model and conversation will be cleared.')) {
       resetProject()
@@ -141,7 +200,7 @@ function WorkspaceShell() {
         {workspaceMode === 'cad' && <button type="button" className="workspace-topbar__import-button" onClick={() => setCadOpen((value) => !value)} aria-expanded={cadOpen} aria-controls="workspace-cad-sidebar">
           {cadOpen ? 'Hide CAD options' : 'Show CAD options'}
         </button>}
-        {workspaceMode === 'cad' && <div role="group" aria-label="CAD editor"><button type="button" aria-pressed={cadEditor === 'program'} onClick={() => setCadEditor('program')}>Construção livre</button><button type="button" aria-pressed={cadEditor === 'templates'} onClick={() => setCadEditor('templates')}>Moldes</button></div>}
+        {workspaceMode === 'cad' && <div role="group" aria-label="CAD editor"><button type="button" aria-pressed={cadEditor === 'program'} onClick={() => setCadEditor('program')}>Construção livre</button><button type="button" aria-pressed={cadEditor === 'assembly'} onClick={() => setCadEditor('assembly')}>Conjunto</button><button type="button" aria-pressed={cadEditor === 'templates'} onClick={() => setCadEditor('templates')}>Moldes</button></div>}
         {workspaceMode === 'web3d' && importError && <span role="alert">{importError}</span>}
         {workspaceMode === 'web3d' && <button type="button" className="workspace-topbar__reset-button" onClick={requestReset} disabled={state.isBusy}>
           Reset
@@ -206,20 +265,24 @@ function WorkspaceShell() {
         </section>
 
         <aside id="workspace-cad-sidebar" className="workspace-cad-sidebar" hidden={!cadOpen}>
-          {cadEditor === 'program' ? <CadProgramPanel spec={programSpec} project={programProject} onChange={setProgramSpec} onSaved={setProgramProject} onNew={() => { setProgramProject(null); setProgramSpec(initialCadProgram) }} plan={planCadProgram} agentReady={state.agentPhase === 'ready'} onOpenProviderSettings={() => setSettingsOpen(true)} />
-            : <CadPlatePanel onClose={() => setCadOpen(false)} onDraftChange={setCadDraft} planEdit={planCadEdit} planCreate={planCadCreate} agentReady={state.agentPhase === 'ready'} onOpenProviderSettings={() => setSettingsOpen(true)} />}
+          {cadEditor === 'program' ? <CadProgramPanel spec={programSpec} project={programProject} onChange={setProgramSpec} onSaved={setProgramProject} onNew={() => { clearActiveCadProgram(); setProgramProject(null); setProgramSpec(initialCadProgram); clearCadProgress() }} planDesign={planCadDesignWithProgress} onAssemblyGenerated={(result) => { clearActiveCadAssembly(); setAssemblyProject(null); setAssemblySpec(result.spec); setAssemblyAssumptions(result.assumptions); setCadEditor('assembly'); setCadOpen(true) }} agentReady={state.agentPhase === 'ready'} onOpenProviderSettings={() => setSettingsOpen(true)} cadProgress={cadProgress} cadProgressStatus={cadProgressStatus} cadProgressUpdatedAt={cadProgressUpdatedAt} onRequestChanged={clearCadProgress} cancelGeneration={cancelCadGeneration} />
+            : cadEditor === 'assembly' ? <CadAssemblyPanel spec={assemblySpec} project={assemblyProject} onChange={setAssemblySpec} onSaved={setAssemblyProject} onNew={() => { clearActiveCadAssembly(); setAssemblyProject(null); setAssemblySpec(null); setAssemblyAssumptions([]); clearCadProgress() }} plan={planCadAssemblyWithProgress} agentReady={state.agentPhase === 'ready'} onOpenProviderSettings={() => setSettingsOpen(true)} initialAssumptions={assemblyAssumptions} cadProgress={cadProgress} cadProgressStatus={cadProgressStatus} cadProgressUpdatedAt={cadProgressUpdatedAt} onRequestChanged={clearCadProgress} cancelGeneration={cancelCadGeneration} />
+              : <CadPlatePanel onClose={() => setCadOpen(false)} onDraftChange={setCadDraft} planEdit={planCadEdit} planCreate={planCadCreate} agentReady={state.agentPhase === 'ready'} onOpenProviderSettings={() => setSettingsOpen(true)} />}
         </aside>
         <section className="workspace-cad-preview" aria-label="CAD draft preview">
           <div className="workspace-cad-preview__canvas">
-            {cadEditor === 'program' ? <><div className="workspace-cad-preview__heading">CAD · prévia 3D (mm) · arraste para girar</div><CadMeshView mesh={programMesh} />{programError && <p role="alert">{programError}</p>}</> : <><div className="workspace-cad-preview__heading">CAD draft · orthographic views (mm)</div><CadTopView part={cadDraft} /></>}
+            {cadProgress && cadEditor !== 'templates' && <CadAssemblyProgressView progress={cadProgress} status={cadProgressStatus} updatedAt={cadProgressUpdatedAt} />}
+            {cadEditor === 'program' ? <><div className="workspace-cad-preview__heading">CAD · prévia 3D (mm) · arraste para girar</div><CadMeshView mesh={programMesh} />{programError && <p role="alert">{programError}</p>}</>
+              : cadEditor === 'assembly' ? <><div className="workspace-cad-preview__heading">Conjunto CAD · corpos independentes (mm) · arraste para girar</div><CadMeshView mesh={assemblyMesh} />{assemblyError && <p role="alert">{assemblyError}</p>}</>
+                : <><div className="workspace-cad-preview__heading">CAD draft · orthographic views (mm)</div><CadTopView part={cadDraft} /></>}
           </div>
         </section>
       </div>
 
       {workspaceMode === 'cad'
         ? <footer className="workspace-statusbar" aria-label="CAD status">
-          <span>CAD: {cadEditor === 'program' ? programSpec.partId : cadDraft.partId}</span>
-          <span>{cadEditor === 'program' ? `${programSpec.steps.length} etapas` : `${1 + (cadDraft.additionalHoles?.length ?? 0) + (cadDraft.upright?.holes.length ?? 0)} through holes`}</span>
+          <span>CAD: {cadEditor === 'program' ? programSpec.partId : cadEditor === 'assembly' ? assemblySpec?.partId ?? 'novo conjunto' : cadDraft.partId}</span>
+          <span>{cadProgress && cadProgress.components.length > 0 && cadEditor !== 'templates' ? `${cadProgress.completed}/${cadProgress.components.length} componentes ${cadProgressStatus === 'paused' ? '· pausado' : cadProgressStatus === 'running' ? '· em andamento' : ''}` : cadEditor === 'program' ? `${programSpec.steps.length} etapas` : cadEditor === 'assembly' ? `${assemblySpec?.components.length ?? 0} corpos` : `${1 + (cadDraft.additionalHoles?.length ?? 0) + (cadDraft.upright?.holes.length ?? 0)} through holes`}</span>
           <span>AI: {state.agentProvider} ({state.agentPhase})</span>
         </footer>
         : <StatusBar state={state} mcpHealth={mcpHealth} />}

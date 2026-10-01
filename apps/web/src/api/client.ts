@@ -13,6 +13,7 @@ import type { ModelPlan } from "../../../../packages/domain/ts/src/model-plan.ts
 import type { ModelSpec } from "../../../../packages/domain/ts/src/model-spec.ts";
 import { type CadPartSpec, validateCadPartDomainRules } from "../../../../packages/domain/ts/src/cad-part.ts";
 import { type CadProgramSpec, validateCadProgram } from "../../../../packages/domain/ts/src/cad-program.ts";
+import { type CadAssemblySpec, validateCadAssembly } from "../../../../packages/domain/ts/src/cad-assembly.ts";
 import { type CadEditPlan, type CadOperation, type CadParameter, validateCadEditPlan } from "../../../../packages/domain/ts/src/cad-plan.ts";
 
 export interface ValidationSummary {
@@ -476,6 +477,19 @@ export async function downloadCadRevisionStep(project: CadProjectResponse, revis
   window.setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
+export async function downloadCadRevisionStl(project: { readonly projectId: string; readonly spec: { readonly partId: string } }, revision: number): Promise<void> {
+  const response = await fetch(`${baseUrl()}/api/cad/projects/${encodeURIComponent(project.projectId)}/revisions/${revision}/stl`);
+  if (!response.ok) return throwCadApiError(response);
+  const url = URL.createObjectURL(await response.blob());
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `${project.spec.partId}-r${revision}.stl`;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
 export interface CadProgramProject {
   readonly projectId: string;
   readonly revision: number;
@@ -487,9 +501,12 @@ export interface CadProgramMesh {
   readonly vertices: readonly (readonly [number, number, number])[];
   readonly triangles: readonly (readonly [number, number, number])[];
   readonly boundsMm: readonly [number, number, number];
+  readonly components?: readonly { readonly id: string; readonly triangles: number; readonly volumeMm3: number }[];
 }
 
 const CAD_PROGRAM_KEY = "ai-web3d:cad-program";
+
+export function clearActiveCadProgram(): void { localStorage.removeItem(CAD_PROGRAM_KEY); }
 
 export async function resumeCadProgram(): Promise<CadProgramProject | null> {
   const id = localStorage.getItem(CAD_PROGRAM_KEY);
@@ -544,6 +561,100 @@ export async function downloadCadProgramStep(project: CadProgramProject): Promis
   const link = document.createElement('a');
   link.href = url;
   link.download = `${project.spec.partId}-r${project.revision}.step`;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+export interface CadAssemblyProject {
+  readonly projectId: string;
+  readonly revision: number;
+  readonly spec: CadAssemblySpec;
+  readonly inspection: CadInspection;
+}
+
+const CAD_ASSEMBLY_KEY = 'ai-web3d:cad-assembly';
+
+export function clearActiveCadAssembly(): void { localStorage.removeItem(CAD_ASSEMBLY_KEY); }
+
+export async function resumeCadAssembly(): Promise<CadAssemblyProject | null> {
+  const id = localStorage.getItem(CAD_ASSEMBLY_KEY);
+  if (!id) return null;
+  const response = await fetch(`${baseUrl()}/api/cad/projects/${encodeURIComponent(id)}`);
+  if (response.status === 404) { localStorage.removeItem(CAD_ASSEMBLY_KEY); return null; }
+  if (!response.ok) return throwCadApiError(response);
+  const project = await response.json() as CadAssemblyProject;
+  if (project.spec.schemaVersion !== '4.0') { localStorage.removeItem(CAD_ASSEMBLY_KEY); return null; }
+  return project;
+}
+
+export async function checkCadAssembly(spec: CadAssemblySpec): Promise<string | null> {
+  validateCadAssembly(spec);
+  const response = await fetch(`${baseUrl()}/api/cad/assemblies/inspect`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(spec),
+  });
+  if (response.ok) return null;
+  try { return await throwCadApiError(response); }
+  catch (error) {
+    if (error instanceof ApiError && (error.code === 'CAD_GEOMETRY_INVALID' || error.code === 'INVALID_CAD_REQUEST')) return error.message;
+    throw error;
+  }
+}
+
+export async function meshCadAssembly(spec: CadAssemblySpec): Promise<CadProgramMesh> {
+  validateCadAssembly(spec);
+  const response = await fetch(`${baseUrl()}/api/cad/assemblies/mesh`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(spec),
+  });
+  if (!response.ok) return throwCadApiError(response);
+  return await response.json() as CadProgramMesh;
+}
+
+export async function saveCadAssembly(spec: CadAssemblySpec, project?: CadAssemblyProject | null): Promise<CadAssemblyProject> {
+  validateCadAssembly(spec);
+  const endpoint = project ? `/api/cad/projects/${encodeURIComponent(project.projectId)}/spec` : '/api/cad/projects';
+  const response = await fetch(`${baseUrl()}${endpoint}`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(project ? { expectedRevision: project.revision, spec } : { spec }),
+  });
+  if (!response.ok) return throwCadApiError(response);
+  const saved = await response.json() as CadAssemblyProject;
+  localStorage.setItem(CAD_ASSEMBLY_KEY, saved.projectId);
+  return saved;
+}
+
+export async function downloadCadAssemblyStep(project: CadAssemblyProject): Promise<void> {
+  const response = await fetch(`${baseUrl()}/api/cad/projects/${encodeURIComponent(project.projectId)}/revisions/${project.revision}/step`);
+  if (!response.ok) return throwCadApiError(response);
+  const url = URL.createObjectURL(await response.blob());
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `${project.spec.partId}-r${project.revision}.step`;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+export function downloadCadAssemblyDraft(spec: CadAssemblySpec): void {
+  const url = URL.createObjectURL(new Blob([JSON.stringify(spec, null, 2)], { type: 'application/json' }));
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `${spec.partId}-rascunho-com-erro.json`;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+export async function downloadCadComponentStl(project: CadAssemblyProject, componentId: string): Promise<void> {
+  const response = await fetch(`${baseUrl()}/api/cad/projects/${encodeURIComponent(project.projectId)}/revisions/${project.revision}/components/${encodeURIComponent(componentId)}/stl`);
+  if (!response.ok) return throwCadApiError(response);
+  const url = URL.createObjectURL(await response.blob());
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `${project.spec.partId}-${componentId}-r${project.revision}.stl`;
   document.body.append(link);
   link.click();
   link.remove();

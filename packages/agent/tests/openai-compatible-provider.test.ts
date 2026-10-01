@@ -340,6 +340,47 @@ test("uses Retry-After when a transient response supplies it", async () => {
   assert.deepEqual(delays, [3000]);
 });
 
+test("a 429 without a retry interval stops after one request", async () => {
+  let calls = 0;
+  const provider = new OpenAICompatibleProvider(CONFIG, fakeFetch(async () => {
+    calls += 1;
+    return { status: 429, body: { error: { status: "RESOURCE_EXHAUSTED" } } };
+  }));
+  await provider.initialize();
+
+  await assert.rejects(() => provider.generateStructured([], {}), /status 429, 1 attempt/);
+  assert.equal(calls, 1);
+  assert.deepEqual(provider.getState(), { phase: "ready" });
+});
+
+test("a short explicit 429 retry interval is honored once", async () => {
+  let calls = 0;
+  const delays: number[] = [];
+  const provider = new OpenAICompatibleProvider(CONFIG, fakeFetch(async () => {
+    calls += 1;
+    return calls === 1
+      ? { status: 429, body: {}, headers: { "retry-after": "3" } }
+      : { status: 200, body: { choices: [{ message: { content: "{}" } }] } };
+  }), async (milliseconds) => { delays.push(milliseconds); });
+  await provider.initialize();
+
+  await provider.generateStructured([], {});
+  assert.equal(calls, 2);
+  assert.deepEqual(delays, [3000]);
+});
+
+test("a long 429 retry interval is reported without waiting or retrying", async () => {
+  let calls = 0;
+  const provider = new OpenAICompatibleProvider(CONFIG, fakeFetch(async () => {
+    calls += 1;
+    return { status: 429, body: {}, headers: { "retry-after": "60" } };
+  }), async () => { throw new Error("must not wait"); });
+  await provider.initialize();
+
+  await assert.rejects(() => provider.generateStructured([], {}), /about 60 seconds/);
+  assert.equal(calls, 1);
+});
+
 test("stops after four retries and replaces a raw 503 payload with an actionable message", async () => {
   let calls = 0;
   const provider = new OpenAICompatibleProvider(

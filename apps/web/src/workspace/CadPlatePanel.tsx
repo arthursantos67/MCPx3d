@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 
 import {
-  applyCadEdit, applyCadPlan, clearActiveCadProject, createCadProject, downloadCadRevisionStep,
+  applyCadEdit, applyCadPlan, clearActiveCadProject, createCadProject, downloadCadRevisionStep, downloadCadRevisionStl,
   inspectCadPlate, openCadProject, recentCadProjects, resumeCadProject,
   type CadInspection, type CadPlateInput, type CadProjectResponse,
 } from '../api/client.ts'
@@ -216,7 +216,7 @@ function CadPlatePanel({ onClose, onDraftChange, planEdit, planCreate, agentRead
     }
   }
 
-  const run = async (action: 'inspect' | 'save' | 'download' | 'chat' | 'create') => {
+  const run = async (action: 'inspect' | 'save' | 'download' | 'downloadStl' | 'chat' | 'create') => {
     setBusy(true)
     setError(null)
     try {
@@ -251,6 +251,7 @@ function CadPlatePanel({ onClose, onDraftChange, planEdit, planCreate, agentRead
         setInspection(saved.inspection)
       }
       if (action === 'download' && project) await downloadCadRevisionStep(project, selectedRevision)
+      if (action === 'downloadStl' && project) await downloadCadRevisionStl(project, selectedRevision)
       if (action === 'chat' && project) {
         if (unsavedChanges) throw new Error('Save the current parameter fields before using CAD chat.')
         const outcome = await planEdit(command, project.spec)
@@ -420,6 +421,7 @@ function CadPlatePanel({ onClose, onDraftChange, planEdit, planCreate, agentRead
           </select>
         </label>
         <button type="button" disabled={busy} onClick={() => { void run('download') }}>Download saved STEP</button>
+        <button type="button" disabled={busy} onClick={() => { void run('downloadStl') }}>Download saved STL</button>
       </div>}
       {assumptions.length > 0 && <div className="cad-plate-panel__assumptions" role="status">
         <strong>Values inferred by the agent</strong>

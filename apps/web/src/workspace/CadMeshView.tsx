@@ -4,6 +4,7 @@ import type { CadProgramMesh } from '../api/client.ts'
 const vertexShader = `
 attribute vec3 aPosition;
 attribute vec3 aNormal;
+attribute vec3 aColor;
 uniform vec3 uCenter;
 uniform vec2 uAspect;
 uniform float uExtent;
@@ -11,6 +12,7 @@ uniform float uAzimuth;
 uniform float uElevation;
 uniform float uZoom;
 varying float vLight;
+varying vec3 vColor;
 
 void main() {
   float ca = cos(uAzimuth), sa = sin(uAzimuth);
@@ -30,13 +32,15 @@ void main() {
                          n.z * ce - normalDepth * se,
                          normalDepth * ce + n.z * se);
   vLight = 0.5 + 0.5 * abs(dot(viewNormal, normalize(vec3(-0.35, 0.6, 0.72))));
+  vColor = aColor;
 }`
 
 const fragmentShader = `
 precision mediump float;
 varying float vLight;
+varying vec3 vColor;
 void main() {
-  gl_FragColor = vec4(vec3(0.27, 0.57, 0.73) * vLight, 1.0);
+  gl_FragColor = vec4(vColor * vLight, 1.0);
 }`
 
 interface Renderer {
@@ -90,11 +94,14 @@ function createRenderer(canvas: HTMLCanvasElement): Renderer {
   gl.bindBuffer(gl.ARRAY_BUFFER, buffer)
   const position = gl.getAttribLocation(program, 'aPosition')
   const normal = gl.getAttribLocation(program, 'aNormal')
-  if (position < 0 || normal < 0) throw new Error('CAD preview vertex attributes are unavailable')
+  const color = gl.getAttribLocation(program, 'aColor')
+  if (position < 0 || normal < 0 || color < 0) throw new Error('CAD preview vertex attributes are unavailable')
   gl.enableVertexAttribArray(position)
   gl.enableVertexAttribArray(normal)
-  gl.vertexAttribPointer(position, 3, gl.FLOAT, false, 24, 0)
-  gl.vertexAttribPointer(normal, 3, gl.FLOAT, false, 24, 12)
+  gl.enableVertexAttribArray(color)
+  gl.vertexAttribPointer(position, 3, gl.FLOAT, false, 36, 0)
+  gl.vertexAttribPointer(normal, 3, gl.FLOAT, false, 36, 12)
+  gl.vertexAttribPointer(color, 3, gl.FLOAT, false, 36, 24)
   gl.enable(gl.DEPTH_TEST)
   gl.depthFunc(gl.LESS)
   gl.clearColor(1, 1, 1, 1)
@@ -123,9 +130,18 @@ function uploadMesh(renderer: Renderer, mesh: CadProgramMesh | null): void {
   }
   renderer.center = [(low[0] + high[0]) / 2, (low[1] + high[1]) / 2, (low[2] + high[2]) / 2]
   renderer.extent = Math.hypot(...mesh.boundsMm) || 1
-  const data = new Float32Array(mesh.triangles.length * 18)
+  const data = new Float32Array(mesh.triangles.length * 27)
   let offset = 0
-  for (const triangle of mesh.triangles) {
+  const colors = [[0.27, 0.57, 0.73], [0.76, 0.46, 0.25], [0.38, 0.62, 0.41],
+    [0.64, 0.39, 0.67], [0.69, 0.61, 0.28], [0.28, 0.64, 0.65], [0.63, 0.39, 0.39], [0.47, 0.48, 0.7]]
+  let componentIndex = 0
+  let componentEnd = mesh.components?.[0]?.triangles ?? mesh.triangles.length
+  for (const [triangleIndex, triangle] of mesh.triangles.entries()) {
+    while (mesh.components && triangleIndex >= componentEnd && componentIndex + 1 < mesh.components.length) {
+      componentIndex++
+      componentEnd += mesh.components[componentIndex].triangles
+    }
+    const color = colors[componentIndex % colors.length]
     const a = mesh.vertices[triangle[0]], b = mesh.vertices[triangle[1]], c = mesh.vertices[triangle[2]]
     if (!a || !b || !c) continue
     const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2]
@@ -134,13 +150,13 @@ function uploadMesh(renderer: Renderer, mesh: CadProgramMesh | null): void {
     const length = Math.hypot(nx, ny, nz)
     if (length < 1e-10) continue
     for (const point of [a, b, c]) {
-      data.set([point[0], point[1], point[2], nx / length, ny / length, nz / length], offset)
-      offset += 6
+      data.set([point[0], point[1], point[2], nx / length, ny / length, nz / length, ...color], offset)
+      offset += 9
     }
   }
   gl.bindBuffer(gl.ARRAY_BUFFER, renderer.buffer)
   gl.bufferData(gl.ARRAY_BUFFER, data.subarray(0, offset), gl.STATIC_DRAW)
-  renderer.vertexCount = offset / 6
+  renderer.vertexCount = offset / 9
 }
 
 function draw(renderer: Renderer, canvas: HTMLCanvasElement, angles: { azimuth: number; elevation: number }, zoom: number): void {

@@ -60,6 +60,7 @@ function isConfigComplete(config: OpenAICompatibleConfig): boolean {
 export const DEFAULT_MAX_COMPLETION_TOKENS = 8192;
 const CHAT_COMPLETIONS_PATH = "/chat/completions";
 const MAX_TRANSIENT_RETRIES = 4;
+const MAX_RATE_LIMIT_WAIT_MS = 15_000;
 const BASE_RETRY_DELAY_MS = 1000;
 
 function toChatCompletionsUrl(configuredUrl: string): string {
@@ -128,7 +129,7 @@ function toGeminiSchema(schema: JsonSchema): unknown {
 }
 
 function isTransientStatus(status: number): boolean {
-  return status === 408 || status === 429 || status === 500 || status === 502 || status === 503 || status === 504;
+  return status === 408 || status === 500 || status === 502 || status === 503 || status === 504;
 }
 
 function retryAfterMilliseconds(response: Response): number | null {
@@ -177,12 +178,13 @@ function safeProviderErrorCode(bodyText: string): string | null {
   return null;
 }
 
-function providerResponseMessage(status: number, bodyText: string): string {
+function providerResponseMessage(status: number, bodyText: string, attempts: number, retryAfterMs?: number | null): string {
   if (status === 503) {
     return "The AI model is temporarily unavailable after five attempts (status 503). Try again shortly or choose another model.";
   }
   if (status === 429) {
-    return "The AI provider rate limit was reached after five attempts (status 429). Try again shortly or check the provider quota.";
+    const wait = retryAfterMs != null && retryAfterMs > 0 ? ` Try again in about ${Math.ceil(retryAfterMs / 1000)} seconds.` : " Try again after the provider quota resets.";
+    return `The AI provider rate limit or quota was reached (status 429, ${attempts} ${attempts === 1 ? "attempt" : "attempts"}).${wait} Check the provider quota if it persists.`;
   }
   const code = safeProviderErrorCode(bodyText);
   const suffix = code ? ` (provider code: ${code})` : "";
@@ -338,8 +340,16 @@ export class OpenAICompatibleProvider implements LLMProvider {
         if (response.ok) break;
 
         const bodyText = await response.text().catch(() => "");
+        if (response.status === 429) {
+          const retryAfter = retryAfterMilliseconds(response);
+          if (attempt === 0 && retryAfter !== null && retryAfter <= MAX_RATE_LIMIT_WAIT_MS) {
+            await this.sleepImpl(retryAfter, controller.signal);
+            continue;
+          }
+          throw new ProviderRequestError(providerResponseMessage(429, bodyText, attempt + 1, retryAfter));
+        }
         if (!isTransientStatus(response.status) || attempt === MAX_TRANSIENT_RETRIES) {
-          throw new ProviderRequestError(providerResponseMessage(response.status, bodyText));
+          throw new ProviderRequestError(providerResponseMessage(response.status, bodyText, attempt + 1));
         }
 
         const delay = retryAfterMilliseconds(response) ?? exponentialDelayMilliseconds(attempt, this.random);

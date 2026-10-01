@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import math
 from importlib import import_module
 from pathlib import Path
@@ -24,6 +25,8 @@ from api.cad_adapter import (
     CadEngineUnavailableError,
     CadGeometryError,
 )
+
+_logger = logging.getLogger(__name__)
 
 
 def _engine() -> Any:
@@ -149,7 +152,8 @@ def build_program_solid(spec: CadProgramSpec, cq: Any | None = None) -> Any:
             if part is None:
                 part = feature
             else:
-                for number, instance in enumerate(_instances(feature, step.pattern), start=1):
+                instances = _instances(feature, step.pattern)
+                for number, instance in enumerate(instances, start=1):
                     current = _one_solid(part)
                     before = current.Volume()
                     before_bounds = current.BoundingBox()
@@ -161,12 +165,11 @@ def build_program_solid(spec: CadProgramSpec, cq: Any | None = None) -> Any:
                         if step.op == "union":
                             hint = ("bounding boxes overlap, but the solids may be separated by an opening or earlier cut"
                                     if _boxes_overlap(before_bounds, tool_bounds) else "bounding boxes do not overlap")
-                            if not _boxes_overlap(before_bounds, tool_bounds):
-                                try:
-                                    solid_point, tool_point = cq.occ_impl.shapes.closest(current, tool)
-                                    hint += f"; nearest solid point: {_point(solid_point)}; nearest tool point: {_point(tool_point)}"
-                                except Exception:
-                                    pass
+                            try:
+                                solid_point, tool_point = cq.occ_impl.shapes.closest(current, tool)
+                                hint += f"; nearest solid point: {_point(solid_point)}; nearest tool point: {_point(tool_point)}"
+                            except Exception:
+                                _logger.debug("CAD nearest-point diagnostic unavailable", exc_info=True)
                         else:
                             hint = "the cut disconnects the remaining material; preserve a material bridge"
                         raise CadGeometryError(
@@ -177,10 +180,24 @@ def build_program_solid(spec: CadProgramSpec, cq: Any | None = None) -> Any:
                         )
                     after = _one_solid(part, f"step {step.id}{f' instance {number}' if step.pattern else ''} ({step.op})").Volume()
                     if not math.isfinite(after) or abs(after - before) <= max(1e-6, before * 1e-9):
+                        duplicate_hint = ""
+                        if step.pattern and number > 1:
+                            try:
+                                tool_solid = _one_solid(instance)
+                                for prior_number, prior in enumerate(instances[:number - 1], start=1):
+                                    prior_solid = _one_solid(prior)
+                                    if not math.isclose(prior_solid.Volume(), tool_solid.Volume(), rel_tol=1e-7, abs_tol=1e-5):
+                                        continue
+                                    if math.isclose(prior_solid.intersect(tool_solid).Volume(), tool_solid.Volume(),
+                                                    rel_tol=1e-7, abs_tol=1e-5):
+                                        duplicate_hint = f"; duplicates pattern instance {prior_number}"
+                                        break
+                            except Exception:
+                                _logger.debug("CAD duplicate-pattern diagnostic unavailable", exc_info=True)
                         raise CadGeometryError(
                             f"CAD step {step.id} instance {number} does not change the solid; "
                             f"current solid bounds: {_bounds(before_bounds)}; "
-                            f"tool bounds: {_bounds(_one_solid(instance).BoundingBox())}"
+                            f"tool bounds: {_bounds(_one_solid(instance).BoundingBox())}{duplicate_hint}"
                         )
                     _one_solid(part)
             _one_solid(part, f"step {step.id} ({step.op})")

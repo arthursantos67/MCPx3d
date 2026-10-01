@@ -38,7 +38,10 @@ import type { CadPartSpec } from "../../../../packages/domain/ts/src/cad-part.ts
 import type { CadEditOutcome } from "../../../../packages/agent/src/generate-cad-edit.ts";
 import type { CadCreateOutcome } from "../../../../packages/agent/src/generate-cad-part.ts";
 import type { CadProgramOutcome } from "../../../../packages/agent/src/generate-cad-program.ts";
+import type { CadAssemblyOutcome, CadAssemblyProgressListener } from "../../../../packages/agent/src/generate-cad-assembly.ts";
+import type { CadDesignOutcome } from "../../../../packages/agent/src/classify-cad-design.ts";
 import type { CadProgramSpec } from "../../../../packages/domain/ts/src/cad-program.ts";
+import type { CadAssemblySpec } from "../../../../packages/domain/ts/src/cad-assembly.ts";
 import { isUsableByokConfig, loadProviderConfig } from "../settings/providerConfig.ts";
 
 import { ChatController, type AgentProvider, type ChatControllerState } from "./ChatController.ts";
@@ -111,6 +114,8 @@ export interface UseChatController {
   readonly planCadEdit: (request: string, spec: CadPartSpec) => Promise<CadEditOutcome>;
   readonly planCadCreate: (request: string, shape?: 'plate' | 'bracket' | 'rounded_plate' | 'flange' | 'composite') => Promise<CadCreateOutcome>;
   readonly planCadProgram: (request: string, previous?: CadProgramSpec) => Promise<CadProgramOutcome>;
+  readonly planCadAssembly: (request: string, previous?: CadAssemblySpec, onProgress?: CadAssemblyProgressListener) => Promise<CadAssemblyOutcome>;
+  readonly planCadDesign: (request: string, previous?: CadProgramSpec, onProgress?: CadAssemblyProgressListener) => Promise<CadDesignOutcome>;
   readonly importManifest: (contents: string) => void;
   readonly cancelGeneration: () => void;
   readonly retryProject: () => void;
@@ -148,6 +153,8 @@ export function useChatController(): UseChatController {
   const planCadEdit = useCallback((request: string, spec: CadPartSpec) => controller.planCadEdit(request, spec), [controller]);
   const planCadCreate = useCallback((request: string, shape?: 'plate' | 'bracket' | 'rounded_plate' | 'flange' | 'composite') => controller.planCadCreate(request, shape), [controller]);
   const planCadProgram = useCallback((request: string, previous?: CadProgramSpec) => controller.planCadProgram(request, previous), [controller]);
+  const planCadAssembly = useCallback((request: string, previous?: CadAssemblySpec, onProgress?: CadAssemblyProgressListener) => controller.planCadAssembly(request, previous, onProgress), [controller]);
+  const planCadDesign = useCallback((request: string, previous?: CadProgramSpec, onProgress?: CadAssemblyProgressListener) => controller.planCadDesign(request, previous, onProgress), [controller]);
   const importManifest = useCallback((contents: string) => { void controller.importManifest(contents); }, [controller]);
   const canSend = useCallback(() => controller.canSend(), [controller]);
   const cancelGeneration = useCallback(() => controller.cancelGeneration(), [controller]);
@@ -164,5 +171,5 @@ export function useChatController(): UseChatController {
     [controller],
   );
 
-  return { state, sendMessage, applyRecipe, planCadEdit, planCadCreate, planCadProgram, importManifest, cancelGeneration, canSend, retryProject, resetProject, renameProject, persistProjectName, setViewerStatus };
+  return { state, sendMessage, applyRecipe, planCadEdit, planCadCreate, planCadProgram, planCadAssembly, planCadDesign, importManifest, cancelGeneration, canSend, retryProject, resetProject, renameProject, persistProjectName, setViewerStatus };
 }

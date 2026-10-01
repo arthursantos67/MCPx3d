@@ -4,6 +4,7 @@ from typing import Annotated
 
 from domain.cad_part import CadPartSpec
 from domain.cad_program import CadProgramSpec
+from domain.cad_assembly import CadAssemblySpec
 from fastapi import APIRouter, Depends, Response
 from pydantic import BaseModel, ConfigDict
 
@@ -15,6 +16,7 @@ from api.cad_adapter import (
     build_step,
 )
 from api.cad_program_adapter import build_program_step
+from api.cad_assembly_adapter import build_assembly_step
 from api.config import Settings, get_settings
 from api.errors import api_error
 
@@ -31,8 +33,10 @@ class CadInspection(BaseModel):
     stepBytes: int
 
 
-def build_cad_artifact(spec: CadPartSpec | CadProgramSpec, settings: Settings) -> CadArtifact:
+def build_cad_artifact(spec: CadPartSpec | CadProgramSpec | CadAssemblySpec, settings: Settings) -> CadArtifact:
     try:
+        if isinstance(spec, CadAssemblySpec):
+            return build_assembly_step(spec, settings.max_artifact_bytes)
         return build_program_step(spec, settings.max_artifact_bytes) if isinstance(spec, CadProgramSpec) else build_step(spec, settings.max_artifact_bytes)
     except CadEngineUnavailableError as exc:
         raise api_error(503, "CAD_ENGINE_UNAVAILABLE", str(exc)) from exc

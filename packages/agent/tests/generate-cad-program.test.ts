@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { generateCadProgram } from '../src/generate-cad-program.ts'
 import { MockLLMProvider } from '../src/mock-provider.ts'
+import { ProviderRequestError } from '../src/provider.ts'
 import { OpenAICompatibleProvider } from '../src/openai-compatible-provider.ts'
 
 const spec = { schemaVersion: '3.0', units: 'mm', partId: 'mount', steps: [
@@ -349,7 +350,7 @@ test('disjoint unions on different axes are moved to verified overlap when model
     assert.equal(result.spec.steps[2].position.z, 54)
     assert.equal(result.assumptions.length, 2)
   }
-  assert.equal(provider.calls.length, 5)
+  assert.equal(provider.calls.length, 1)
 })
 
 test('automatic overlap repair does not override an explicit requested coordinate', async () => {
@@ -394,6 +395,99 @@ test('a disconnected ball follows the nearest real material rather than the glob
     assert.deepEqual(result.spec.steps.slice(0, 3), disconnected.steps.slice(0, 3))
     assert.match(result.assumptions.at(-1) ?? '', /handle_ball_left/)
   }
+})
+
+test('a motor housing mounting foot can cross an internal opening despite overlapping bounds', async () => {
+  const zero = { x: 0, y: 0, z: 0 }
+  const mountingBase = { id: 'mounting_base', op: 'union', shape: 'box',
+    position: { x: 0, y: -42, z: 0 }, rotation: zero, width: 80, depth: 20, height: 20 }
+  const disconnected = { ...spec, partId: 'housing', steps: [
+    { id: 'outer_shell', op: 'base', shape: 'cylinder', position: zero,
+      rotation: { x: 90, y: 0, z: 0 }, diameter: 100, height: 90 },
+    { id: 'interior', op: 'cut', shape: 'cylinder', position: zero,
+      rotation: { x: 90, y: 0, z: 0 }, diameter: 90, height: 100 },
+    mountingBase,
+  ] }
+  const response = { decision: 'create', spec: disconnected, question: '', assumptions: [] }
+  const provider = new MockLLMProvider([
+    response, { position: mountingBase.position, rotation: zero }, response,
+    { position: mountingBase.position, rotation: zero }, response,
+  ])
+  const issue = 'CAD step mounting_base (union) leaves 2 separate solids; current solid bounds: x=[-50.00, 50.00], y=[-45.00, 45.00], z=[-50.00, 50.00]; tool bounds: x=[-40.00, 40.00], y=[-52.00, -32.00], z=[-10.00, 10.00]; bounding boxes overlap, but the solids may be separated by an opening or earlier cut; nearest solid point: x=-43.66, y=-32.00, z=10.91; nearest tool point: x=-40.00, y=-32.00, z=10.00'
+  const result = await generateCadProgram(provider, 'Crie a carcaça de um motor com base de montagem', undefined,
+    async (candidate) => candidate.steps[2].position.x < -4 ? null : issue)
+  assert.equal(result.kind, 'create')
+  if (result.kind === 'create') {
+    assert.ok(result.spec.steps[2].position.x < -4)
+    assert.deepEqual(result.spec.steps.slice(0, 2), disconnected.steps.slice(0, 2))
+    assert.match(result.assumptions.at(-1) ?? '', /mounting_base/)
+  }
+  assert.equal(provider.calls.length, 1)
+})
+
+test('repairs a centered circular fin pattern without dropping the requested instances', async () => {
+  const zero = { x: 0, y: 0, z: 0 }
+  const fin = { id: 'cooling_fin', op: 'union', shape: 'box',
+    position: { x: 0, y: 42, z: 0 }, rotation: zero, width: 4, depth: 8, height: 80,
+    pattern: { kind: 'circular', count: 12, axis: 'y', center: zero, sweepAngle: 360 } }
+  const invalid = { ...spec, partId: 'motor_housing', steps: [
+    { id: 'outer', op: 'base', shape: 'cylinder', position: zero,
+      rotation: { x: 90, y: 0, z: 0 }, diameter: 80, height: 100 },
+    { id: 'foot', op: 'union', shape: 'box', position: { x: 0, y: -53, z: -25 },
+      rotation: zero, width: 50, depth: 44, height: 20 },
+    fin,
+  ] }
+  const response = { decision: 'create', spec: invalid, question: '', assumptions: [] }
+  const provider = new MockLLMProvider([
+    response, { position: fin.position, rotation: zero, width: 4, depth: 8, height: 80 }, response,
+    { position: fin.position, rotation: zero, width: 4, depth: 8, height: 80 }, response,
+  ])
+  const issue = 'CAD step cooling_fin instance 7 does not change the solid; current solid bounds: x=[-40.00, 40.00], y=[-75.00, 50.00], z=[-40.00, 40.00]; tool bounds: x=[-2.00, 2.00], y=[38.00, 46.00], z=[-40.00, 40.00]'
+  const result = await generateCadProgram(provider, 'Crie a carcaça de um motor com aletas de refrigeração', undefined,
+    async (candidate) => candidate.steps[2].position.z === 40 && candidate.steps[2].shape === 'box' && candidate.steps[2].height === 20 ? null : issue)
+  assert.equal(result.kind, 'create')
+  if (result.kind === 'create') {
+    assert.equal(result.spec.steps[2].position.z, 40)
+    assert.equal(result.spec.steps[2].shape === 'box' ? result.spec.steps[2].height : null, 20)
+    assert.equal(result.spec.steps[2].pattern?.count, 12)
+    assert.match(result.assumptions.at(-1) ?? '', /repetição de cooling_fin/)
+  }
+  assert.match(provider.calls[0].messages[0].content, /ONE short feature offset radially/)
+  assert.equal(provider.calls.length, 1)
+})
+
+test('continues geometry repair when fixing one feature reveals another invalid feature', async () => {
+  const zero = { x: 0, y: 0, z: 0 }
+  const foot = { id: 'mounting_base', op: 'union', shape: 'box',
+    position: { x: 0, y: -42, z: 0 }, rotation: zero, width: 80, depth: 20, height: 20 }
+  const fin = { id: 'cooling_fin', op: 'union', shape: 'box',
+    position: { x: 0, y: 42, z: 0 }, rotation: { x: 0, y: 0, z: 15 }, width: 4, depth: 8, height: 80,
+    pattern: { kind: 'circular', count: 12, axis: 'y', center: zero, sweepAngle: 360 } }
+  const invalid = { ...spec, partId: 'housing', steps: [
+    { id: 'outer_shell', op: 'base', shape: 'cylinder', position: zero,
+      rotation: { x: 90, y: 0, z: 0 }, diameter: 100, height: 90 },
+    { id: 'interior', op: 'cut', shape: 'cylinder', position: zero,
+      rotation: { x: 90, y: 0, z: 0 }, diameter: 90, height: 100 },
+    foot, fin,
+  ] }
+  const response = { decision: 'create', spec: invalid, question: '', assumptions: [] }
+  const provider = new MockLLMProvider([
+    response, { position: foot.position, rotation: zero }, response,
+    { position: foot.position, rotation: zero }, response,
+    { position: { x: 0, y: 42, z: 40 }, rotation: zero, width: 4, depth: 8, height: 20 },
+  ])
+  const footIssue = 'CAD step mounting_base (union) leaves 2 separate solids; current solid bounds: x=[-50.00, 50.00], y=[-45.00, 45.00], z=[-50.00, 50.00]; tool bounds: x=[-40.00, 40.00], y=[-52.00, -32.00], z=[-10.00, 10.00]; bounding boxes overlap, but the solids may be separated by an opening or earlier cut; nearest solid point: x=-43.66, y=-32.00, z=10.91; nearest tool point: x=-40.00, y=-32.00, z=10.00'
+  const finIssue = 'CAD step cooling_fin instance 7 does not change the solid; current solid bounds: x=[-40.00, 40.00], y=[-75.00, 50.00], z=[-40.00, 40.00]; tool bounds: x=[-2.00, 2.00], y=[38.00, 46.00], z=[-40.00, 40.00]; duplicates pattern instance 1'
+  const result = await generateCadProgram(provider, 'Crie uma carcaça de motor com base e aletas', undefined,
+    async (candidate) => candidate.steps[2].position.x >= -4 ? footIssue :
+      candidate.steps[3].position.z !== 40 ? finIssue : null)
+  assert.equal(result.kind, 'create')
+  if (result.kind === 'create') {
+    assert.ok(result.spec.steps[2].position.x < -4)
+    assert.equal(result.spec.steps[3].position.z, 40)
+    assert.equal(result.spec.steps[3].pattern?.count, 12)
+  }
+  assert.equal(provider.calls.length, 6)
 })
 
 test('a clearance cut that isolates the spindle can be removed during full-program repair', async () => {
@@ -505,6 +599,27 @@ test('repairs a no-op transverse bore by changing only its placement', async () 
   assert.ok(provider.calls[1].messages.at(-1)?.content.includes(issue))
 })
 
+test('centers a missed patterned slot through thin stock without another model call', async () => {
+  const zero = { x: 0, y: 0, z: 0 }
+  const bad = { schemaVersion: '3.0', units: 'mm', partId: 'rear_cover', steps: [
+    { id: 'cover', op: 'base', shape: 'box', position: zero, rotation: zero,
+      width: 100, depth: 10, height: 100 },
+    { id: 'vent_slot', op: 'cut', shape: 'box', position: { x: 0, y: 35, z: 0 }, rotation: zero,
+      width: 15, depth: 40, height: 20,
+      pattern: { kind: 'linear', count: 3, offset: { x: 20, y: 0, z: 0 } } },
+  ] }
+  const provider = new MockLLMProvider([{ decision: 'create', spec: bad, question: '', assumptions: [] }])
+  const issue = 'CAD step vent_slot instance 1 does not change the solid; current solid bounds: x=[-50.00, 50.00], y=[-5.00, 5.00], z=[-50.00, 50.00]; tool bounds: x=[-7.50, 7.50], y=[15.00, 55.00], z=[-10.00, 10.00]'
+  const result = await generateCadProgram(provider, 'Crie uma tampa traseira com três rasgos de ventilação',
+    undefined, async (candidate) => candidate.steps[1].position.y === 0 ? null : issue)
+  assert.equal(result.kind, 'create')
+  if (result.kind !== 'create') return
+  assert.deepEqual(result.spec.steps[1].position, zero)
+  assert.equal(result.spec.steps[1].pattern?.count, 3)
+  assert.equal(provider.calls.length, 1)
+  assert.match(result.assumptions.join(' '), /vent_slot/)
+})
+
 test('a persistent geometry failure rejects the invalid program after two corrections', async () => {
   const provider = new MockLLMProvider(Array(3).fill({ decision: 'create', spec, question: '', assumptions: [] }))
   let checks = 0
@@ -512,6 +627,16 @@ test('a persistent geometry failure rejects the invalid program after two correc
 
   assert.equal(checks, 3)
   assert.equal(provider.calls.length, 3)
+})
+
+test('a provider rate limit during geometry repair stops further model calls', async () => {
+  const provider = new MockLLMProvider([
+    { decision: 'create', spec, question: '', assumptions: [] },
+    () => { throw new ProviderRequestError('status 429') },
+  ])
+  await assert.rejects(generateCadProgram(provider, 'Crie um bloco', undefined,
+    async () => 'CAD step body instance 1 does not change the solid; current solid bounds: x=[-40, 40], y=[-25, 25], z=[-5, 5]; tool bounds: x=[-40, 40], y=[-25, 25], z=[-5, 5]'), /status 429/)
+  assert.equal(provider.calls.length, 2)
 })
 
 test('a failed geometry correction does not return an invalid program', async () => {

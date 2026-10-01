@@ -35,7 +35,10 @@ import { ModelPlanGenerationError } from "../../../../packages/agent/src/generat
 import { generateCadEdit, type CadEditOutcome } from "../../../../packages/agent/src/generate-cad-edit.ts";
 import { generateCadPart, type CadCreateOutcome, type CadPartShape } from "../../../../packages/agent/src/generate-cad-part.ts";
 import { generateCadProgram, type CadProgramOutcome } from "../../../../packages/agent/src/generate-cad-program.ts";
+import { generateCadAssembly, type CadAssemblyOutcome, type CadAssemblyProgressListener } from "../../../../packages/agent/src/generate-cad-assembly.ts";
+import { classifyCadDesign, type CadDesignOutcome } from "../../../../packages/agent/src/classify-cad-design.ts";
 import type { CadProgramSpec } from "../../../../packages/domain/ts/src/cad-program.ts";
+import type { CadAssemblySpec } from "../../../../packages/domain/ts/src/cad-assembly.ts";
 import {
   SceneBatchError,
   createSceneGenerationCounters,
@@ -69,6 +72,7 @@ export interface ChatApi {
   updateSceneTitle?(projectId: string, expectedRevision: number, title: string): Promise<ModelSpec>;
   matchRecipe?(query: string): Promise<Recipe | null>;
   checkCadProgram?(spec: CadProgramSpec): Promise<string | null>;
+  checkCadAssembly?(spec: CadAssemblySpec): Promise<string | null>;
   resolveArtifactUrl(relativeUrl: string): string;
 }
 
@@ -415,6 +419,54 @@ export class ChatController {
     } finally {
       if (this.activeCancellation === cancellation) this.activeCancellation = null;
       if (!cancellation.signal.aborted) this.patch({ isBusy: false, requestStatus: "idle", pipelineStage: "idle", pipelineStartedAt: null });
+    }
+  }
+
+  async planCadAssembly(request: string, previous?: CadAssemblySpec, onProgress?: CadAssemblyProgressListener): Promise<CadAssemblyOutcome> {
+    if (this.state.isBusy) throw new Error('Finish the current model request before creating CAD.');
+    if (this.state.agentPhase !== 'ready') throw new Error('Configure an AI provider to create CAD by chat.');
+    const cancellation = new AbortController();
+    this.activeCancellation = cancellation;
+    this.patch({ isBusy: true, requestStatus: 'working', pipelineStage: 'provider-request', pipelineStartedAt: this.now() });
+    try {
+      const inspectPart = this.api.checkCadProgram?.bind(this.api);
+      const inspectAssembly = this.api.checkCadAssembly?.bind(this.api);
+      if (!inspectPart || !inspectAssembly) throw new Error('A verificação de conjuntos CAD não está disponível.');
+      const result = await generateCadAssembly(this.provider, request, inspectPart, inspectAssembly, previous,
+        (progress) => { if (!cancellation.signal.aborted) onProgress?.(progress); });
+      if (cancellation.signal.aborted) throw new Error('CAD request cancelled.');
+      return result;
+    } finally {
+      if (this.activeCancellation === cancellation) this.activeCancellation = null;
+      if (!cancellation.signal.aborted) this.patch({ isBusy: false, requestStatus: 'idle', pipelineStage: 'idle', pipelineStartedAt: null });
+    }
+  }
+
+  async planCadDesign(request: string, previous?: CadProgramSpec, onProgress?: CadAssemblyProgressListener): Promise<CadDesignOutcome> {
+    if (this.state.isBusy) throw new Error('Finish the current model request before creating CAD.');
+    if (this.state.agentPhase !== 'ready') throw new Error('Configure an AI provider to create CAD by chat.');
+    const cancellation = new AbortController();
+    this.activeCancellation = cancellation;
+    this.patch({ isBusy: true, requestStatus: 'working', pipelineStage: 'provider-request', pipelineStartedAt: this.now() });
+    try {
+      const mode = await classifyCadDesign(this.provider, request);
+      if (cancellation.signal.aborted) throw new Error('CAD request cancelled.');
+      const inspectPart = this.api.checkCadProgram?.bind(this.api);
+      if (!inspectPart) throw new Error('A verificação CAD não está disponível.');
+      if (mode === 'assembly') {
+        const inspectAssembly = this.api.checkCadAssembly?.bind(this.api);
+        if (!inspectAssembly) throw new Error('A verificação de conjuntos CAD não está disponível.');
+        const outcome = await generateCadAssembly(this.provider, request, inspectPart, inspectAssembly,
+          undefined, (progress) => { if (!cancellation.signal.aborted) onProgress?.(progress); });
+        if (cancellation.signal.aborted) throw new Error('CAD request cancelled.');
+        return { mode, outcome };
+      }
+      const outcome = await generateCadProgram(this.provider, request, previous, inspectPart);
+      if (cancellation.signal.aborted) throw new Error('CAD request cancelled.');
+      return { mode, outcome };
+    } finally {
+      if (this.activeCancellation === cancellation) this.activeCancellation = null;
+      if (!cancellation.signal.aborted) this.patch({ isBusy: false, requestStatus: 'idle', pipelineStage: 'idle', pipelineStartedAt: null });
     }
   }
 
