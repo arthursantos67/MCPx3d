@@ -126,6 +126,29 @@ def test_impossible_finish_is_rejected_without_losing_the_feature() -> None:
         build_program_solid(CadProgramSpec.model_validate(raw))
 
 
+def test_threaded_handwheel_finish_reports_selection_and_preserves_the_requested_distance(tmp_path) -> None:
+    raw = json.loads((ROOT / "tests/fixtures/cad/threaded-handwheel-finishing.json").read_text())
+    original = copy.deepcopy(raw)
+    with pytest.raises(CadGeometryError, match="shaftAndWheelChamfers.*selected edges:.*distance=1 mm.*shortest selected edge"):
+        build_program_solid(CadProgramSpec.model_validate(raw))
+    assert raw == original
+    raw["steps"][-1]["selector"] = "positive_x"
+    spec = CadProgramSpec.model_validate(raw)
+    source = build_program_solid(spec).solids().val()
+    artifact = build_program_step(spec, 20_000_000)
+    path = tmp_path / "threaded-handwheel.step"
+    path.write_bytes(artifact.step)
+    restored = cq.importers.importStep(str(path)).solids().val()
+    assert restored.isValid()
+    assert restored.Volume() == pytest.approx(source.Volume(), rel=1e-5)
+    assert not restored.isInside((26.9, 19.9, 0))
+    assert restored.isInside((26, 19, 0))
+    radius = 6 - 2 * 0.613434654 / 2
+    assert restored.isInside((0, 0, -radius))
+    assert not restored.isInside((0, 0, radius))
+    assert not restored.isInside((1, 0, -radius))
+
+
 def test_assembly_step_keeps_the_threaded_bodies(tmp_path) -> None:
     artifact = build_assembly_step(CadAssemblySpec.model_validate(DRIVE), 20_000_000)
     path = tmp_path / "drive.step"

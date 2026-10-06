@@ -2,6 +2,14 @@
 
 Executada localmente em Windows/PowerShell, Node 24, Python 3.12 e Chrome instalado. Nenhum commit ou publicação foi realizado. A configuração CI foi atualizada, mas não executada no GitHub nesta sessão.
 
+## Reparo de chanfros/arredondamentos e retomada — 2026-10-06
+
+Reproduzida a falha de `shaftAndWheelChamfers` em um fuso/volante com rosca métrica real e eixo local X: a seleção `circular` falhou em 1, 0,5 e 0,25 mm; trocar para uma seleção direcional apropriada permitiu manter o chanfro de 1 mm e exportar/reimportar um sólido válido. O fixture reproduz a classe de falha informada, sem representar o JSON completo da tentativa do usuário. Pontos de material confirmam o chanfro e as cristas/vales da rosca após reimportação STEP.
+
+O agente passou a reparar acabamentos com reduções limitadas de medidas inferidas ou uma chamada focada de seleção/medida/ordem. Essa chamada respeita o orçamento normal da assinatura. Checkpoints guardam candidatos rejeitados para evitar reconstrução local repetida e orientar a próxima correção. Medidas explicitadas não recebem redução automática; a rosca, o acabamento e etapas não relacionadas são conservados. Perguntas/permissões devolvidas fora do contrato não são apresentadas ao usuário.
+
+**427 testes TypeScript passaram**: 58 web, 298 agente, 69 domínio e 2 golden. **19 testes nativos direcionados passaram** em 50,76 s, incluindo os fixtures de recursos CAD e o fuso/volante novo. **Três testes de navegador passaram** em 38,6 s, com API/CadQuery reais e IA programada: chanfro corrigido e salvo automaticamente em peça e conjunto, base concluída inspecionada uma única vez e retomada de componente interrompido. Typecheck, lint web, build, Ruff e mypy da API passaram; mypy verificou 41 arquivos. A suíte Python completa e modelos reais não foram executados nesta correção. A API local foi reiniciada para carregar o diagnóstico atualizado.
+
 ## CAD autônomo sem perguntas — 2026-10-06
 
 A interface passou a ativar `noQuestions=true` em criação, edição e reparo CAD. A correção anterior de instruções não impedia o modelo de devolver uma pergunta; agora o schema exclui `clarify` e o coordenador intercepta essa resposta, permitindo até duas tentativas internas de resolução por etapa. Insistência produz uma falha técnica sem texto de autorização, preservando a decisão pendente e os corpos concluídos. Quota/cancelamento interrompem sem chamadas adicionais. Um replanejamento seletivo após validação final pode rever componentes necessários uma única vez; o modo de reparo direto conserva seu fluxo.

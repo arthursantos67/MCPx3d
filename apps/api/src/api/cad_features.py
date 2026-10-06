@@ -64,7 +64,18 @@ def finish_part(part: Any, step: FilletStep | ChamferStep | ShellStep) -> Any:
         else:
             result = selection.shell(-step.thickness)
     except Exception as exc:
-        raise CadGeometryError(f"CAD step {step.id} ({step.shape}) cannot apply selector {step.selector} at requested size; choose suitable edges/faces or reduce an unspecified size") from exc
+        size_field = "radius" if isinstance(step, FilletStep) else "distance" if isinstance(step, ChamferStep) else "thickness"
+        size = getattr(step, size_field)
+        details = f"selected {'faces' if isinstance(step, ShellStep) else 'edges'}: {selection.size()}; {size_field}={size:g} mm"
+        if not isinstance(step, ShellStep):
+            lengths = [edge.Length() for edge in selection.vals()]
+            details += f"; shortest selected edge={min(lengths):.6g} mm"
+        raise CadGeometryError(
+            f"CAD step {step.id} ({step.shape}) cannot apply selector {step.selector} at requested size; "
+            f"choose suitable edges/faces or reduce an unspecified size; {details}; "
+            "directional selectors use component coordinates; circular/all can include small shoulders, "
+            "bore rims and thread transitions; apply the intended finish before threading when appropriate"
+        ) from exc
     solids = result.solids().vals()
     if len(solids) != 1 or not solids[0].isValid() or solids[0].Volume() <= 0:
         raise CadGeometryError(f"CAD step {step.id} ({step.shape}) must retain one valid connected solid")

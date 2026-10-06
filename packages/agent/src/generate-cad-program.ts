@@ -6,6 +6,7 @@ import { CAD_FEATURES, CAD_FEATURE_GUIDANCE } from '../../domain/ts/src/cad-feat
 import { cadResponseMetadataSchema } from './cad-response-metadata.ts'
 import { applyCadProgramPatch, cadStepRemovalRequested } from './cad-program-patch.ts'
 import { generateCadDecision } from './cad-autonomy.ts'
+import { failedFinish, finishRepairHistory, repairFinishLocally, repairFinishWithProvider, type FailedCadCandidate } from './cad-finish-repair.ts'
 
 const strictSpecSchema = Object.fromEntries(Object.entries(programSchema).filter(([key]) => !['$schema', '$id', 'title', '$defs'].includes(key)))
 const strictOutputSchema = {
@@ -286,6 +287,7 @@ interface ProgramCheckpoint {
   current: Extract<CadProgramOutcome, { kind: 'create' }>
   attempts: number
   phase: 'focused' | 'full'
+  failedCandidates?: FailedCadCandidate[]
 }
 
 const editGenerationSchema = {
@@ -363,12 +365,29 @@ async function buildCadProgram(
   const limitedRepairs = provider.generationPolicy?.maxCadRepairAttempts
   const attemptLimit = limitedRepairs === undefined ? 8 : attempts + limitedRepairs
   let phase = resume?.phase ?? 'focused'
-  const saveProgress = () => remember?.({ current, attempts, phase })
+  const failedCandidates = resume?.failedCandidates ?? []
+  const saveProgress = () => remember?.({ current, attempts, phase, failedCandidates })
+  const rememberFailure = (spec: CadProgramSpec, issue: string | null) => {
+    if (issue && failedFinish(spec, issue) && !failedCandidates.some((entry) => JSON.stringify(entry.spec) === JSON.stringify(spec))) {
+      failedCandidates.push({ spec, issue })
+      if (failedCandidates.length > 16) failedCandidates.shift()
+      saveProgress()
+    }
+  }
+  const inspectFinishCandidate = async (spec: CadProgramSpec) => {
+    const known = failedCandidates.find((entry) => JSON.stringify(entry.spec) === JSON.stringify(spec))
+    if (known) return known.issue
+    const issue = await checkGeometry(spec)
+    rememberFailure(spec, issue)
+    return issue
+  }
   saveProgress()
   let issue = await checkGeometry(current.spec)
+  rememberFailure(current.spec, issue)
   const repairLocally = async () => {
     for (let remaining = current.spec.steps.length; issue && remaining > 0; remaining--) {
-      const moved = await repairNoOpPattern(current.spec, issue, checkGeometry)
+      const moved = await repairFinishLocally(current.spec, request, issue, inspectFinishCandidate)
+        ?? await repairNoOpPattern(current.spec, issue, checkGeometry)
         ?? await repairMissedThroughCut(current.spec, request, issue, checkGeometry)
         ?? await repairSeparatedUnion(current.spec, request, issue, checkGeometry)
       if (!moved) break
@@ -388,6 +407,20 @@ async function buildCadProgram(
     const startingSpec = JSON.stringify(current.spec)
     await repairLocally()
     for (let attempt = 0; issue && attempt < 2 && attempts < attemptLimit; attempt++) {
+      if (phase === 'focused' && failedFinish(current.spec, issue)) {
+        options?.onGeneration?.()
+        const repairedFinish = await repairFinishWithProvider(provider, current.spec, request, issue, failedCandidates).catch(ignoreInvalidCorrection)
+        attempts++
+        phase = 'full'
+        if (repairedFinish) {
+          current = { ...current, spec: repairedFinish.spec, assumptions: [...current.assumptions, repairedFinish.assumption] }
+          saveProgress()
+          issue = await inspectFinishCandidate(current.spec)
+          if (!issue) return current
+        }
+        saveProgress()
+        continue
+      }
       const repaired = phase === 'focused' && limitedRepairs === undefined
         ? await repairGeometryStep(provider, current.spec, request, issue).catch(ignoreInvalidCorrection) : null
       if (repaired) {
@@ -411,14 +444,16 @@ async function buildCadProgram(
         /CAD step [A-Za-z0-9_-]+ instance \d+ does not change the solid/.test(issue)
         ? 'The cutter does not remove material. Compare the tool and solid bounds on X, Y and Z. Align the cutter across the intended wall thickness while preserving its opening location on the other two axes; every patterned instance must remove material.'
         : ''
-      const correction = `${request}\n\nThe CAD engine rejected the current program: ${issue}. ${baseGuidance} ${patternGuidance} ${cutGuidance} Fix the failed step and any dependencies, preserving every requested feature, dimension and the part ID. A union must intersect existing material by positive volume. A cut must remove positive volume without splitting the remaining solid. If an unrequested earlier cut, opening or clearance prevents this, you may remove or revise that step instead of moving a requested feature away from its intended location. Return a complete corrected program.`
+      const finishGuidance = failedFinish(current.spec, issue)
+        ? `The finish must remain in the program. circular/all selects small shoulder, bore and thread edges too; choose suitable directional edges in component coordinates or finish before threading when the intended material is already built. Reduce only inferred sizes. Do not repeat failed selector/size/order combinations:\n${finishRepairHistory(failedCandidates)}` : ''
+      const correction = `${request}\n\nThe CAD engine rejected the current program: ${issue}. ${baseGuidance} ${patternGuidance} ${cutGuidance} ${finishGuidance} Fix the failed step and any dependencies, preserving every requested feature, dimension and the part ID. A union must intersect existing material by positive volume. A cut must remove positive volume without splitting the remaining solid. If an unrequested earlier cut, opening or clearance prevents this, you may remove or revise that step instead of moving a requested feature away from its intended location. Return a complete corrected program.`
       const revised = await generate(correction, current.spec, true).catch(ignoreInvalidCorrection)
       attempts++
       phase = 'focused'
       if (revised?.kind === 'create') {
         current = revised
         saveProgress()
-        issue = await checkGeometry(current.spec)
+        issue = failedFinish(current.spec, issue) ? await inspectFinishCandidate(current.spec) : await checkGeometry(current.spec)
       }
       saveProgress()
     }

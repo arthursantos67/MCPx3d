@@ -1,0 +1,114 @@
+{
+  "schemaVersion": "3.0",
+  "units": "mm",
+  "partId": "fuso_volante",
+  "steps": [
+    {
+      "id": "core",
+      "op": "base",
+      "shape": "cylinder",
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 90,
+        "z": 0
+      },
+      "diameter": 9,
+      "height": 32
+    },
+    {
+      "id": "leftJournal",
+      "op": "union",
+      "shape": "cylinder",
+      "position": {
+        "x": -20,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 90,
+        "z": 0
+      },
+      "diameter": 10,
+      "height": 10
+    },
+    {
+      "id": "rightJournal",
+      "op": "union",
+      "shape": "cylinder",
+      "position": {
+        "x": 20,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 90,
+        "z": 0
+      },
+      "diameter": 10,
+      "height": 10
+    },
+    {
+      "id": "wheel",
+      "op": "union",
+      "shape": "cylinder",
+      "position": {
+        "x": 24,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 90,
+        "z": 0
+      },
+      "diameter": 40,
+      "height": 6
+    },
+    {
+      "id": "thread",
+      "op": "union",
+      "shape": "thread",
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 90,
+        "z": 0
+      },
+      "diameter": 12,
+      "pitch": 2,
+      "height": 32,
+      "profile": "metric",
+      "handedness": "right",
+      "clearance": 0,
+      "starts": 1
+    },
+    {
+      "id": "shaftAndWheelChamfers",
+      "op": "modify",
+      "shape": "chamfer",
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "selector": "circular",
+      "distance": 1
+    }
+  ]
+}
