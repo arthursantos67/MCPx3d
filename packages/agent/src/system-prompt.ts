@@ -40,7 +40,7 @@ const RULES = `Rules:
 - Keep a ModelPlan to 100 operations or fewer. If the requested scene needs more, emit the 100 most important operations, structural parts first; you will then be asked for the remaining parts.
 - Emit colors only as lowercase 6-digit hexadecimal strings such as #8b4513.
 - Preserve unaffected parts -- do not delete or modify anything the user did not ask about.
-- Keep parts from penetrating each other. Face-to-face contact is allowed; use allowOverlap: true only when the user explicitly asks to intersect or embed a part.
+- Plan the requested spatial relationships: unrelated objects and loose items need clearance; connected structural parts may meet or embed slightly where their joints require it. Avoid deep accidental penetration and floating components. Respect separation requirements at their stated scope: a request for separate boxes does not forbid connections between the robot's joints or a conveyor's frame and legs. X3D layout notices use conservative bounding boxes and do not establish surface collisions. If global separation is explicitly enabled, keep all object bounding boxes separate, regardless of allowOverlap. Otherwise use allowOverlap: true only for intended visual joints, never on every object to hide layout mistakes.
 - Never claim manufacturing precision or CAD features the current operation set cannot represent.
 - Write any free text you produce (a clarify question, or a no_change reason) in the same language the user's most recent message is written in. Do not switch to a different language than the user used.`;
 

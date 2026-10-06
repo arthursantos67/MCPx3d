@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Iterator
+from pathlib import Path
 
 import cadquery as cq
 import pytest
@@ -12,6 +14,39 @@ from api.main import app
 from api.routes.cad_projects import get_cad_project_store
 
 ZERO = {"x": 0, "y": 0, "z": 0}
+
+
+def test_motor_reports_all_collisions_and_accepts_accumulated_placement_repairs(tmp_path) -> None:
+    from domain.cad_diagnostics import CadAssemblyDiagnostics
+
+    motor = json.loads((Path(__file__).parents[3] / "tests/fixtures/cad_motor_overlap.json").read_text())
+    app.dependency_overrides[get_cad_project_store] = lambda: CadProjectStore(tmp_path / "motor.sqlite3")
+    client = TestClient(app)
+
+    def inspect_collisions() -> list[dict]:
+        response = client.post("/api/cad/assemblies/inspect", json=motor)
+        assert response.status_code == 422, response.text
+        report = response.json()["details"][0]
+        CadAssemblyDiagnostics.model_validate_json(json.dumps(report))
+        return report["collisions"]
+
+    collisions = inspect_collisions()
+    assert len(collisions) == 12
+    assert {tuple(item["components"]) for item in collisions} == {("housing", "front_cover"), ("housing", "rear_cover")}
+    first = collisions[0]
+    assert first["overlapVolumeMm3"] == pytest.approx(13910.97, abs=0.01)
+    assert first["overlapBoundsMm"]["z"] == pytest.approx([57, 60])
+    assert first["componentBoundsMm"][0]["z"] == pytest.approx([-60, 60])
+    assert first["componentBoundsMm"][1]["z"] == pytest.approx([57, 65])
+
+    motor["components"][1]["position"]["z"] = 64.5
+    remaining = inspect_collisions()
+    assert len(remaining) == 6
+    assert all(item["components"] == ["housing", "rear_cover"] for item in remaining)
+    motor["components"][2]["position"]["z"] = -64.5
+    response = client.post("/api/cad/projects", json={"spec": motor})
+    assert response.status_code == 201, response.text
+    assert response.json()["inspection"]["solidCount"] == 4
 
 
 def box(id: str, op: str, width: float, depth: float, height: float, x=0, y=0, z=0) -> dict:
@@ -73,6 +108,50 @@ def test_manual_press_is_saved_as_three_independent_solid_bodies(tmp_path) -> No
     assert spindle_stl.status_code == 200, spindle_stl.text
     assert spindle_stl.content != stl.content
     assert int.from_bytes(spindle_stl.content[80:84], "little") > 20
+    assert len(spindle_stl.content) == 84 + 50 * int.from_bytes(spindle_stl.content[80:84], "little")
+    spindle_step = client.get(f"/api/cad/projects/{project_id}/revisions/0/components/spindle/step")
+    assert spindle_step.status_code == 200
+    path.write_bytes(spindle_step.content)
+    component = cq.importers.importStep(str(path)).solids().vals()
+    assert len(component) == 1 and component[0].isValid()
+    assert component[0].BoundingBox().zmin == pytest.approx(29)
+    assert component[0].Volume() == pytest.approx(mesh.json()["components"][1]["volumeMm3"], rel=1e-5)
+
+
+def test_motion_validation_builds_each_component_once(monkeypatch) -> None:
+    from domain.cad_assembly import CadAssemblySpec
+
+    from api import cad_assembly_adapter as adapter
+
+    original = adapter.build_program_solid
+    calls = []
+
+    def tracked(spec, engine):
+        calls.append(spec.partId)
+        return original(spec, engine)
+
+    monkeypatch.setattr(adapter, "build_program_solid", tracked)
+    artifact = adapter.build_assembly_step(CadAssemblySpec.model_validate(PRESS), 10_000_000)
+    assert artifact.solid_count == 3
+    assert calls == ["frame", "spindle", "platen"]
+
+
+def test_inspection_and_save_reuse_the_same_validated_step(tmp_path, monkeypatch) -> None:
+    from api import cad_service
+
+    original = cad_service.build_assembly_step
+    calls = []
+
+    def tracked(spec, limit):
+        calls.append(spec.partId)
+        return original(spec, limit)
+
+    monkeypatch.setattr(cad_service, "build_assembly_step", tracked)
+    app.dependency_overrides[get_cad_project_store] = lambda: CadProjectStore(tmp_path / "cache-test.sqlite3")
+    client = TestClient(app)
+    assert client.post("/api/cad/assemblies/inspect", json=PRESS).status_code == 200
+    assert client.post("/api/cad/projects", json={"spec": PRESS}).status_code == 201
+    assert calls == ["manual_press"]
 
 
 def test_press_motion_moves_spindle_and_platen_and_rejects_mismatched_group() -> None:

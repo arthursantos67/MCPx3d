@@ -106,25 +106,23 @@ class _ArtifactCache:
 
         in_flight = self._inflight.get(key)
         if in_flight is None:
-            in_flight = asyncio.create_task(_build_cached_artifact(build))
+            in_flight = asyncio.create_task(self._build(key, build))
             self._inflight[key] = in_flight
+            in_flight.add_done_callback(lambda task: None if task.cancelled() else task.exception())
+        return await asyncio.shield(in_flight)
+
+    async def _build(self, key: tuple[str, int, str], build: Callable[[], Awaitable[str]]) -> str:
         try:
-            content = await asyncio.shield(in_flight)
-        except BaseException:
-            if self._inflight.get(key) is in_flight and in_flight.done():
-                self._inflight.pop(key, None)
-            raise
-
-        if self._inflight.get(key) is not in_flight:
+            content = await build()
+            if self._inflight.get(key) is asyncio.current_task():
+                self._entries[key] = _CachedArtifact(content, self._clock())
+                self._entries.move_to_end(key)
+                while len(self._entries) > self._max_entries:
+                    self._entries.popitem(last=False)
             return content
-
-        self._entries[key] = _CachedArtifact(content, self._clock())
-        self._entries.move_to_end(key)
-        while len(self._entries) > self._max_entries:
-            self._entries.popitem(last=False)
-        if in_flight.done():
-            self._inflight.pop(key, None)
-        return content
+        finally:
+            if self._inflight.get(key) is asyncio.current_task():
+                self._inflight.pop(key, None)
 
     def remove_project(self, project_id: str) -> None:
         for key in [key for key in self._entries if key[0] == project_id]:
@@ -140,10 +138,6 @@ class _ArtifactCache:
                 del self._entries[key]
 
 
-async def _build_cached_artifact(build: Callable[[], Awaitable[str]]) -> str:
-    return await build()
-
-
 def _empty_model_spec(
     project_id: str, *, units: Units, display_scale: float
 ) -> ModelSpec:
@@ -152,7 +146,7 @@ def _empty_model_spec(
         projectId=project_id,
         revision=0,
         units=units,
-        scene=Scene(title="Untitled model", titleSource="default", displayScale=display_scale),
+        scene=Scene(title="Novo modelo", titleSource="default", displayScale=display_scale),
         objects=[],
     )
 

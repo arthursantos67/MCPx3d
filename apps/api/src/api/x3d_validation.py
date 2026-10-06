@@ -26,6 +26,7 @@ from domain.model_spec import ModelSpec
 
 from api.mcp_client import X3DMcpClient
 from api.x3d_adapter import apply_model_spec
+from api.x3d_backend import LocalX3DBackend, X3DBackend
 
 DiagnosticLevel = Literal["error", "warning", "info"]
 
@@ -126,7 +127,7 @@ def _parse_semantic_report(report: str) -> tuple[Diagnostic, ...]:
     return (Diagnostic("error", "semantic-report-protocol", "Unrecognized or incomplete semantic report."),)
 
 
-async def validate_scene_content(client: X3DMcpClient, content: str) -> ValidationResult:
+async def validate_scene_content(client: X3DBackend, content: str) -> ValidationResult:
     """Runs schema + semantic validation against arbitrary X3D `content`."""
     try:
         schema = json.loads(await client.validate_x3d(content))
@@ -151,7 +152,7 @@ async def validate_current_scene(client: X3DMcpClient) -> ValidationResult:
 
 
 async def autofix_and_revalidate(
-    client: X3DMcpClient, result: ValidationResult
+    client: X3DBackend, result: ValidationResult
 ) -> ValidationResult:
     """Attempts the upstream containerField autofix on an invalid `result` and revalidates.
 
@@ -170,7 +171,7 @@ async def autofix_and_revalidate(
 
 
 async def build_and_validate_candidate(
-    client: X3DMcpClient, spec: ModelSpec, timings: dict[str, int] | None = None
+    client: X3DBackend, spec: ModelSpec, timings: dict[str, int] | None = None
 ) -> tuple[dict[str, str], ValidationResult]:
     """Builds `spec` as X3D and runs the full validation pipeline (Issue #10).
 
@@ -180,11 +181,15 @@ async def build_and_validate_candidate(
     one safe to commit as the project's new revision.
     """
     started = perf_counter()
-    def_names = await apply_model_spec(client, spec)
+    if isinstance(client, LocalX3DBackend):
+        def_names, content = await client.build(spec)
+    else:
+        def_names = await apply_model_spec(client, spec)
     if timings is not None:
-        timings["mcp_scene_build"] = max(0, round((perf_counter() - started) * 1000))
+        timings["x3d_scene_build" if isinstance(client, LocalX3DBackend) else "mcp_scene_build"] = max(0, round((perf_counter() - started) * 1000))
     started = perf_counter()
-    result = await autofix_and_revalidate(client, await validate_current_scene(client))
+    initial = await validate_scene_content(client, content) if isinstance(client, LocalX3DBackend) else await validate_current_scene(client)
+    result = await autofix_and_revalidate(client, initial)
     if timings is not None:
         timings["x3d_validation"] = max(0, round((perf_counter() - started) * 1000))
     if not result.valid:

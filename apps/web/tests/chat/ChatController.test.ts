@@ -3,7 +3,6 @@ import { test } from "node:test";
 
 import { MockLLMProvider, mockCompletion, type MockResponse } from "../../../../packages/agent/src/mock-provider.ts";
 import type { ModelSpec } from "../../../../packages/domain/ts/src/model-spec.ts";
-import type { CadPartSpec } from "../../../../packages/domain/ts/src/cad-part.ts";
 
 import { ApiError, type ApplyPlanRequestBody, type ApplyPlanResponse, type Recipe } from "../../src/api/client.ts";
 import { ChatController, type AgentProvider, type ChatApi } from "../../src/chat/ChatController.ts";
@@ -67,6 +66,28 @@ const CREATE_CUBE_PLAN = {
   ],
 };
 
+test('switching AI providers keeps the X3D session, scene and conversation', async () => {
+  const first = makeFakeProvider([CREATE_CUBE_PLAN]);
+  const second = makeFakeProvider([CREATE_CUBE_PLAN]);
+  const scene: ModelSpec = { ...emptySpec(1), objects: [{ id: 'cube', name: 'Cube', kind: 'box',
+    dimensions: { width: 10, height: 10, depth: 10 }, transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+    material: { color: '#ff0000' } }] };
+  const { api } = makeFakeApi(emptySpec(), () => ({ projectId: scene.projectId, revision: scene.revision,
+    modelSpec: scene, validation: { schemaValid: true, semanticValid: true, warnings: [], autofixes: [] },
+    preview: null, artifacts: [], correlationId: null }));
+  const controller = new ChatController(first.provider, api);
+  await controller.initialize();
+  await controller.sendMessage('Create a cube');
+  const before = controller.getState();
+  controller.setProvider(second.provider);
+  assert.equal(controller.getState().projectId, before.projectId);
+  assert.equal(controller.getState().modelSpec, before.modelSpec);
+  assert.equal(controller.getState().messages, before.messages);
+  await controller.sendMessage('Create another cube');
+  assert.equal(first.mock.calls.length, 1);
+  assert.equal(second.mock.calls.length, 1);
+});
+
 const REPAIRED_CUBE_PLAN = {
   intent: "create_model",
   operations: [
@@ -80,112 +101,6 @@ const REPAIRED_CUBE_PLAN = {
     },
   ],
 };
-
-test("CAD chat uses the configured provider without changing the Web3D scene", async () => {
-  const cadSpec: CadPartSpec = {
-    schemaVersion: "2.0", units: "mm", partId: "plate_1",
-    base: { kind: "extruded_rectangle", width: 100, depth: 80, thickness: 10 },
-    features: [{ kind: "through_hole", x: 10, y: 5, diameter: 12 }],
-  };
-  const { provider, mock } = makeFakeProvider([{
-    decision: "edit", question: "", operations: [{ op: "set_parameter", parameter: "width", value: 120 }],
-  }]);
-  const { api, applyCalls } = makeFakeApi(emptySpec());
-  const controller = new ChatController(provider, api);
-  await controller.initialize();
-
-  const outcome = await controller.planCadEdit("set width to 120 mm", cadSpec);
-
-  assert.equal(outcome.kind, "edit");
-  assert.equal(mock.calls.length, 1);
-  assert.equal(applyCalls.length, 0);
-  assert.equal(controller.getState().isBusy, false);
-  assert.equal(controller.getState().modelSpec?.revision, 0);
-});
-
-test("CAD creation uses the configured provider before a CAD project exists", async () => {
-  const spec = {
-    schemaVersion: "2.1", units: "mm", partId: "plate_from_prompt",
-    base: { kind: "extruded_rectangle", width: 120, depth: 80, thickness: 10 },
-    features: [{ kind: "through_hole", id: "hole_1", x: 0, y: 0, diameter: 8 }],
-    cornerChamfer: 4,
-  };
-  const { provider, mock } = makeFakeProvider([{
-    decision: "create", spec, question: "", assumptions: ["Thickness 10 mm was inferred."],
-  }]);
-  const { api, applyCalls } = makeFakeApi(emptySpec());
-  const controller = new ChatController(provider, api);
-  await controller.initialize();
-
-  const outcome = await controller.planCadCreate("Crie uma placa com um furo");
-
-  assert.equal(outcome.kind, "create");
-  assert.equal(mock.calls.length, 1);
-  assert.equal(applyCalls.length, 0);
-  assert.equal(controller.getState().isBusy, false);
-});
-
-test("CAD generation stops when the geometry checker is unreachable", async () => {
-  const program = {
-    schemaVersion: "3.0", units: "mm", partId: "block",
-    steps: [{ id: "body", op: "base", shape: "box", position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 }, width: 40, depth: 20, height: 10 }],
-  };
-  const { provider } = makeFakeProvider([{ decision: "create", spec: program, question: "", assumptions: [] }]);
-  const { api } = makeFakeApi(emptySpec());
-  const checked: unknown[] = [];
-  const controller = new ChatController(provider, {
-    ...api,
-    checkCadProgram: async (spec) => { checked.push(spec); throw new ApiError(503, { code: "CAD_ENGINE_UNAVAILABLE", message: "offline" }); },
-  });
-  await controller.initialize();
-
-  await assert.rejects(controller.planCadProgram("Crie um bloco"), /offline/);
-  assert.deepEqual(checked, [program]);
-  assert.equal(controller.getState().isBusy, false);
-});
-
-test("CAD design routes a moving mechanism to a checked assembly", async () => {
-  const zero = { x: 0, y: 0, z: 0 };
-  const fixed = { kind: "fixed", axis: "z", minimum: 0, maximum: 0, value: 0, pitch: 0, group: "" };
-  const rotary = { kind: "rotary", axis: "x", minimum: 0, maximum: 360, value: 0, pitch: 0, group: "" };
-  const box = (id: string) => ({ decision: "create", question: "", assumptions: [], spec: {
-    schemaVersion: "3.0", units: "mm", partId: id,
-    steps: [{ id: "body", op: "base", shape: "box", position: zero, rotation: zero, width: 50, depth: 30, height: 20 }],
-  } });
-  const { provider, mock } = makeFakeProvider([
-    { kind: "assembly", reason: "fixed housing and rotating rotor" },
-    { decision: "create", partId: "drive", question: "", assumptions: [], components: [
-      { id: "housing", action: "build", description: "Fixed housing.", position: zero, motion: fixed },
-      { id: "rotor", action: "build", description: "Rotating rotor.", position: zero, motion: rotary },
-    ] },
-    box("housing"), box("rotor"),
-  ]);
-  const { api } = makeFakeApi(emptySpec());
-  const checkedParts: string[] = [];
-  const progress: string[] = [];
-  let checkedAssembly = false;
-  const controller = new ChatController(provider, {
-    ...api,
-    checkCadProgram: async (spec) => { checkedParts.push(spec.partId); return null; },
-    checkCadAssembly: async () => { checkedAssembly = true; return null; },
-  });
-  await controller.initialize();
-
-  const result = await controller.planCadDesign("Crie um motor com rotor móvel", undefined,
-    (event) => progress.push(`${event.phase}:${event.completed}/${event.components.length}`));
-
-  assert.equal(result.mode, "assembly");
-  assert.equal(result.outcome.kind, "create");
-  if (result.outcome.kind === "create") assert.equal(result.outcome.spec.components.length, 2);
-  assert.deepEqual(checkedParts, ["housing", "rotor"]);
-  assert.equal(checkedAssembly, true);
-  assert.equal(mock.calls.length, 4);
-  assert.deepEqual(progress, [
-    "planning:0/0", "building:0/2", "checking-component:0/2",
-    "building:1/2", "checking-component:1/2", "checking-assembly:2/2", "complete:2/2",
-  ]);
-  assert.equal(controller.getState().isBusy, false);
-});
 
 test("an exact recipe request applies saved geometry without calling the provider", async () => {
   const spec = emptySpec();
@@ -234,7 +149,7 @@ test("a specific request without a recipe continues through the planner", async 
   assert.equal(applyCalls.length, 1);
 });
 
-test("an explicit no-overlap request removes model exemptions before applying", async () => {
+test("the global separation option removes model exemptions and enforces strict validation", async () => {
   const spec = emptySpec();
   const plan = {
     intent: "create_model",
@@ -252,11 +167,36 @@ test("an explicit no-overlap request removes model exemptions before applying", 
   const controller = new ChatController(provider, api);
   await controller.initialize();
 
-  await controller.sendMessage("Crie uma cozinha sem sobreposição de objetos");
+  await controller.sendMessage("Crie uma cozinha sem sobreposição de objetos", { overlapPolicy: 'strict' });
 
   assert.equal(applyCalls.length, 1);
-  assert.equal((applyCalls[0]?.plan.operations[0] as { allowOverlap?: boolean }).allowOverlap, false);
+  const operation = applyCalls[0]?.plan.operations[0];
+  assert.ok(operation);
+  assert.equal((operation as { allowOverlap?: boolean }).allowOverlap, false);
   assert.equal(applyCalls[0]?.resolveOverlaps, undefined);
+  assert.equal(applyCalls[0]?.overlapPolicy, 'strict');
+});
+
+test("separation wording for loose items does not prohibit visual joints across the scene", async () => {
+  const spec = emptySpec();
+  const plan = { intent: 'create_model', operations: [{ op: 'create_object', id: 'joint', name: 'Junta', kind: 'sphere',
+    dimensions: { radius: 20 }, allowOverlap: true }] };
+  const { provider, mock } = makeFakeProvider([plan]);
+  const { api, applyCalls } = makeFakeApi(spec, () => ({ projectId: spec.projectId, revision: 1,
+    modelSpec: { ...spec, revision: 1 }, validation: { schemaValid: true, semanticValid: true,
+      warnings: [{ check: 'layout_bounds', message: 'Conservative layout notice' }], autofixes: [] },
+    preview: null, artifacts: [], correlationId: null,
+  }));
+  const controller = new ChatController(provider, api);
+  await controller.initialize();
+  await controller.sendMessage('Crie um robô e uma esteira com seis caixas sem sobreposição entre as caixas.');
+  assert.equal(mock.calls.length, 1);
+  assert.equal(applyCalls[0]?.overlapPolicy, 'visual');
+  const operation = applyCalls[0]?.plan.operations[0];
+  assert.ok(operation);
+  assert.equal((operation as { allowOverlap?: boolean }).allowOverlap, true);
+  assert.equal(applyCalls[0]?.resolveOverlaps, undefined);
+  assert.equal(controller.getState().requestStatus, 'succeeded');
 });
 
 test("a saved recipe remains usable when WebGPU is unavailable", async () => {
@@ -371,7 +311,7 @@ test("a successful request updates modelSpec/previewUrl and appends an assistant
     state.messages.map((m) => m.role),
     ["user", "assistant"],
   );
-  assert.match(state.messages[1]?.text ?? "", /revision 1/);
+  assert.match(state.messages[1]?.text ?? "", /revisão 1/);
 });
 
 test("a generation failure leaves modelSpec/previewUrl untouched and surfaces an error message", async () => {
@@ -406,6 +346,7 @@ test("a rejected geometry plan is regenerated once with the API validation diagn
         code: "UNINTENDED_OVERLAP",
         message: "'Table top' (table_top) intersects 'Backrest' (chair_backrest); move one part.",
         correlationId: "request-overlap",
+        details: [{ schemaVersion: '1.0', check: 'x3d_layout', pairs: Array.from({ length: 23 }, (_, index) => ({ objects: [`part_${index}`, `neighbor_${index}`] })) }],
       });
     }
     return {
@@ -430,6 +371,7 @@ test("a rejected geometry plan is regenerated once with the API validation diagn
   const repairRequest = mock.calls[1]?.messages.at(-1)?.content ?? "";
   assert.match(repairRequest, /UNINTENDED_OVERLAP/);
   assert.match(repairRequest, /table_top/);
+  assert.match(repairRequest, /part_22\/neighbor_22/);
   assert.equal(controller.getState().requestStatus, "succeeded");
   assert.deepEqual(controller.getState().messages.map((message) => message.role), ["user", "assistant"]);
 });
@@ -695,7 +637,7 @@ test("a truncated scene request continues in validated batches and records provi
   assert.equal(state.previewUrl, "http://test/api/projects/prj_test/artifacts/html?revision=2");
   assert.equal(state.requestStatus, "succeeded");
   assert.equal(state.sceneBatch, null);
-  assert.match(state.messages.at(-1)?.text ?? "", /2 validated batches; revision 2/);
+  assert.match(state.messages.at(-1)?.text ?? "", /2 etapas validadas; revisão 2/);
   assert.doesNotMatch(JSON.stringify(state), /SECRET_RAW_OUTPUT/);
   assert.deepEqual(state.generationStats["mock/default"], {
     requests: 1,

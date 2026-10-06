@@ -41,10 +41,19 @@ export interface GenerationOptions {
 }
 
 export class ProviderRequestError extends Error {
-  constructor(message: string, options?: { cause?: unknown }) {
+  readonly limit?: ProviderLimit;
+
+  constructor(message: string, options?: { cause?: unknown; limit?: ProviderLimit }) {
     super(message, options);
     this.name = "ProviderRequestError";
+    this.limit = options?.limit ?? (options?.cause instanceof ProviderRequestError ? options.cause.limit : undefined);
   }
+}
+
+export interface ProviderLimit {
+  readonly kind: 'rate' | 'quota' | 'request-size' | 'unknown';
+  readonly retryAt?: number;
+  readonly code?: string;
 }
 
 /** A completion that could not be turned into a JSON value. The message is a
@@ -67,6 +76,12 @@ const STRUCTURED_OUTPUT_FAILURE_MESSAGES: Record<CompletionFailure, string> = {
 
 export interface LLMProvider {
   readonly id: string;
+  /** Absent keeps the existing HTTP/WebLLM repair behavior. */
+  readonly generationPolicy?: {
+    readonly retryInvalidStructuredOutput: boolean;
+    readonly maxCadRepairAttempts: number;
+    readonly maxSceneRepairAttempts?: number;
+  };
   /** The configured model, for per-provider/model diagnostics. */
   readonly model?: string;
   /** The provider's own completion-token ceiling, when it has one. */

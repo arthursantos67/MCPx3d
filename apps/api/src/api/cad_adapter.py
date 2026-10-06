@@ -131,7 +131,7 @@ def build_step(spec: CadPartSpec, max_bytes: int) -> CadArtifact:
     try:
         cq = import_module("cadquery")
     except ImportError as exc:
-        raise CadEngineUnavailableError("Start the API with uv run --extra cad api to enable CAD exports") from exc
+        raise CadEngineUnavailableError("CAD engine unavailable. Run uv sync in apps/api and restart the API.") from exc
 
     base = spec.base
     chamfer = spec.cornerChamfer or 0

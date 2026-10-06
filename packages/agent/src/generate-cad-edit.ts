@@ -1,4 +1,5 @@
 import { Ajv2020 } from 'ajv/dist/2020.js'
+import { cadResponseMetadataSchema } from './cad-response-metadata.ts'
 
 import type { CadPartSpec } from '../../domain/ts/src/cad-part.ts'
 import { validateCadPartDomainRules } from '../../domain/ts/src/cad-part.ts'
@@ -24,7 +25,7 @@ const outputSchema = {
         },
       },
     },
-    question: { type: 'string', maxLength: 240 },
+    question: cadResponseMetadataSchema.question,
   },
 } as const
 

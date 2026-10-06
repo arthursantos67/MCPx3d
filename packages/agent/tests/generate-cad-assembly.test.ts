@@ -3,6 +3,8 @@ import { test } from 'node:test'
 import { CadAssemblyValidationError, generateCadAssembly, type CadAssemblyProgress } from '../src/generate-cad-assembly.ts'
 import { MockLLMProvider } from '../src/mock-provider.ts'
 import { ProviderRequestError } from '../src/provider.ts'
+import type { CadAssemblySpec } from '../../domain/ts/src/cad-assembly.ts'
+import type { CadAssemblyIssue, CadBounds, CadCollision } from '../../domain/ts/src/cad-assembly-diagnostics.ts'
 
 const zero = { x: 0, y: 0, z: 0 }
 const fixed = { kind: 'fixed', axis: 'z', minimum: 0, maximum: 0, value: 0, pitch: 0, group: '' }
@@ -11,6 +13,90 @@ const box = (id: string) => ({ decision: 'create', question: '', assumptions: []
   schemaVersion: '3.0', units: 'mm', partId: id, steps: [{ id: 'body', op: 'base', shape: 'box',
     position: zero, rotation: zero, width: 50, depth: 30, height: 20 }],
 } })
+
+test('verbose component assumptions do not interrupt an assembly or request a replacement program', async () => {
+  const assumptions = Array.from({ length: 14 }, (_, index) => `${index}: ${'Folgas e posições inferidas para este suporte. '.repeat(10)}`)
+  const plan = { decision: 'create', partId: 'supports', question: '', assumptions: ['Planejamento detalhado. '.repeat(20)], components: [
+    { id: 'suporte-esquerdo', action: 'build', description: 'Support left', position: zero, motion: fixed },
+    { id: 'suporte-direito', action: 'build', description: 'Support right', position: { x: 100, y: 0, z: 0 }, motion: fixed },
+  ] }
+  const left = { ...box('suporte-esquerdo'), assumptions }
+  const right = box('suporte-direito')
+  const provider = new MockLLMProvider([plan, left, right])
+  const checked: string[] = []
+  const result = await generateCadAssembly(provider, 'Crie dois suportes separados', async (candidate) => {
+    checked.push(candidate.partId)
+    return null
+  }, async () => null)
+  assert.equal(result.kind, 'create')
+  if (result.kind !== 'create') return
+  assert.deepEqual(checked, ['suporte-esquerdo', 'suporte-direito'])
+  assert.equal(provider.calls.length, 3)
+  assert.deepEqual(result.assumptions, [...plan.assumptions, ...assumptions.map((item) => `suporte-esquerdo: ${item}`)])
+  assert.deepEqual(result.spec.components.map((component) => component.steps), [left.spec.steps, right.spec.steps])
+})
+
+test('assembly explanatory fields must remain strings and string arrays', async () => {
+  const provider = new MockLLMProvider(Array(2).fill({ decision: 'clarify', question: 'Preciso de detalhes', assumptions: [{ fake: 'text' }] }))
+  await assert.rejects(generateCadAssembly(provider, 'Crie dois suportes', async () => null), /Metadados/)
+})
+
+for (const axis of ['x', 'y', 'z'] as const) for (const offset of [0, 40]) {
+  test(`accumulates both end repairs along ${axis}, offset ${offset}, preserving geometry and IDs`, async () => {
+    const dimensions = (length: number) => ({ width: axis === 'x' ? length : 100,
+      depth: axis === 'y' ? length : 100, height: axis === 'z' ? length : 100 })
+    const localBody = offset ? 17 : 0
+    const localCap = offset ? -11 : 0
+    const plan = { decision: 'create', partId: 'renamed_assembly', question: '', assumptions: [], components: [
+      { id: 'shell', action: 'build', description: 'A long fixed shell', motion: fixed,
+        position: { ...zero, [axis]: offset - localBody } },
+      ...[1, -1].map((direction, i) => ({ id: i ? 'lid_negative' : 'lid_positive', action: 'build',
+        description: 'A short fixed end body', motion: fixed,
+        position: { ...zero, [axis]: offset + direction * 61 - localCap } })),
+    ] }
+    const programs = plan.components.map((component, i) => ({ ...box(component.id), spec: {
+      ...box(component.id).spec, steps: [{ ...box(component.id).spec.steps[0], ...dimensions(i ? 8 : 120),
+        position: { ...zero, [axis]: i ? localCap : localBody } }],
+    } }))
+    const provider = new MockLLMProvider([plan, ...programs])
+    let checks = 0
+    const inspect = async (candidate: CadAssemblySpec): Promise<CadAssemblyIssue | null> => {
+      checks++
+      const collisions: CadCollision[] = []
+      const bodyBounds = { x: [-50, 50], y: [-50, 50], z: [-50, 50],
+        [axis]: [offset - 60, offset + 60] } as CadBounds
+      for (const cap of candidate.components.slice(1)) {
+        const center = cap.position[axis] + localCap
+        const capBounds = { ...bodyBounds, [axis]: [center - 4, center + 4] } as CadBounds
+        const lower = Math.max(bodyBounds[axis][0], capBounds[axis][0])
+        const upper = Math.min(bodyBounds[axis][1], capBounds[axis][1])
+        if (upper <= lower) continue
+        const overlapBounds = { ...bodyBounds, [axis]: [lower, upper] } as CadBounds
+        const boundsText = (bounds: CadBounds) => ['x', 'y', 'z'].map((a) => {
+          const [min, max] = bounds[a as typeof axis]
+          return `${a}=[${min.toFixed(2)}, ${max.toFixed(2)}]`
+        }).join(', ')
+        const volume = (upper - lower) * 10000
+        const message = `CAD components shell and ${cap.id} intersect at posição atual by ${volume.toFixed(2)} mm³; ` +
+          `component volumes: shell=1200000.00, ${cap.id}=80000.00 mm³; ` +
+          `overlap fractions: shell=${(volume / 1200000).toFixed(4)}, ${cap.id}=${(volume / 80000).toFixed(4)}; ` +
+          `overlap bounds: ${boundsText(overlapBounds)}; component bounds: shell ${boundsText(bodyBounds)}; ${cap.id} ${boundsText(capBounds)}; add a clearance or reduce the travel`
+        collisions.push({ components: ['shell', cap.id], pose: 'current', message, overlapVolumeMm3: volume,
+          componentVolumesMm3: [1200000, 80000], overlapBoundsMm: overlapBounds, componentBoundsMm: [bodyBounds, capBounds] })
+      }
+      return collisions.length ? { message: collisions[0].message, collisions } : null
+    }
+    const result = await generateCadAssembly(provider, 'Create a mechanism with two fixed ends', async () => null, inspect)
+    assert.equal(result.kind, 'create')
+    if (result.kind !== 'create') return
+    assert.equal(provider.calls.length, 4)
+    assert.equal(checks, 3)
+    assert.equal(result.spec.components[1].position[axis], offset + 64.5 - localCap)
+    assert.equal(result.spec.components[2].position[axis], offset - 64.5 - localCap)
+    assert.deepEqual(result.spec.components.map((item) => item.steps), programs.map((item) => item.spec.steps))
+    assert.deepEqual(result.spec.components.map((item) => item.id), plan.components.map((item) => item.id))
+  })
+}
 
 test('decomposes a generic mechanical request into independent bodies and rotary motion', async () => {
   const provider = new MockLLMProvider([
@@ -41,6 +127,30 @@ test('decomposes a generic mechanical request into independent bodies and rotary
     ['building', 1], ['checking-component', 1], ['checking-assembly', 2], ['complete', 2],
   ])
   assert.deepEqual(progress[1].components.map((item) => item.id), ['housing', 'rotor'])
+})
+
+test('normalizes the shared command range and value of a linked motion group', async () => {
+  const linked = 'linear_stage'
+  const provider = new MockLLMProvider([
+    { decision: 'create', partId: 'stage', question: '', assumptions: [], components: [
+      { id: 'base', action: 'build', description: 'Fixed base.', position: zero, motion: fixed },
+      { id: 'carriage', action: 'build', description: 'Sliding carriage.', position: zero,
+        motion: { kind: 'slider', axis: 'x', minimum: -40, maximum: 40, value: 12, pitch: 0, group: linked, factor: 1 } },
+      { id: 'lead_screw', action: 'build', description: 'Rotary drive screw.', position: zero,
+        motion: { kind: 'rotary', axis: 'x', minimum: -360, maximum: 360, value: 90, pitch: 0, group: linked, factor: -90 } },
+    ] },
+    box('base'), box('carriage'), box('lead_screw'),
+  ])
+  const result = await generateCadAssembly(provider, 'Create a compact linear stage', async () => null)
+  assert.equal(result.kind, 'create')
+  if (result.kind !== 'create') return
+  const coupled = result.spec.components.filter((component) => component.motion?.group === linked).map((component) => component.motion!)
+  assert.equal(coupled.length, 2)
+  assert.deepEqual(coupled.map(({ minimum, maximum, value }) => ({ minimum, maximum, value })), [
+    { minimum: -40, maximum: 40, value: 12 },
+    { minimum: -40, maximum: 40, value: 12 },
+  ])
+  assert.deepEqual(coupled.map((movement) => movement.factor), [1, -90])
 })
 
 test('provider rate limits stop assembly planning without a second model call', async () => {
@@ -112,7 +222,9 @@ test('does not silently delete an assembly component during an edit', async () =
     { id: 'housing', action: 'keep', description: 'Housing', position: zero, motion: fixed },
     { id: 'shaft', action: 'keep', description: 'Shaft', position: zero, motion: fixed },
   ] }
-  await assert.rejects(generateCadAssembly(new MockLLMProvider([plan]), 'Aumente o curso', async () => null, undefined, existing as never), /removeu um componente/)
+  for (const request of ['Aumente o curso', 'Aumente o curso sem remover componentes', 'Não remova a tampa', 'Keep the cover; never delete it']) {
+    await assert.rejects(generateCadAssembly(new MockLLMProvider([plan]), request, async () => null, undefined, existing as never), /removeu um componente/)
+  }
 })
 
 test('repairs a component interference using the generic assembly plan', async () => {
@@ -156,15 +268,19 @@ test('opens a validated clearance through a housing around a fixed cylindrical b
       { id: 'estator', action: 'build', description: 'Fixed cylindrical stator.', position: zero, motion: fixed },
     ] }, housing, stator,
   ])
-  const collision = 'CAD components carcaca and estator intersect at posição atual by 42099.30 mm³; component volumes: carcaca=1000000.00, estator=402123.86 mm³; overlap fractions: carcaca=0.0421, estator=1.0000; add a clearance or reduce the travel'
+  const message = 'CAD components carcaca and estator intersect at posição atual'
+  const collision: CadAssemblyIssue = { message, collisions: [{ components: ['carcaca', 'estator'], pose: 'current', message,
+    overlapVolumeMm3: 402123.86, componentVolumesMm3: [1000000, 402123.86],
+    overlapBoundsMm: { x: [-40, 40], y: [-40, 40], z: [-40, 40] },
+    componentBoundsMm: [{ x: [-50, 50], y: [-50, 50], z: [-50, 50] }, { x: [-40, 40], y: [-40, 40], z: [-40, 40] }] }] }
   const result = await generateCadAssembly(provider, 'Crie um motor elétrico', async () => null,
-    async (spec) => spec.components[0].steps.some((step) => step.id === 'assembly_clearance') ? null : collision)
+    async (spec) => spec.components[0].steps.some((step) => step.id === 'assembly_fit_1') ? null : collision)
   assert.equal(result.kind, 'create')
   if (result.kind !== 'create') return
-  const cut = result.spec.components[0].steps.find((step) => step.id === 'assembly_clearance')
+  const cut = result.spec.components[0].steps.find((step) => step.id === 'assembly_fit_1')
   assert.equal(cut?.shape, 'cylinder')
   if (cut?.shape === 'cylinder') {
-    assert.equal(cut.diameter, 82)
+    assert.equal(cut.diameter, 80.4)
     assert.equal(cut.height, 102)
   }
   assert.equal(provider.calls.length, 3)
@@ -189,20 +305,24 @@ test('enlarges an existing undersized bore for a small assembly interference', a
       { id: 'estator', action: 'build', description: 'Cylindrical inner body.', position: zero, motion: fixed },
     ] }, housing, stator,
   ])
-  const collision = 'CAD components carcaca and estator intersect at posição atual by 29593.80 mm³; component volumes: carcaca=319735.59, estator=402123.86 mm³; overlap fractions: carcaca=0.0926, estator=0.0736; overlap bounds: x=[-40.00, 40.00], y=[-40.00, 40.00], z=[-40.00, 40.00]; add a clearance or reduce the travel'
+  const message = 'CAD components carcaca and estator intersect at posição atual'
+  const collision: CadAssemblyIssue = { message, collisions: [{ components: ['carcaca', 'estator'], pose: 'current', message,
+    overlapVolumeMm3: 29593.8, componentVolumesMm3: [319735.59, 402123.86],
+    overlapBoundsMm: { x: [-40, 40], y: [-40, 40], z: [-40, 40] },
+    componentBoundsMm: [{ x: [-50, 50], y: [-50, 50], z: [-50, 50] }, { x: [-40, 40], y: [-40, 40], z: [-40, 40] }] }] }
   const progress: CadAssemblyProgress[] = []
   const result = await generateCadAssembly(provider, 'Crie um motor', async () => null,
     async (spec) => {
       const bore = spec.components[0].steps[1]
-      return bore.shape === 'cylinder' && bore.diameter >= 83 ? null : collision
+      return bore.shape === 'cylinder' && bore.diameter >= 80.4 ? null : collision
     }, undefined, (event) => progress.push(event))
   assert.equal(result.kind, 'create')
   if (result.kind !== 'create') return
   const bore = result.spec.components[0].steps[1]
   assert.equal(bore.shape, 'cylinder')
-  if (bore.shape === 'cylinder') assert.equal(bore.diameter, 83)
+  if (bore.shape === 'cylinder') assert.equal(bore.diameter, 80.4)
   assert.equal(provider.calls.length, 3)
-  assert.ok(progress.some((event) => event.phase === 'repairing-assembly' && event.validationAttempt === 3))
+  assert.ok(progress.some((event) => event.phase === 'repairing-assembly' && event.validationAttempt === 2))
   assert.equal(progress.at(-1)?.phase, 'complete')
 })
 

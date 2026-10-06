@@ -42,6 +42,21 @@ test("loadProviderConfig defaults to local mode when nothing is stored", () => {
   assert.deepEqual(loadProviderConfig(store), { mode: "local" });
 });
 
+test("subscription configurations persist without keys and accept a default model", () => {
+  const store = fakeStore();
+  for (const client of ['codex', 'claude'] as const) {
+    const config = { mode: 'cli' as const, client, model: '' };
+    saveProviderConfig(config, store);
+    assert.deepEqual(loadProviderConfig(store), config);
+    assert.equal(isUsableByokConfig(config), false);
+  }
+});
+
+test("an unknown subscription client falls back to local", () => {
+  const store = fakeStore({ 'ai-web3d-modeler.provider-config.v1': JSON.stringify({ mode: 'cli', client: 'shell', model: '' }) });
+  assert.deepEqual(loadProviderConfig(store), { mode: 'local' });
+});
+
 test("saveProviderConfig then loadProviderConfig round-trips a byok config", () => {
   const store = fakeStore();
   const config = { mode: "byok" as const, baseUrl: "https://api.example.com/v1", apiKey: "sk-test", model: "test-model" };

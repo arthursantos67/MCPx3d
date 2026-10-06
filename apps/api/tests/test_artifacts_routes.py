@@ -50,7 +50,7 @@ def project_service() -> ProjectSessionService:
 def test_unknown_project_returns_standardized_404(
     project_service: ProjectSessionService,
 ) -> None:
-    app.dependency_overrides[get_settings] = lambda: Settings(mcp_base_url=_CLOSED_PORT_URL)
+    app.dependency_overrides[get_settings] = lambda: Settings(x3d_backend="mcp", mcp_base_url=_CLOSED_PORT_URL)
     client = TestClient(app)
 
     response = client.get("/api/projects/prj_does_not_exist/artifacts/html?revision=0")
@@ -61,7 +61,7 @@ def test_unknown_project_returns_standardized_404(
 
 def test_uncommitted_revision_is_not_available(project_service: ProjectSessionService) -> None:
     session = project_service.create_project()
-    app.dependency_overrides[get_settings] = lambda: Settings(mcp_base_url=_CLOSED_PORT_URL)
+    app.dependency_overrides[get_settings] = lambda: Settings(x3d_backend="mcp", mcp_base_url=_CLOSED_PORT_URL)
     client = TestClient(app)
 
     response = client.get(f"/api/projects/{session.project_id}/artifacts/html?revision=0")
@@ -73,7 +73,7 @@ def test_uncommitted_revision_is_not_available(project_service: ProjectSessionSe
 def test_valid_revision_returns_standalone_html(
     x3d_mcp_server: str, project_service: ProjectSessionService
 ) -> None:
-    app.dependency_overrides[get_settings] = lambda: Settings(mcp_base_url=AnyHttpUrl(x3d_mcp_server))
+    app.dependency_overrides[get_settings] = lambda: Settings(x3d_backend="mcp", mcp_base_url=AnyHttpUrl(x3d_mcp_server))
     client = TestClient(app)
     session = project_service.create_project()
     commit = client.post(
@@ -92,7 +92,7 @@ def test_valid_revision_returns_standalone_html(
 def test_stale_revision_maps_to_404_artifact_unavailable(
     x3d_mcp_server: str, project_service: ProjectSessionService
 ) -> None:
-    app.dependency_overrides[get_settings] = lambda: Settings(mcp_base_url=AnyHttpUrl(x3d_mcp_server))
+    app.dependency_overrides[get_settings] = lambda: Settings(x3d_backend="mcp", mcp_base_url=AnyHttpUrl(x3d_mcp_server))
     client = TestClient(app)
     session = project_service.create_project()
     commit = client.post(
@@ -124,7 +124,7 @@ def test_manifest_download_uses_attachment_content_disposition(
 def test_html_download_sets_attachment_content_disposition(
     x3d_mcp_server: str, project_service: ProjectSessionService
 ) -> None:
-    app.dependency_overrides[get_settings] = lambda: Settings(mcp_base_url=AnyHttpUrl(x3d_mcp_server))
+    app.dependency_overrides[get_settings] = lambda: Settings(x3d_backend="mcp", mcp_base_url=AnyHttpUrl(x3d_mcp_server))
     client = TestClient(app)
     session = project_service.create_project()
     commit = client.post(

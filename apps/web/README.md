@@ -1,58 +1,19 @@
-## Local AI runtime (`src/ai`) -- unused Phase-0 spike, not the real integration
+# Frontend Forma
 
-[`src/ai/webgpu-capability.ts`](src/ai/webgpu-capability.ts) (`detectWebGpuCapability`) checks whether the default local AI mode can run in this browser/device before anything downloads a model (PRD FE-04/FE-05, Issue #15) -- it reports `{ status: "ready" }` or `{ status: "unsupported", reason }`, and the reason text is scoped to AI-mode availability, never implying the 3D viewer itself is unsupported. [`src/ai/webllm-runtime.ts`](src/ai/webllm-runtime.ts) (`WebLlmRuntime`, `createWebLlmRuntime`) loads and runs [`@mlc-ai/web-llm`](https://github.com/mlc-ai/web-llm) inside a Web Worker ([`src/ai/webllm.worker.ts`](src/ai/webllm.worker.ts)) so model init/inference never blocks the main thread (PRD §3.1/§3.6, FR-28, Issue #16); it runs WebGPU detection first, exposes `idle`/`unsupported`/`loading` (with progress)/`ready`/`error` status via `getStatus()`/`onStatusChange()`, and supports cancellation through `interruptGenerate` where the loaded engine offers it (FR-33). [`src/ai/useWebLlmRuntime.ts`](src/ai/useWebLlmRuntime.ts) exposes that status as React state via `useSyncExternalStore`. Second-load model caching is handled by `@mlc-ai/web-llm` itself (browser Cache Storage) -- nothing here implements a custom cache. [`src/ai/model-config.ts`](src/ai/model-config.ts) holds the single default model id (`DEFAULT_WEBLLM_MODEL_ID`); it's provisional pending Issue #17's benchmark-based model selection.
+React, TypeScript e Vite. Instale dependências na raiz com `npm ci`; `npm run dev` inicia frontend e API. Use `npm run dev:web` se a API já estiver rodando. `VITE_API_BASE_URL` substitui `http://localhost:8001`.
 
-**This module stays unused.** It was Phase-0 spike code (PRD §14.1) written before `packages/agent` existed. PRD §3.7 assigns "the provider package" (`packages/agent`) as the only place allowed to call WebLLM directly, so the real chat integration (Issue #27, below) depends on `packages/agent`'s `WebLLMProvider` instead of this. Retiring this directory is open follow-up, not done as part of #27.
+| Diretório | Responsabilidade |
+|---|---|
+| `src/workspace` | Shell, navegação e controles compartilhados |
+| `src/ai` | Seleção do provedor e estado do runtime |
+| `src/cad` | Controlador CAD, peça/conjunto, prévia WebGL e movimento |
+| `src/chat`, `src/x3d` | Controlador, conversa e área X3D |
+| `src/viewer` | Iframe sandbox e gerenciamento de Blob URLs |
+| `src/api` | HTTP, recuperação e downloads |
+| `src/settings` | IA local ou endpoint compatível com OpenAI |
 
-## Cancelling a generation
+SDKs ficam em `packages/agent`, sem runtime duplicado no frontend. Pacotes privados compartilham fontes por importações relativas; npm workspaces centralizam instalação e checks.
 
-While local inference or plan application is active, the chat presents **Cancel generation**. It interrupts the selected provider and aborts the pending API request when one exists. A canceled request is not applied to the project, so the last validated revision and its preview remain active; the composer returns to its ready state.
+Configuração do provedor passa a valer após recarregar. Chaves ficam em localStorage e seguem diretamente para o endpoint escolhido. Apenas propostas geométricas chegam à API da aplicação.
 
-## Chat (`src/chat`, Issues #26/#27)
-
-`ChatPanel.tsx` (+ `MessageList.tsx`/`GenerationProgress.tsx`/`PromptComposer.tsx`/`ChatPanel.css`) is the presentational half; `ChatController.ts` is a framework-agnostic state machine (no React) that a user prompt flows through: `packages/agent`'s `generateModelPlan` (against a `WebLLMProvider`, adapted to this module's own `AgentProvider`/`AgentStatus` shape by `useChatController.ts`'s `toAgentProvider`) → a pure-`clarify` plan short-circuits to an assistant question instead of being POSTed (it would otherwise be rejected by the backend as `422 AMBIGUOUS_TARGET`) → otherwise `apps/web/src/api/client.ts`'s `applyPlan` POSTs it to `apps/api`, and `modelSpec`/`revision`/`previewUrl` only update on success. `useChatController.ts` is the `useSyncExternalStore` React wrapper, called once in `WorkspaceShell` (not inside `ChatPanel`), since the viewer needs the same controller's `previewUrl`. See `PRD-AI-Web3D-Modeler-v1.0.md` §10.1/§10.5's Issue #26/#27 implementation notes for the full detail, including why `packages/agent/src/schemas.ts` needed a fix before any of this could run in a browser at all.
-
-## Settings (`src/settings`)
-
-`ProviderSettings.tsx` is a small panel (toggled by the "AI Provider" button in `WorkspaceShell`'s top bar) letting a user switch from the default `WebLLMProvider` to a BYOK `OpenAICompatibleProvider` (`packages/agent`) -- base URL, API key, model -- for devices without a WebGPU-capable GPU. `providerConfig.ts` persists the choice to `localStorage` (default, when nothing is saved: `{ mode: "local" }`, i.e. unchanged behavior); `useChatController.ts` reads it once, at chat-controller construction time, to decide which provider to build -- there is no live hot-swap, changing the setting takes effect on next reload. `PromptComposer` shows a "Configure a custom provider instead" link exactly when the active provider reports `unsupported`/`error`, so the moment local AI is unavailable there's a direct way to fix it. See `PRD-AI-Web3D-Modeler-v1.0.md` §3.7/§11.7 for the full detail, including the privacy boundary a BYOK provider introduces (prompt + key go straight to the endpoint the user configured, never through `apps/api`).
-
-## Viewer (`src/viewer`, Issue #28)
-
-`X3DPreviewFrame.tsx` fetches the current revision's standalone HTML from the backend and embeds it via a Blob URL in a sandboxed `<iframe sandbox="allow-scripts">` -- never `srcDoc`/`dangerouslySetInnerHTML` with the raw HTML (PRD §11.4). `objectUrl.ts`'s `BlobUrlTracker` revokes the previous Blob URL only after a new one replaces it. See `PRD-AI-Web3D-Modeler-v1.0.md` §9.1/§10.3's Issue #28 implementation note, including the backend route (`GET /api/projects/{id}/artifacts/html`) this component needed that didn't exist yet.
-
-## Cross-package imports (`packages/agent`, `packages/domain`)
-
-This repository has no npm-workspaces root, so `src/chat` and `src/api` import `packages/agent/src/*` and `packages/domain/ts/src/*` by relative path (e.g. `../../../../packages/agent/src/provider.ts`), the same convention `packages/agent` already uses to reach `packages/domain` (see `packages/agent/README.md`). `vite.config.ts` sets `server.fs.allow` to the repository root so the dev server can serve those files -- without it, Vite's default `fs.allow` (derived from the nearest workspace root, which would otherwise resolve to `apps/web` itself) 403s them.
-
-# React + TypeScript + Vite
-
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
-
-Currently, two official plugins are available:
-
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
-```
-
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+Checks na raiz: `npm run lint:web`, `npm run typecheck`, `npm test`, `npm run build` e `npm run test:browser`. Veja [testes](../../docs/testing.md) e [arquitetura](../../docs/architecture.md).

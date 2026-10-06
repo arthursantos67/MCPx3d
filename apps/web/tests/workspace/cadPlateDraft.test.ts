@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { cadShapeForRequest } from '../../src/workspace/cadPlateDraft.ts'
+import { cadShapeForRequest } from '../support/cadPlateDraft.ts'
 
 test('explicit L bracket requests select the fused bracket generator', () => {
   assert.equal(cadShapeForRequest('Crie um suporte em L com quatro furos', 'plate'), 'bracket')

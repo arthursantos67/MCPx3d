@@ -1,0 +1,201 @@
+{
+  "schemaVersion": "4.0",
+  "units": "mm",
+  "partId": "threaded_drive",
+  "components": [
+    {
+      "id": "pedestal",
+      "position": {
+        "x": 30,
+        "y": 0,
+        "z": 0
+      },
+      "steps": [
+        {
+          "id": "box",
+          "op": "base",
+          "shape": "box",
+          "position": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "rotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "width": 12,
+          "depth": 12,
+          "height": 12
+        }
+      ]
+    },
+    {
+      "id": "shaft",
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "motion": {
+        "kind": "rotary",
+        "axis": "z",
+        "minimum": -2.3,
+        "maximum": 2.3,
+        "value": 0,
+        "group": "drive",
+        "factor": -180
+      },
+      "steps": [
+        {
+          "id": "head",
+          "op": "base",
+          "shape": "polygon_prism",
+          "position": {
+            "x": 0,
+            "y": 0,
+            "z": -8
+          },
+          "rotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "height": 4,
+          "points": [
+            {
+              "x": 12,
+              "y": 0
+            },
+            {
+              "x": 6.000000000000002,
+              "y": 10.392304845413264
+            },
+            {
+              "x": -5.999999999999997,
+              "y": 10.392304845413264
+            },
+            {
+              "x": -12,
+              "y": 1.4695761589768238e-15
+            },
+            {
+              "x": -6.000000000000005,
+              "y": -10.39230484541326
+            },
+            {
+              "x": 6.000000000000002,
+              "y": -10.392304845413264
+            }
+          ]
+        },
+        {
+          "id": "shaft_thread",
+          "op": "union",
+          "shape": "thread",
+          "position": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "rotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "diameter": 12,
+          "pitch": 2,
+          "height": 16,
+          "profile": "metric",
+          "handedness": "right",
+          "clearance": 0,
+          "starts": 1
+        }
+      ]
+    },
+    {
+      "id": "nut",
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "motion": {
+        "kind": "slider",
+        "axis": "z",
+        "minimum": -2.3,
+        "maximum": 2.3,
+        "value": 0,
+        "group": "drive",
+        "factor": 1
+      },
+      "steps": [
+        {
+          "id": "nut_body",
+          "op": "base",
+          "shape": "polygon_prism",
+          "position": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "rotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "height": 6,
+          "points": [
+            {
+              "x": 12,
+              "y": 0
+            },
+            {
+              "x": 6.000000000000002,
+              "y": 10.392304845413264
+            },
+            {
+              "x": -5.999999999999997,
+              "y": 10.392304845413264
+            },
+            {
+              "x": -12,
+              "y": 1.4695761589768238e-15
+            },
+            {
+              "x": -6.000000000000005,
+              "y": -10.39230484541326
+            },
+            {
+              "x": 6.000000000000002,
+              "y": -10.392304845413264
+            }
+          ]
+        },
+        {
+          "id": "nut_thread",
+          "op": "cut",
+          "shape": "thread",
+          "position": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "rotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "diameter": 12,
+          "pitch": 2,
+          "height": 10,
+          "profile": "metric",
+          "handedness": "right",
+          "clearance": 0.15,
+          "starts": 1
+        }
+      ]
+    }
+  ]
+}

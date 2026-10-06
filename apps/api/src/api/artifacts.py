@@ -26,7 +26,7 @@ from typing import Literal
 
 from domain.model_spec import ModelSpec
 
-from api.mcp_client import X3DMcpClient
+from api.x3d_backend import X3DBackend
 
 _HTML_MEDIA_TYPE = "text/html; charset=utf-8"
 _X3D_MEDIA_TYPE = "model/x3d+xml"
@@ -120,7 +120,7 @@ def _check_size(format: str, content: str, max_bytes: int | None) -> None:
 
 
 async def build_html_artifact(
-    client: X3DMcpClient,
+    client: X3DBackend,
     *,
     project_id: str,
     revision: int,
@@ -160,7 +160,7 @@ def build_x3d_artifact(
 
 
 async def build_converted_artifact(
-    client: X3DMcpClient,
+    client: X3DBackend,
     *,
     format: ConversionFormat,
     project_id: str,

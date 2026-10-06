@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     environment: Literal["development", "production"] = "development"
+    x3d_backend: Literal["local", "mcp"] = "local"
 
     mcp_base_url: AnyHttpUrl = AnyHttpUrl("http://localhost:8000")
     mcp_request_timeout_seconds: float = Field(default=30.0, gt=0)

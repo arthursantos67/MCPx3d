@@ -13,7 +13,7 @@ from api.projects import ProjectSessionService, get_project_service
 def import_client() -> Iterator[tuple[TestClient, ProjectSessionService]]:
     projects = ProjectSessionService(ttl_seconds=3600)
     app.dependency_overrides[get_project_service] = lambda: projects
-    app.dependency_overrides[get_settings] = lambda: Settings(mcp_base_url=AnyHttpUrl("http://127.0.0.1:1"))
+    app.dependency_overrides[get_settings] = lambda: Settings(x3d_backend="mcp", mcp_base_url=AnyHttpUrl("http://127.0.0.1:1"))
     yield TestClient(app), projects
     app.dependency_overrides.clear()
 
@@ -73,7 +73,7 @@ def test_manifest_upload_limit_is_enforced_before_parsing(import_client: tuple[T
 
 def test_imported_model_is_revalidated_and_committed(x3d_mcp_server: str, import_client: tuple[TestClient, ProjectSessionService]) -> None:
     client, projects = import_client
-    app.dependency_overrides[get_settings] = lambda: Settings(mcp_base_url=AnyHttpUrl(x3d_mcp_server))
+    app.dependency_overrides[get_settings] = lambda: Settings(x3d_backend="mcp", mcp_base_url=AnyHttpUrl(x3d_mcp_server))
     project = projects.create_project()
     response = client.post(f"/api/projects/{project.project_id}/import?expectedRevision=0", json=manifest())
     assert response.status_code == 200, response.text

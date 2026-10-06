@@ -92,3 +92,12 @@ def x3d_mcp_server() -> Iterator[str]:
         yield base_url
     finally:
         _terminate_tree(process)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_cad_artifact_cache():
+    from api.cad_service import _build_cached
+
+    _build_cached.cache_clear()
+    yield
+    _build_cached.cache_clear()

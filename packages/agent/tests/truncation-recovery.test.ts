@@ -249,7 +249,7 @@ test("two consecutive failed batches stop the request with the exact batch", asy
   assert.equal(applied.length, 1);
 });
 
-test("overlaps get repair rounds first, then one final apply asking the backend to separate parts", async () => {
+test("explicit displacement opt-in permits a final apply asking the backend to separate parts", async () => {
   const provider = new MockLLMProvider(Array.from({ length: MAX_APPLY_REPAIRS + 1 }, () => batchPlan(1, 4)));
   const requests: boolean[] = [];
   const counters = createSceneGenerationCounters();
@@ -257,6 +257,7 @@ test("overlaps get repair rounds first, then one final apply asking the backend 
   const outcome = await generateScene({
     provider,
     request: "four cabinets",
+    allowOverlapResolution: true,
     modelSpec: EMPTY_SPEC,
     counters,
     describeRepairableApplyError: () => "UNINTENDED_OVERLAP: 'Cabinet 1' (cabinet_1) intersects 'Cabinet 2' (cabinet_2)",

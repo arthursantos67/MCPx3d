@@ -7,17 +7,17 @@ interface MessageListProps {
 function roleLabel(role: ChatMessageRole): string {
   switch (role) {
     case "user":
-      return "You";
+      return "Você";
     case "assistant":
-      return "Agent";
+      return "Agente";
     case "error":
-      return "Error";
+      return "Erro";
   }
 }
 
 function MessageList({ messages }: MessageListProps) {
   if (messages.length === 0) {
-    return <p className="workspace-placeholder">Describe the 3D object you want to create.</p>;
+    return <p className="workspace-placeholder">Descreva uma cena, um objeto ou um ambiente para começar.</p>;
   }
 
   return (

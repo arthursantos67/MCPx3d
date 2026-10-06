@@ -7,6 +7,7 @@ from api.overlap import (
     MAX_REPORTED_OVERLAPS,
     UnintendedOverlapError,
     bounds_for,
+    check_scene_layout,
     find_unintended_overlaps,
     resolve_unintended_overlaps,
     validate_no_unintended_overlap,
@@ -132,3 +133,45 @@ def test_overlaps_between_committed_parts_are_never_moved() -> None:
 
     with pytest.raises(UnintendedOverlapError):
         resolve_unintended_overlaps(previous, candidate, plan)
+
+
+def test_visual_policy_reports_bounds_without_moving_connected_parts() -> None:
+    previous = _spec()
+    plan = _plan(*[_create(f"part_{index}", (100.0, 100.0, 100.0), (0.0, 50.0, 0.0)) for index in range(6)])
+    candidate = apply_plan(previous, plan)
+    result, warnings, fixes = check_scene_layout(previous, candidate, plan, policy="visual")
+    assert result is candidate
+    assert len(warnings) == MAX_REPORTED_OVERLAPS + 1
+    assert "15 pares" in warnings[-1]["message"]
+    assert "não comprova" in warnings[0]["message"]
+    assert fixes == []
+
+
+def test_strict_policy_cannot_be_bypassed_by_allow_overlap() -> None:
+    previous = _spec(COUNTERTOP)
+    operation = _create("sink", (400.0, 20.0, 350.0), (0.0, 885.0, 0.0)).model_copy(update={"allowOverlap": True})
+    plan = _plan(operation)
+    candidate = apply_plan(previous, plan)
+    with pytest.raises(UnintendedOverlapError):
+        check_scene_layout(previous, candidate, plan, policy="strict")
+
+
+def test_aabb_overlap_is_not_proof_of_surface_intersection() -> None:
+    first = _object("sphere_a", (1.0, 1.0, 1.0), (0.0, 2.0, 0.0)).model_copy(update={
+        "kind": "sphere", "dimensions": {"radius": 1.0}})
+    second = first.model_copy(update={"id": "sphere_b", "transform": first.transform.model_copy(update={
+        "position": (1.5, 3.5, 0.0)})})
+    plan = _plan()
+    assert 1.5 ** 2 + 1.5 ** 2 > (1.0 + 1.0) ** 2
+    result, warnings, _fixes = check_scene_layout(_spec(), _spec(first, second), plan, policy="visual")
+    assert result.objects == [first, second]
+    assert len(warnings) == 1
+
+
+def test_strict_diagnostic_keeps_pairs_beyond_the_human_message_limit() -> None:
+    objects = [_object(f"part_{i}", (10.0, 10.0, 10.0), (0.0, 5.0, 0.0)) for i in range(8)]
+    with pytest.raises(UnintendedOverlapError) as error:
+        check_scene_layout(_spec(), _spec(*objects), _plan(), policy="strict")
+    assert error.value.diagnostics["overlapCount"] == 28
+    assert len(error.value.diagnostics["pairs"]) == 28
+    assert error.value.diagnostics["truncated"] is False

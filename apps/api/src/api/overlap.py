@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from typing import Literal
 
 from domain.model_plan import (
     CreateObject,
@@ -23,6 +24,7 @@ class Bounds:
 
 MAX_REPORTED_OVERLAPS = 10
 MAX_SEPARATION_STEPS = 200
+MAX_DIAGNOSTIC_PAIRS = 1_000
 
 OverlapPair = tuple[ModelObject, ModelObject]
 
@@ -37,13 +39,20 @@ class UnintendedOverlapError(Exception):
         )
         more = f" (and {len(pairs) - MAX_REPORTED_OVERLAPS} more)" if len(pairs) > MAX_REPORTED_OVERLAPS else ""
         super().__init__(
-            f"{described}{more}; move the listed parts apart or set allowOverlap to true for a requested intersection."
+            f"{described}{more}; the objects' bounding boxes overlap; revise placement or the separation requirement."
         )
         self.pairs = pairs
+        self.diagnostics = {
+            "schemaVersion": "1.0", "check": "x3d_layout", "method": "axis_aligned_bounds",
+            "overlapCount": len(pairs), "truncated": len(pairs) > MAX_DIAGNOSTIC_PAIRS,
+            "pairs": [{"objects": [first.id, second.id]} for first, second in pairs[:MAX_DIAGNOSTIC_PAIRS]],
+        }
 
 
-def find_unintended_overlaps(spec: ModelSpec, plan: ModelPlan) -> list[OverlapPair]:
-    allowed = _allowed_object_ids(plan)
+def find_unintended_overlaps(
+    spec: ModelSpec, plan: ModelPlan, *, honor_allow_overlap: bool = True
+) -> list[OverlapPair]:
+    allowed = _allowed_object_ids(plan) if honor_allow_overlap else set()
     pairs: list[OverlapPair] = []
     for index, first in enumerate(spec.objects):
         first_bounds = bounds_for(first)
@@ -55,14 +64,16 @@ def find_unintended_overlaps(spec: ModelSpec, plan: ModelPlan) -> list[OverlapPa
     return pairs
 
 
-def validate_no_unintended_overlap(spec: ModelSpec, plan: ModelPlan) -> None:
-    pairs = find_unintended_overlaps(spec, plan)
+def validate_no_unintended_overlap(
+    spec: ModelSpec, plan: ModelPlan, *, honor_allow_overlap: bool = True
+) -> None:
+    pairs = find_unintended_overlaps(spec, plan, honor_allow_overlap=honor_allow_overlap)
     if pairs:
         raise UnintendedOverlapError(pairs)
 
 
 def resolve_unintended_overlaps(
-    previous: ModelSpec, spec: ModelSpec, plan: ModelPlan
+    previous: ModelSpec, spec: ModelSpec, plan: ModelPlan, *, honor_allow_overlap: bool = True
 ) -> tuple[ModelSpec, list[dict[str, object]]]:
     """Deterministically separates penetrating parts by the smallest translation.
 
@@ -78,7 +89,7 @@ def resolve_unintended_overlaps(
     separated_from: dict[str, list[str]] = {}
     current = spec
     for _ in range(MAX_SEPARATION_STEPS):
-        pairs = find_unintended_overlaps(current, plan)
+        pairs = find_unintended_overlaps(current, plan, honor_allow_overlap=honor_allow_overlap)
         if not pairs:
             return current, [
                 {
@@ -113,7 +124,31 @@ def resolve_unintended_overlaps(
             total[axis] += delta[axis]
         if anchor.id not in separated_from.setdefault(mover.id, []):
             separated_from[mover.id].append(anchor.id)
-    raise UnintendedOverlapError(find_unintended_overlaps(current, plan))
+    raise UnintendedOverlapError(find_unintended_overlaps(current, plan, honor_allow_overlap=honor_allow_overlap))
+
+
+def check_scene_layout(
+    previous: ModelSpec, spec: ModelSpec, plan: ModelPlan, *,
+    policy: Literal["visual", "strict"], resolve: bool = False,
+) -> tuple[ModelSpec, list[dict[str, str]], list[dict[str, object]]]:
+    if resolve:
+        resolved, fixes = resolve_unintended_overlaps(previous, spec, plan, honor_allow_overlap=policy != "strict")
+        return resolved, [], fixes
+    if policy == "strict":
+        validate_no_unintended_overlap(spec, plan, honor_allow_overlap=False)
+        return spec, [], []
+    pairs = find_unintended_overlaps(spec, plan)
+    warnings = [{
+        "check": "layout_bounds",
+        "message": (f"'{first.name}' ({first.id}) e '{second.name}' ({second.id}) têm caixas delimitadoras "
+                    "sobrepostas. Confira o encaixe visual; isso não comprova interseção das superfícies."),
+    } for first, second in pairs[:MAX_REPORTED_OVERLAPS]]
+    if len(pairs) > MAX_REPORTED_OVERLAPS:
+        warnings.append({"check": "layout_bounds", "message": (
+            f"Há {len(pairs)} pares com caixas delimitadoras sobrepostas; "
+            f"os primeiros {MAX_REPORTED_OVERLAPS} estão listados. As posições foram preservadas."
+        )})
+    return spec, warnings, []
 
 
 def _separation(mover: Bounds, anchor: Bounds) -> tuple[float, float, float]:

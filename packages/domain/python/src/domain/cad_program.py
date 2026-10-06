@@ -53,31 +53,34 @@ class StepBase(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
     id: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
-    op: Literal["base", "union", "cut"]
     position: Vector3
     rotation: Rotation3
     pattern: Pattern | None = None
 
 
-class BoxStep(StepBase):
+class PrimitiveStep(StepBase):
+    op: Literal["base", "union", "cut"]
+
+
+class BoxStep(PrimitiveStep):
     shape: Literal["box"]
     width: float = Field(ge=0.1, le=10_000, allow_inf_nan=False)
     depth: float = Field(ge=0.1, le=10_000, allow_inf_nan=False)
     height: float = Field(ge=0.1, le=10_000, allow_inf_nan=False)
 
 
-class CylinderStep(StepBase):
+class CylinderStep(PrimitiveStep):
     shape: Literal["cylinder"]
     diameter: float = Field(ge=0.1, le=10_000, allow_inf_nan=False)
     height: float = Field(ge=0.1, le=10_000, allow_inf_nan=False)
 
 
-class SphereStep(StepBase):
+class SphereStep(PrimitiveStep):
     shape: Literal["sphere"]
     diameter: float = Field(ge=0.1, le=10_000, allow_inf_nan=False)
 
 
-class ConeStep(StepBase):
+class ConeStep(PrimitiveStep):
     shape: Literal["cone"]
     bottomDiameter: float = Field(ge=0.1, le=10_000, allow_inf_nan=False)
     topDiameter: float = Field(ge=0, le=10_000, allow_inf_nan=False)
@@ -91,7 +94,7 @@ class Point2(BaseModel):
     y: float = Field(ge=-10_000, le=10_000, allow_inf_nan=False)
 
 
-class PolygonStep(StepBase):
+class PolygonStep(PrimitiveStep):
     shape: Literal["polygon_prism"]
     points: list[Point2] = Field(min_length=3, max_length=32)
     height: float = Field(ge=0.1, le=10_000, allow_inf_nan=False)
@@ -104,7 +107,7 @@ class PolygonStep(StepBase):
         return self
 
 
-class RevolveStep(StepBase):
+class RevolveStep(PrimitiveStep):
     shape: Literal["revolve_profile"]
     points: list[Point2] = Field(min_length=3, max_length=32)
 
@@ -118,7 +121,156 @@ class RevolveStep(StepBase):
         return self
 
 
-CadStep = Annotated[BoxStep | CylinderStep | SphereStep | ConeStep | PolygonStep | RevolveStep, Field(discriminator="shape")]
+class TubeStep(PrimitiveStep):
+    shape: Literal["tube"]
+    diameter: float = Field(ge=0.1, le=10_000, allow_inf_nan=False)
+    innerDiameter: float = Field(gt=0, le=10_000, allow_inf_nan=False)
+    height: float = Field(ge=0.1, le=10_000, allow_inf_nan=False)
+
+    @model_validator(mode="after")
+    def _wall(self) -> TubeStep:
+        if self.diameter - self.innerDiameter < 0.2:
+            raise ValueError("tube needs at least 0.1 mm radial wall")
+        return self
+
+
+class TorusStep(PrimitiveStep):
+    shape: Literal["torus"]
+    majorRadius: float = Field(ge=0.1, le=5_000, allow_inf_nan=False)
+    minorRadius: float = Field(ge=0.1, le=5_000, allow_inf_nan=False)
+
+    @model_validator(mode="after")
+    def _radii(self) -> TorusStep:
+        if self.majorRadius <= self.minorRadius:
+            raise ValueError("torus majorRadius must exceed minorRadius")
+        return self
+
+
+class SlotStep(PrimitiveStep):
+    shape: Literal["slot"]
+    length: float = Field(ge=0.1, le=10_000, allow_inf_nan=False)
+    width: float = Field(ge=0.1, le=10_000, allow_inf_nan=False)
+    height: float = Field(ge=0.1, le=10_000, allow_inf_nan=False)
+
+    @model_validator(mode="after")
+    def _length(self) -> SlotStep:
+        if self.length <= self.width:
+            raise ValueError("slot length must exceed width; length includes the round ends")
+        return self
+
+
+class HoleStep(StepBase):
+    op: Literal["cut"]
+    shape: Literal["hole"]
+    holeType: Literal["plain", "counterbore", "countersink"]
+    diameter: float = Field(ge=0.1, le=10_000, allow_inf_nan=False)
+    height: float = Field(ge=0.1, le=10_000, allow_inf_nan=False)
+    headDiameter: float = Field(ge=0, le=10_000, allow_inf_nan=False)
+    headDepth: float = Field(ge=0, le=10_000, allow_inf_nan=False)
+
+    @model_validator(mode="after")
+    def _head(self) -> HoleStep:
+        if self.holeType == "plain":
+            if self.headDiameter != 0 or self.headDepth != 0:
+                raise ValueError("plain hole must set headDiameter and headDepth to zero")
+        elif self.headDiameter <= self.diameter or not 0 < self.headDepth < self.height:
+            raise ValueError("hole head must be wider than its bore and shallower than height")
+        return self
+
+
+class ThreadStep(PrimitiveStep):
+    shape: Literal["thread"]
+    diameter: float = Field(ge=1, le=1_000, allow_inf_nan=False)
+    pitch: float = Field(ge=0.25, le=100, allow_inf_nan=False)
+    height: float = Field(ge=0.25, le=10_000, allow_inf_nan=False)
+    profile: Literal["metric", "trapezoidal"]
+    handedness: Literal["right", "left"]
+    clearance: float = Field(ge=0, le=2, allow_inf_nan=False)
+    starts: int = Field(default=1, ge=1, le=4)
+
+    @model_validator(mode="after")
+    def _thread(self) -> ThreadStep:
+        depth = self.pitch * (0.613434654 if self.profile == "metric" else 0.5)
+        if self.diameter / 2 - depth < 0.1:
+            raise ValueError("thread pitch leaves no positive core; increase diameter or reduce pitch")
+        if self.height < self.pitch or self.height / self.pitch > 80:
+            raise ValueError("thread height must contain 1 to 80 pitches")
+        if self.clearance > self.pitch / 4 or (self.op != "cut" and self.clearance != 0):
+            raise ValueError("thread clearance is radial, at most pitch/4, and only allowed for an internal cut")
+        return self
+
+
+class CircleSection(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    kind: Literal["circle"]
+    z: float = Field(ge=-10_000, le=10_000, allow_inf_nan=False)
+    diameter: float = Field(ge=0.1, le=10_000, allow_inf_nan=False)
+
+
+class RectangleSection(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    kind: Literal["rectangle"]
+    z: float = Field(ge=-10_000, le=10_000, allow_inf_nan=False)
+    width: float = Field(ge=0.1, le=10_000, allow_inf_nan=False)
+    depth: float = Field(ge=0.1, le=10_000, allow_inf_nan=False)
+
+
+LoftSection = Annotated[CircleSection | RectangleSection, Field(discriminator="kind")]
+
+
+class LoftStep(PrimitiveStep):
+    shape: Literal["loft"]
+    sections: list[LoftSection] = Field(min_length=2, max_length=8)
+    ruled: bool = False
+
+    @model_validator(mode="after")
+    def _sections(self) -> LoftStep:
+        if any(b.z - a.z < 0.1 for a, b in zip(self.sections, self.sections[1:])):
+            raise ValueError("loft sections must have strictly increasing z, at least 0.1 mm apart")
+        if self.sections[-1].z - self.sections[0].z > 10_000:
+            raise ValueError("loft span exceeds 10000 mm")
+        return self
+
+
+EdgeSelector = Literal["all", "parallel_x", "parallel_y", "parallel_z", "circular", "top", "bottom",
+                       "positive_x", "negative_x", "positive_y", "negative_y"]
+FaceSelector = Literal["top", "bottom", "positive_x", "negative_x", "positive_y", "negative_y"]
+
+
+class ModifierStep(StepBase):
+    op: Literal["modify"]
+    pattern: None = None
+
+    @model_validator(mode="after")
+    def _placement(self) -> ModifierStep:
+        if any(value != 0 for value in (*self.position.model_dump().values(), *self.rotation.model_dump().values())):
+            raise ValueError("finishing modifies the current part; position and rotation must be zero")
+        return self
+
+
+class FilletStep(ModifierStep):
+    shape: Literal["fillet"]
+    selector: EdgeSelector
+    radius: float = Field(ge=0.1, le=1_000, allow_inf_nan=False)
+
+
+class ChamferStep(ModifierStep):
+    shape: Literal["chamfer"]
+    selector: EdgeSelector
+    distance: float = Field(ge=0.1, le=1_000, allow_inf_nan=False)
+
+
+class ShellStep(ModifierStep):
+    shape: Literal["shell"]
+    selector: FaceSelector
+    thickness: float = Field(ge=0.1, le=1_000, allow_inf_nan=False)
+
+
+CadStep = Annotated[
+    BoxStep | CylinderStep | SphereStep | ConeStep | PolygonStep | RevolveStep | TubeStep | TorusStep |
+    SlotStep | HoleStep | ThreadStep | LoftStep | FilletStep | ChamferStep | ShellStep,
+    Field(discriminator="shape"),
+]
 
 
 class CadProgramSpec(BaseModel):
@@ -139,6 +291,9 @@ class CadProgramSpec(BaseModel):
             raise ValueError("the base step cannot be repeated")
         if sum(step.pattern.count if step.pattern else 1 for step in self.steps) > 256:
             raise ValueError("CAD program exceeds 256 patterned instances")
+        if sum(step.height / step.pitch * (step.pattern.count if step.pattern else 1)
+               for step in self.steps if isinstance(step, ThreadStep)) > 160:
+            raise ValueError("CAD program exceeds 160 thread pitches including patterns")
         ids = [step.id for step in self.steps]
         if len(ids) != len(set(ids)):
             raise ValueError("CAD step IDs must be unique")

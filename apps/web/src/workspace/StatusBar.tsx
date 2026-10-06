@@ -1,36 +1,36 @@
 import { useEffect, useState } from 'react'
 
-import type { McpHealth } from '../api/client.ts'
+import type { EngineHealth } from '../api/health.ts'
 import type { ChatControllerState } from '../chat/types.ts'
 
 interface StatusBarProps {
   readonly state: ChatControllerState
-  readonly mcpHealth: McpHealth | null
+  readonly engine: EngineHealth | null
 }
 
 function statusLabel(state: ChatControllerState): string {
-  if (state.requestStatus === 'session-expired') return 'Session expired'
-  if (state.requestStatus === 'failed') return `Latest request failed (${state.failureSource ?? 'modeling'})`
-  if (state.requestStatus === 'no-change') return 'No model change'
-  if (state.isBusy) return 'Generating'
-  return 'Ready'
+  if (state.requestStatus === 'session-expired') return 'Sessão expirada'
+  if (state.requestStatus === 'failed') return `Falha no último pedido (${state.failureSource ?? 'modeling'})`
+  if (state.requestStatus === 'no-change') return 'Nenhuma alteração'
+  if (state.isBusy) return 'Gerando'
+  return 'Pronto'
 }
 
 function stageLabel(stage: ChatControllerState['pipelineStage']): string {
   return {
-    idle: 'Idle',
-    'provider-request': 'AI provider request',
-    'plan-validation': 'Plan validation',
-    'api-mcp-build': 'API/MCP scene build',
-    'x3d-validation': 'X3D validation',
-    'artifact-generation': 'Artifact generation',
-    'viewer-loading': 'Viewer loading',
-    ready: 'Ready',
-    failed: 'Failed',
+    idle: 'Aguardando',
+    'provider-request': 'Solicitação à IA',
+    'plan-validation': 'Validação do plano',
+    'api-mcp-build': 'Construção da cena',
+    'x3d-validation': 'Validação X3D',
+    'artifact-generation': 'Preparação dos arquivos',
+    'viewer-loading': 'Carregamento da prévia',
+    ready: 'Pronto',
+    failed: 'Falha',
   }[stage]
 }
 
-function StatusBar({ state, mcpHealth }: StatusBarProps) {
+function StatusBar({ state, engine }: StatusBarProps) {
   const [now, setNow] = useState(0)
   useEffect(() => {
     if (!state.isBusy) return
@@ -49,16 +49,16 @@ function StatusBar({ state, mcpHealth }: StatusBarProps) {
   return (
     <footer className="workspace-statusbar" aria-label="Model status">
       <span>{statusLabel(state)}</span>
-      <span>AI: {state.agentProvider} ({state.agentPhase})</span>
-      <span>MCP: {mcpHealth?.reachable ? 'connected' : mcpHealth ? 'unavailable' : 'checking'}</span>
-      <span>X3D: {state.validation?.schemaValid && state.validation.semanticValid ? 'valid' : 'not validated'}</span>
-      <span>Revision: r{revision}</span>
+      <span>IA: {state.agentProvider} ({state.agentPhase})</span>
+      <span>Motor X3D: {engine?.available ? engine?.backend ?? 'disponível' : engine ? 'indisponível' : 'verificando'}</span>
+      <span>X3D: {state.validation?.schemaValid && state.validation.semanticValid ? 'válido' : 'não validado'}</span>
+      <span>Revisão: r{revision}</span>
       <details className="workspace-diagnostics">
-        <summary>Diagnostics</summary>
+        <summary>Diagnóstico</summary>
         <div className="workspace-diagnostics__content">
           <p>Provider/model: {state.agentProvider} ({state.agentPhase})</p>
           <p>Pipeline: {stageLabel(state.pipelineStage)}{elapsed ? ` (${elapsed})` : ''}</p>
-          <p>MCP: {mcpHealth?.reachable ? 'connected' : mcpHealth?.detail ?? 'checking'}</p>
+          <p>Motor X3D: {engine?.available ? engine?.backend ?? 'disponível' : engine?.detail ?? 'verificando'}</p>
           <p>Autofixes: {autofixCount} · Warnings: {warningCount} · Errors: {errorCount}</p>
           <p>Correlation ID: {state.correlationId ?? 'Not available'}</p>
           {Object.entries(state.generationStats).map(([providerModel, stats]) => (

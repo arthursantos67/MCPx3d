@@ -6,7 +6,7 @@ import {
   resumeCadProject, resumeProject,
 } from '../../src/api/client.ts'
 import type { CadPartSpec } from '../../../../packages/domain/ts/src/cad-part.ts'
-import { initialCadBracket, initialCadComposite, initialCadFlange, initialCadRoundedPlate } from '../../src/workspace/cadPlateDraft.ts'
+import { initialCadBracket, initialCadComposite, initialCadFlange, initialCadRoundedPlate } from '../support/cadPlateDraft.ts'
 
 test('a live project is resumed after a page reload and cleared on reset', async () => {
   const originalFetch = globalThis.fetch

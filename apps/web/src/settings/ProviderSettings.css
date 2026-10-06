@@ -3,7 +3,9 @@
   top: 48px;
   right: 16px;
   z-index: 10;
-  width: 320px;
+  width: min(440px, calc(100vw - 32px));
+  max-height: calc(100vh - 72px);
+  overflow-y: auto;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--bg);
@@ -92,6 +94,18 @@
   padding: 6px 12px;
   cursor: pointer;
 }
+
+.provider-settings__diagnostic {
+  margin: 0;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.provider-settings__diagnostic--success { color: #367c50; }
+.provider-settings__diagnostic--error { color: #c14d4d; }
+.provider-settings button:disabled { opacity: 0.55; cursor: default; }
 
 .provider-settings__clear {
   color: var(--text);

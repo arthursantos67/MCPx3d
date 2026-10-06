@@ -30,4 +30,7 @@ CLAUDE.md
 
 # Logs
 *.log
+.cache/
+test-results/
+playwright-report/
 npm-debug.log*

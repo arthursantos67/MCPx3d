@@ -33,6 +33,13 @@ test('creates a complete four-hole CAD proposal with stated assumptions', async 
   assert.match(provider.calls[0].messages[0].content, /Respect every explicitly requested size/)
 })
 
+test('legacy proposals also preserve verbose assumptions without changing their geometry', async () => {
+  const assumptions = Array.from({ length: 14 }, (_, index) => `${index}: ${'Dimensões de referência para a placa com quatro furos. '.repeat(8)}`)
+  const provider = new MockLLMProvider([{ decision: 'create', spec, question: '', assumptions }])
+  assert.deepEqual(await generateCadPart(provider, 'Crie uma placa com quatro furos'), { kind: 'create', spec, assumptions })
+  assert.equal(provider.calls.length, 1)
+})
+
 test('unsupported geometry asks for clarification instead of pretending to create it', async () => {
   const provider = new MockLLMProvider([{
     decision: 'clarify', spec: null, assumptions: [], question: 'Do you want a plain through-hole instead of a threaded hole?',

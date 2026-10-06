@@ -158,6 +158,9 @@ export async function generateModelPlan(input: GenerateModelPlanInput): Promise<
   if (first.ok) return requireRetained(first.plan, input.rejectedPlan?.operations.length, input);
   input.onValidationFailure?.(first.failure);
   if (first.completion) throw new ModelPlanTruncatedError(first.completion);
+  if (provider.generationPolicy?.retryInvalidStructuredOutput === false) {
+    throw new ProviderRequestError(`O cliente local devolveu um plano X3D inválido. Nenhuma retentativa automática de formato foi feita; a revisão anterior permanece ativa. ${first.issues.join('; ')}`);
+  }
 
   const second = await attempt(provider, [...messages, ...repairTurns(first, continuation)], options, modelSpec, continuation);
   if (second.ok) {
@@ -248,7 +251,7 @@ function continuationNote(continuation: ModelPlanContinuation | undefined): stri
     "\n\n(This scene is too large for one response, so it is being built in several steps. " +
     "Every part already listed in the current model was committed by earlier steps -- do not recreate or repeat it. " +
     `Emit the next group of missing parts: up to ${continuation.maxOperations} operations, and use all ${continuation.maxOperations} ` +
-    "while parts of the requested scene are still missing. Place every new part so it does not intersect any part already listed. " +
+    "while parts of the requested scene are still missing. Preserve requested clearances and intended joints with existing parts; avoid accidental penetration. " +
     "Do not change the scene title, and never mention steps or batches in any name or title. " +
     "If every requested part already exists, respond with exactly one no_change operation.)"
   );

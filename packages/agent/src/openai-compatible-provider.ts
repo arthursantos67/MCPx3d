@@ -25,6 +25,7 @@ import {
   type GenerationOptions,
   type JsonSchema,
   type LLMProvider,
+  type ProviderLimit,
 } from "./provider.ts";
 import { parseStructuredCompletion, readCompletionUsage } from "./structured-output.ts";
 
@@ -178,13 +179,51 @@ function safeProviderErrorCode(bodyText: string): string | null {
   return null;
 }
 
-function providerResponseMessage(status: number, bodyText: string, attempts: number, retryAfterMs?: number | null): string {
+function providerLimit(response: Response, bodyText: string): ProviderLimit {
+  let body: { error?: { message?: unknown; details?: unknown } } = {};
+  try { body = JSON.parse(bodyText) ?? {}; } catch { body = {}; }
+  const error = body.error;
+  const details = Array.isArray(error?.details) ? error.details : [];
+  let retryMs = retryAfterMilliseconds(response);
+  const metrics: string[] = [];
+  let zeroAllowance = false;
+  for (const detail of details) {
+    if (!detail || typeof detail !== 'object') continue;
+    if (detail['@type'] === 'type.googleapis.com/google.rpc.RetryInfo' && typeof detail.retryDelay === 'string') {
+      const seconds = /^(\d+(?:\.\d+)?)s$/.exec(detail.retryDelay);
+      if (seconds && Number.isFinite(Number(seconds[1]))) retryMs ??= Number(seconds[1]) * 1000;
+    }
+    if (detail['@type'] === 'type.googleapis.com/google.rpc.QuotaFailure' && Array.isArray(detail.violations)) {
+      for (const violation of detail.violations) {
+        if (violation?.quotaValue === '0' || violation?.quotaValue === 0) zeroAllowance = true;
+        for (const value of [violation?.quotaMetric, violation?.quotaId]) {
+          if (typeof value === 'string' && /^[A-Za-z0-9_./-]{1,200}$/.test(value)) metrics.push(value);
+        }
+      }
+    }
+  }
+  const code = safeProviderErrorCode(bodyText) ?? undefined;
+  const message = typeof error?.message === 'string' ? error.message : '';
+  const daily = metrics.some((metric) => /per.?day|daily/i.test(metric));
+  const quota = daily || zeroAllowance || code === 'insufficient_quota' || code === 'billing_hard_limit_reached';
+  const oversized = /request too large|requested\s+\d+.*(?:exceeds|larger than)|reduce.*(?:input|prompt|token).*size/i.test(message);
+  const kind = quota ? 'quota' : oversized ? 'request-size' : retryMs !== null || metrics.some((metric) => /per.?minute/i.test(metric)) ? 'rate' : 'unknown';
+  return { kind, ...(code ? { code } : {}),
+    ...(retryMs !== null && Number.isFinite(retryMs) ? { retryAt: Date.now() + retryMs } : {}) };
+}
+
+function limitMessage(limit: ProviderLimit, attempts: number): string {
+  const status = `(status 429, ${attempts} ${attempts === 1 ? 'attempt' : 'attempts'})`;
+  const code = limit.code ? ` Código do provedor: ${limit.code}.` : '';
+  const wait = limit.retryAt !== undefined ? ` Aguarde cerca de ${Math.max(1, Math.ceil((limit.retryAt - Date.now()) / 1000))} segundos antes de retomar.` : '';
+  if (limit.kind === 'quota') return `A quota de uso ou faturamento do provedor foi esgotada ${status}.${code} Retentativas imediatas não liberam a quota; confira os limites da conta ou use outro modelo/provedor.${wait}`;
+  if (limit.kind === 'request-size') return `Esta requisição excede o limite de tokens do provedor ${status}.${code} Aguardar não reduz seu tamanho; use um modelo/provedor com capacidade maior.`;
+  return `The AI provider rate limit or quota was reached ${status}.${code}${wait || ' O provedor não informou quando o limite libera; confira a quota da conta antes de repetir.'}`;
+}
+
+function providerResponseMessage(status: number, bodyText: string): string {
   if (status === 503) {
     return "The AI model is temporarily unavailable after five attempts (status 503). Try again shortly or choose another model.";
-  }
-  if (status === 429) {
-    const wait = retryAfterMs != null && retryAfterMs > 0 ? ` Try again in about ${Math.ceil(retryAfterMs / 1000)} seconds.` : " Try again after the provider quota resets.";
-    return `The AI provider rate limit or quota was reached (status 429, ${attempts} ${attempts === 1 ? "attempt" : "attempts"}).${wait} Check the provider quota if it persists.`;
   }
   const code = safeProviderErrorCode(bodyText);
   const suffix = code ? ` (provider code: ${code})` : "";
@@ -214,6 +253,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
   private state: OpenAICompatibleProviderState = { phase: "idle" };
   private readonly listeners = new Set<OpenAICompatibleStateListener>();
   private inFlight: AbortController | null = null;
+  private limit: ProviderLimit | null = null;
 
   // `fetch.bind(globalThis)`, not bare `fetch`: native fetch requires its
   // receiver to be `window`/`globalThis`, and storing the bare reference on
@@ -285,6 +325,9 @@ export class OpenAICompatibleProvider implements LLMProvider {
     if (this.state.phase !== "ready") {
       throw new Error(`OpenAICompatibleProvider.generateStructured called while not ready (phase: ${this.state.phase})`);
     }
+    if (this.limit?.retryAt !== undefined && this.limit.retryAt > Date.now()) {
+      throw new ProviderRequestError(limitMessage(this.limit, 0), { limit: this.limit });
+    }
 
     this.setState({ phase: "generating" });
     const controller = new AbortController();
@@ -337,19 +380,21 @@ export class OpenAICompatibleProvider implements LLMProvider {
           );
         }
 
-        if (response.ok) break;
+        if (response.ok) { this.limit = null; break; }
 
         const bodyText = await response.text().catch(() => "");
         if (response.status === 429) {
-          const retryAfter = retryAfterMilliseconds(response);
-          if (attempt === 0 && retryAfter !== null && retryAfter <= MAX_RATE_LIMIT_WAIT_MS) {
+          const limit = providerLimit(response, bodyText);
+          const retryAfter = limit.retryAt === undefined ? null : Math.max(0, limit.retryAt - Date.now());
+          if (limit.kind === 'rate' && attempt === 0 && retryAfter !== null && retryAfter <= MAX_RATE_LIMIT_WAIT_MS) {
             await this.sleepImpl(retryAfter, controller.signal);
             continue;
           }
-          throw new ProviderRequestError(providerResponseMessage(429, bodyText, attempt + 1, retryAfter));
+          this.limit = limit;
+          throw new ProviderRequestError(limitMessage(limit, attempt + 1), { limit });
         }
         if (!isTransientStatus(response.status) || attempt === MAX_TRANSIENT_RETRIES) {
-          throw new ProviderRequestError(providerResponseMessage(response.status, bodyText, attempt + 1));
+          throw new ProviderRequestError(providerResponseMessage(response.status, bodyText));
         }
 
         const delay = retryAfterMilliseconds(response) ?? exponentialDelayMilliseconds(attempt, this.random);

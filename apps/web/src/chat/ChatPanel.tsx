@@ -28,9 +28,9 @@ function ChatPanel({ state, sendMessage, cancelGeneration, canSend, retryProject
   const progressVisible = state.isBusy || state.agentPhase === 'loading'
   const progressLabel = state.isBusy
     ? state.sceneBatch
-      ? `Building the scene in batches: batch ${state.sceneBatch.batch} of up to ${state.sceneBatch.maxBatches} (${state.sceneBatch.committedBatches} committed)…`
-      : 'Generating…'
-    : (state.agentDetail ?? 'Loading local model…')
+      ? `Construindo a cena em etapas: ${state.sceneBatch.batch} de até ${state.sceneBatch.maxBatches} (${state.sceneBatch.committedBatches} salvas)…`
+      : 'Gerando…'
+    : (state.agentDetail ?? 'Carregando modelo local…')
   const showProviderLink = state.agentPhase === 'unsupported' || state.agentPhase === 'error'
 
   return (
@@ -42,12 +42,12 @@ function ChatPanel({ state, sendMessage, cancelGeneration, canSend, retryProject
         <GenerationProgress visible={progressVisible} label={progressLabel} />
         {state.isBusy && (
           <button type="button" className="chat-composer__cancel" onClick={cancelGeneration}>
-            Cancel generation
+            Cancelar geração
           </button>
         )}
         {state.projectError && (
           <button type="button" onClick={retryProject}>
-            {state.requestStatus === 'session-expired' ? 'Recreate expired project' : 'Start a new project'}
+            {state.requestStatus === 'session-expired' ? 'Recriar projeto expirado' : 'Tentar conexão novamente'}
           </button>
         )}
         <PromptComposer

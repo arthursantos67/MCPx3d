@@ -1,0 +1,219 @@
+{
+  "schemaVersion": "4.0",
+  "units": "mm",
+  "partId": "motor_overlap_regression",
+  "components": [
+    {
+      "id": "housing",
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "steps": [
+        {
+          "id": "outer",
+          "op": "base",
+          "shape": "cylinder",
+          "position": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "rotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "diameter": 100,
+          "height": 120
+        },
+        {
+          "id": "bore",
+          "op": "cut",
+          "shape": "cylinder",
+          "position": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "rotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "diameter": 64,
+          "height": 122
+        },
+        {
+          "id": "fins",
+          "op": "union",
+          "shape": "box",
+          "width": 12,
+          "depth": 5,
+          "height": 110,
+          "position": {
+            "x": 55,
+            "y": 0,
+            "z": 0
+          },
+          "rotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "pattern": {
+            "kind": "circular",
+            "count": 8,
+            "axis": "z",
+            "center": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            },
+            "sweepAngle": 360
+          }
+        }
+      ]
+    },
+    {
+      "id": "front_cover",
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 61
+      },
+      "steps": [
+        {
+          "id": "disk",
+          "op": "base",
+          "shape": "cylinder",
+          "position": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "rotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "diameter": 100,
+          "height": 8
+        },
+        {
+          "id": "shaft_bore",
+          "op": "cut",
+          "shape": "cylinder",
+          "position": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "rotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "diameter": 18,
+          "height": 10
+        }
+      ]
+    },
+    {
+      "id": "rear_cover",
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": -61
+      },
+      "steps": [
+        {
+          "id": "disk",
+          "op": "base",
+          "shape": "cylinder",
+          "position": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "rotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "diameter": 100,
+          "height": 8
+        },
+        {
+          "id": "shaft_bore",
+          "op": "cut",
+          "shape": "cylinder",
+          "position": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "rotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "diameter": 18,
+          "height": 10
+        }
+      ]
+    },
+    {
+      "id": "rotor",
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "motion": {
+        "kind": "rotary",
+        "axis": "z",
+        "minimum": 0,
+        "maximum": 360,
+        "value": 0
+      },
+      "steps": [
+        {
+          "id": "core",
+          "op": "base",
+          "shape": "cylinder",
+          "position": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "rotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "diameter": 60,
+          "height": 90
+        },
+        {
+          "id": "shaft",
+          "op": "union",
+          "shape": "cylinder",
+          "position": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "rotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "diameter": 14,
+          "height": 160
+        }
+      ]
+    }
+  ]
+}

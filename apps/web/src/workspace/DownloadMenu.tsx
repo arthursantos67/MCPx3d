@@ -34,7 +34,7 @@ function DownloadMenu({ projectId, projectName, revision, artifacts }: DownloadM
         const body = (await response.json()) as { code?: string; message?: string }
         throw new ApiError(response.status, {
           code: body.code ?? 'ARTIFACT_UNAVAILABLE',
-          message: body.message ?? 'Download failed.',
+          message: body.message ?? 'Falha no download.',
         })
       }
       const url = URL.createObjectURL(await response.blob())
@@ -52,16 +52,16 @@ function DownloadMenu({ projectId, projectName, revision, artifacts }: DownloadM
 
   return (
     <div className="download-menu">
-      <span className="download-menu__label">Download</span>
+      <span className="download-menu__label">Baixar</span>
       {descriptors.map((descriptor) => (
         <button
           key={descriptor.format}
           type="button"
           disabled={!descriptor.available || !projectId || revision === null}
-          title={descriptor.reason ?? `Download ${descriptor.format.toUpperCase()}`}
+          title={descriptor.reason ?? `Download ${descriptor.format === 'manifest' ? 'JSON' : descriptor.format.toUpperCase()}`}
           onClick={() => void download(descriptor.format)}
         >
-          {descriptor.format.toUpperCase()}
+          {descriptor.format === 'manifest' ? 'JSON' : descriptor.format.toUpperCase()}
         </button>
       ))}
       {error && <span className="download-menu__error" role="alert">{error}</span>}

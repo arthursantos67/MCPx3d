@@ -1,44 +1,8 @@
-/**
- * Chat state machine wiring a user prompt to local ModelPlan generation and
- * the apply-plan API call (PRD §3.10/§10.2, Issue #27). Framework-agnostic
- * (no React) so it is unit-testable with `node --test` against a fake
- * `AgentProvider` (built on `packages/agent`'s own `MockLLMProvider`, no
- * WebGPU/browser/model download needed) and a fake `ChatApi`, matching this
- * repository's existing testing convention. `useChatController.ts` is the
- * thin React wrapper (`useSyncExternalStore`, mirroring
- * `apps/web/src/ai/useWebLlmRuntime.ts`'s existing pattern for the same kind
- * of externally-mutated status).
- *
- * `AgentProvider` -- `LLMProvider` (PRD §3.7) plus a status pair
- * (`getState()`/`onStateChange()`) reported in this module's own `AgentStatus`
- * shape (`./types.ts`), not `packages/agent`'s `WebLLMProviderState` -- is a
- * structural interface, not the concrete `WebLLMProvider` class, for two
- * reasons: (1) `WebLLMProvider` has private fields, so only a real instance
- * (constructed with a real worker/engine) could otherwise be passed here, and
- * (2) keeping `WebLLMProviderState` (and its transitive `@mlc-ai/web-llm`
- * type imports) out of this file and its tests avoids a real issue under
- * `apps/web/tsconfig.test.json`'s `moduleResolution: "nodenext"`: TS cannot
- * resolve `@mlc-ai/web-llm`'s re-exported `ChatCompletionMessageParam`
- * through `webllm-provider.ts` under `nodenext` (the same problem
- * `packages/agent/tsconfig.json`'s own comment documents, which is why that
- * package uses `"bundler"` instead) -- `useChatController.ts` (compiled under
- * `tsconfig.app.json`'s `"bundler"` resolution, where this already works)
- * is the one place that adapts a real `WebLLMProvider` into this shape.
- * Production wiring still only ever constructs this with
- * `createWebLLMProvider()` (PRD §3.6's one required provider).
- */
-
 import type { ApplyPlanRequestBody, ApplyPlanResponse, Recipe } from "../api/client.ts";
 import { ApiError } from "../api/client.ts";
-import type { AgentMessage, LLMProvider } from "../../../../packages/agent/src/provider.ts";
+import type { AgentMessage } from "../../../../packages/agent/src/provider.ts";
+import type { AgentProvider } from "../ai/types.ts";
 import { ModelPlanGenerationError } from "../../../../packages/agent/src/generate-model-plan.ts";
-import { generateCadEdit, type CadEditOutcome } from "../../../../packages/agent/src/generate-cad-edit.ts";
-import { generateCadPart, type CadCreateOutcome, type CadPartShape } from "../../../../packages/agent/src/generate-cad-part.ts";
-import { generateCadProgram, type CadProgramOutcome } from "../../../../packages/agent/src/generate-cad-program.ts";
-import { generateCadAssembly, type CadAssemblyOutcome, type CadAssemblyProgressListener } from "../../../../packages/agent/src/generate-cad-assembly.ts";
-import { classifyCadDesign, type CadDesignOutcome } from "../../../../packages/agent/src/classify-cad-design.ts";
-import type { CadProgramSpec } from "../../../../packages/domain/ts/src/cad-program.ts";
-import type { CadAssemblySpec } from "../../../../packages/domain/ts/src/cad-assembly.ts";
 import {
   SceneBatchError,
   createSceneGenerationCounters,
@@ -47,7 +11,6 @@ import {
   type SceneOutcome,
 } from "../../../../packages/agent/src/generate-scene.ts";
 import type { ModelSpec } from "../../../../packages/domain/ts/src/model-spec.ts";
-import type { CadPartSpec } from "../../../../packages/domain/ts/src/cad-part.ts";
 
 import type {
   AgentStatus,
@@ -58,10 +21,7 @@ import type {
   SendGate,
 } from "./types.ts";
 
-export interface AgentProvider extends LLMProvider {
-  getState(): AgentStatus;
-  onStateChange(listener: (state: AgentStatus) => void): () => void;
-}
+export type { AgentProvider } from "../ai/types.ts";
 
 export interface ChatApi {
   createProject(): Promise<ModelSpec>;
@@ -71,8 +31,6 @@ export interface ChatApi {
   deleteProject(projectId: string): Promise<void>;
   updateSceneTitle?(projectId: string, expectedRevision: number, title: string): Promise<ModelSpec>;
   matchRecipe?(query: string): Promise<Recipe | null>;
-  checkCadProgram?(spec: CadProgramSpec): Promise<string | null>;
-  checkCadAssembly?(spec: CadAssemblySpec): Promise<string | null>;
   resolveArtifactUrl(relativeUrl: string): string;
 }
 
@@ -108,16 +66,16 @@ function describeError(error: unknown): string {
 
 function summarizeApplyResult(response: ApplyPlanResponse): string {
   const warningCount = response.validation.warnings.length;
-  const warningNote = warningCount > 0 ? ` with ${warningCount} warning(s)` : "";
-  return `Updated the model to revision ${response.revision}${warningNote}.`;
+  const warningNote = warningCount > 0 ? `, com ${warningCount} aviso(s)` : "";
+  return `Modelo atualizado para a revisão ${response.revision}${warningNote}.`;
 }
 
 function summarizeBatchedResult(outcome: SceneOutcome & { status: "applied" }): string {
-  const summary = `Built the scene in ${outcome.batches} validated batches; revision ${outcome.modelSpec.revision} is active.`;
-  const skipped = outcome.skippedBatches.map(({ batch, reason }) => ` Batch ${batch} was skipped: ${reason}`).join("");
+  const summary = `Cena construída em ${outcome.batches} etapas validadas; revisão ${outcome.modelSpec.revision} ativa.`;
+  const skipped = outcome.skippedBatches.map(({ batch, reason }) => ` Etapa ${batch} ignorada: ${reason}`).join("");
   const limit = outcome.complete
     ? ""
-    : " The batch limit was reached before the scene was finished -- ask for the remaining parts in a follow-up request.";
+    : " O limite de etapas foi atingido. Peça os componentes restantes em uma nova mensagem.";
   return `${summary}${skipped}${limit}`;
 }
 
@@ -125,9 +83,8 @@ function separatedPartCount(response: ApplyPlanResponse): number {
   return response.validation.autofixes.filter((fix) => fix.type === "overlap_separation").length;
 }
 
-function demandsNoOverlap(request: string): boolean {
-  const normalized = request.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
-  return /\b(?:nao\s+sobrepo\w*|sem\s+sobrepos\w*|no\s+overlap\w*|without\s+overlap\w*)\b/.test(normalized);
+export interface SceneRequestOptions {
+  readonly overlapPolicy?: 'visual' | 'strict';
 }
 
 const EMPTY_GENERATION_STATS: GenerationStats = {
@@ -162,16 +119,31 @@ function isRepairableApplyError(error: unknown): error is ApiError {
   return error instanceof ApiError && error.status === 422 && REPAIRABLE_APPLY_ERROR_CODES.has(error.code);
 }
 
+function applyRejectionDiagnostic(error: unknown): string | null {
+  if (!isRepairableApplyError(error)) return null;
+  const message = `${error.code}: ${error.message}`;
+  if (!Array.isArray(error.details)) return message;
+  const report = error.details.find((item: unknown) => item && typeof item === 'object' &&
+    'check' in item && item.check === 'x3d_layout' && 'schemaVersion' in item && item.schemaVersion === '1.0');
+  if (!report || !Array.isArray(report.pairs)) return message;
+  const pairs = report.pairs.slice(0, 1000).flatMap((pair: unknown) => {
+    if (!pair || typeof pair !== 'object' || !('objects' in pair) || !Array.isArray(pair.objects) || pair.objects.length !== 2 ||
+        !pair.objects.every((id: unknown) => typeof id === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(id))) return [];
+    return [pair.objects.join('/')];
+  });
+  return pairs.length ? `${message}\nBounding-box pairs in the structured diagnostic: ${pairs.join('; ')}` : message;
+}
+
 export class ChatController {
   private state: ChatControllerState;
   private readonly listeners = new Set<() => void>();
-  private readonly provider: AgentProvider;
+  private provider: AgentProvider;
   private readonly api: ChatApi;
   private readonly now: () => number;
   private readonly makeId: () => string;
   private initialization: Promise<void> | null = null;
   private initialProjectLookup = true;
-  private readonly unsubscribeProvider: () => void;
+  private unsubscribeProvider: (() => void) | null = null;
   private activeCancellation: AbortController | null = null;
 
   constructor(provider: AgentProvider, api: ChatApi, options?: ChatControllerOptions) {
@@ -191,7 +163,7 @@ export class ChatController {
       isBusy: false,
       projectId: null,
       projectError: null,
-      projectName: "Untitled model",
+      projectName: "Novo modelo",
       artifacts: [],
       validation: null,
       correlationId: null,
@@ -204,13 +176,25 @@ export class ChatController {
       generationStats: {},
     };
 
-    this.unsubscribeProvider = provider.onStateChange((next) => {
-      this.patch({ agentPhase: next.phase, agentDetail: describeProviderState(next) });
-    });
+
   }
 
   getState(): ChatControllerState {
     return this.state;
+  }
+
+  setProvider(provider: AgentProvider): void {
+    if (provider === this.provider) return;
+    if (this.state.isBusy) throw new Error('Aguarde a geração X3D antes de trocar o provedor.');
+    const subscribed = this.unsubscribeProvider !== null;
+    this.unsubscribeProvider?.();
+    this.unsubscribeProvider = null;
+    this.provider = provider;
+    const current = provider.getState();
+    this.patch({ agentProvider: provider.id, agentPhase: current.phase, agentDetail: describeProviderState(current) });
+    if (subscribed) this.unsubscribeProvider = provider.onStateChange((next) => {
+      this.patch({ agentPhase: next.phase, agentDetail: describeProviderState(next) });
+    });
   }
 
   onChange(listener: () => void): () => void {
@@ -220,12 +204,18 @@ export class ChatController {
 
   /** Starts WebLLM initialization and creates a project session; both run independently. */
   async initialize(): Promise<void> {
+    this.unsubscribeProvider ??= this.provider.onStateChange((next) => {
+      this.patch({ agentPhase: next.phase, agentDetail: describeProviderState(next) });
+    });
+    const current = this.provider.getState();
+    this.patch({ agentPhase: current.phase, agentDetail: describeProviderState(current) });
     this.initialization ??= this.startInitialization();
     await this.initialization;
   }
 
   dispose(): void {
-    this.unsubscribeProvider();
+    this.unsubscribeProvider?.();
+    this.unsubscribeProvider = null;
     this.cancelGeneration();
   }
 
@@ -253,11 +243,11 @@ export class ChatController {
       const recreatingExpiredProject = this.state.requestStatus === "session-expired";
       this.patch({
         modelSpec,
-        projectName: modelSpec.scene.title ?? "Untitled model",
+        projectName: modelSpec.scene.title ?? "Novo modelo",
         projectId: modelSpec.projectId,
         projectError: null,
         messages: resumed
-          ? [{ id: this.makeId(), role: "assistant", text: `Resumed “${modelSpec.scene.title}” at revision ${modelSpec.revision}.`, createdAt: this.now() }]
+          ? [{ id: this.makeId(), role: "assistant", text: `Projeto “${modelSpec.scene.title}” recuperado na revisão ${modelSpec.revision}.`, createdAt: this.now() }]
           : recreatingExpiredProject ? [] : this.state.messages,
         previewUrl: resumed?.preview
           ? this.api.resolveArtifactUrl(resumed.preview.url)
@@ -277,7 +267,7 @@ export class ChatController {
   }
 
   renameProject(name: string): void {
-    this.patch({ projectName: name.trim().slice(0, 80) || "Untitled model" });
+    this.patch({ projectName: name.trim().slice(0, 80) || "Novo modelo" });
   }
 
   async persistProjectName(): Promise<void> {
@@ -286,7 +276,7 @@ export class ChatController {
     if (!modelSpec || !projectId || !this.api.updateSceneTitle) return;
     try {
       const updated = await this.api.updateSceneTitle(projectId, modelSpec.revision, this.state.projectName);
-      this.patch({ modelSpec: updated, projectName: updated.scene.title ?? "Untitled model" });
+      this.patch({ modelSpec: updated, projectName: updated.scene.title ?? "Novo modelo" });
     } catch (error) {
       this.appendMessage("error", describeError(error));
     }
@@ -308,7 +298,7 @@ export class ChatController {
       pipelineStage: "idle",
       pipelineStartedAt: null,
       timings: {},
-      projectName: "Untitled model",
+      projectName: "Novo modelo",
     });
     if (projectId) {
       try {
@@ -368,108 +358,6 @@ export class ChatController {
     return { canSend: true };
   }
 
-  async planCadEdit(request: string, spec: CadPartSpec): Promise<CadEditOutcome> {
-    if (this.state.isBusy) throw new Error("Finish the current model request before editing CAD.");
-    if (this.state.agentPhase !== "ready") throw new Error("Configure an AI provider to edit CAD by chat.");
-    const cancellation = new AbortController();
-    this.activeCancellation = cancellation;
-    this.patch({ isBusy: true, requestStatus: "working", pipelineStage: "provider-request", pipelineStartedAt: this.now() });
-    try {
-      const outcome = await generateCadEdit(this.provider, request, spec);
-      if (cancellation.signal.aborted) throw new Error("CAD request cancelled.");
-      return outcome;
-    } finally {
-      if (this.activeCancellation === cancellation) this.activeCancellation = null;
-      if (!cancellation.signal.aborted) {
-        this.patch({ isBusy: false, requestStatus: "idle", pipelineStage: "idle", pipelineStartedAt: null });
-      }
-    }
-  }
-
-  async planCadCreate(request: string, shape: CadPartShape = 'plate'): Promise<CadCreateOutcome> {
-    if (this.state.isBusy) throw new Error("Finish the current model request before creating CAD.");
-    if (this.state.agentPhase !== "ready") throw new Error("Configure an AI provider to create CAD by chat.");
-    const cancellation = new AbortController();
-    this.activeCancellation = cancellation;
-    this.patch({ isBusy: true, requestStatus: "working", pipelineStage: "provider-request", pipelineStartedAt: this.now() });
-    try {
-      const outcome = await generateCadPart(this.provider, request, shape);
-      if (cancellation.signal.aborted) throw new Error("CAD request cancelled.");
-      return outcome;
-    } finally {
-      if (this.activeCancellation === cancellation) this.activeCancellation = null;
-      if (!cancellation.signal.aborted) {
-        this.patch({ isBusy: false, requestStatus: "idle", pipelineStage: "idle", pipelineStartedAt: null });
-      }
-    }
-  }
-
-  async planCadProgram(request: string, previous?: CadProgramSpec): Promise<CadProgramOutcome> {
-    if (this.state.isBusy) throw new Error("Finish the current model request before creating CAD.");
-    if (this.state.agentPhase !== "ready") throw new Error("Configure an AI provider to create CAD by chat.");
-    const cancellation = new AbortController();
-    this.activeCancellation = cancellation;
-    this.patch({ isBusy: true, requestStatus: "working", pipelineStage: "provider-request", pipelineStartedAt: this.now() });
-    try {
-      const inspect = this.api.checkCadProgram?.bind(this.api);
-      if (!inspect) throw new Error('A verificação CAD não está disponível. Recarregue a página e tente novamente.');
-      const outcome = await generateCadProgram(this.provider, request, previous, (spec) => inspect(spec));
-      if (cancellation.signal.aborted) throw new Error("CAD request cancelled.");
-      return outcome;
-    } finally {
-      if (this.activeCancellation === cancellation) this.activeCancellation = null;
-      if (!cancellation.signal.aborted) this.patch({ isBusy: false, requestStatus: "idle", pipelineStage: "idle", pipelineStartedAt: null });
-    }
-  }
-
-  async planCadAssembly(request: string, previous?: CadAssemblySpec, onProgress?: CadAssemblyProgressListener): Promise<CadAssemblyOutcome> {
-    if (this.state.isBusy) throw new Error('Finish the current model request before creating CAD.');
-    if (this.state.agentPhase !== 'ready') throw new Error('Configure an AI provider to create CAD by chat.');
-    const cancellation = new AbortController();
-    this.activeCancellation = cancellation;
-    this.patch({ isBusy: true, requestStatus: 'working', pipelineStage: 'provider-request', pipelineStartedAt: this.now() });
-    try {
-      const inspectPart = this.api.checkCadProgram?.bind(this.api);
-      const inspectAssembly = this.api.checkCadAssembly?.bind(this.api);
-      if (!inspectPart || !inspectAssembly) throw new Error('A verificação de conjuntos CAD não está disponível.');
-      const result = await generateCadAssembly(this.provider, request, inspectPart, inspectAssembly, previous,
-        (progress) => { if (!cancellation.signal.aborted) onProgress?.(progress); });
-      if (cancellation.signal.aborted) throw new Error('CAD request cancelled.');
-      return result;
-    } finally {
-      if (this.activeCancellation === cancellation) this.activeCancellation = null;
-      if (!cancellation.signal.aborted) this.patch({ isBusy: false, requestStatus: 'idle', pipelineStage: 'idle', pipelineStartedAt: null });
-    }
-  }
-
-  async planCadDesign(request: string, previous?: CadProgramSpec, onProgress?: CadAssemblyProgressListener): Promise<CadDesignOutcome> {
-    if (this.state.isBusy) throw new Error('Finish the current model request before creating CAD.');
-    if (this.state.agentPhase !== 'ready') throw new Error('Configure an AI provider to create CAD by chat.');
-    const cancellation = new AbortController();
-    this.activeCancellation = cancellation;
-    this.patch({ isBusy: true, requestStatus: 'working', pipelineStage: 'provider-request', pipelineStartedAt: this.now() });
-    try {
-      const mode = await classifyCadDesign(this.provider, request);
-      if (cancellation.signal.aborted) throw new Error('CAD request cancelled.');
-      const inspectPart = this.api.checkCadProgram?.bind(this.api);
-      if (!inspectPart) throw new Error('A verificação CAD não está disponível.');
-      if (mode === 'assembly') {
-        const inspectAssembly = this.api.checkCadAssembly?.bind(this.api);
-        if (!inspectAssembly) throw new Error('A verificação de conjuntos CAD não está disponível.');
-        const outcome = await generateCadAssembly(this.provider, request, inspectPart, inspectAssembly,
-          undefined, (progress) => { if (!cancellation.signal.aborted) onProgress?.(progress); });
-        if (cancellation.signal.aborted) throw new Error('CAD request cancelled.');
-        return { mode, outcome };
-      }
-      const outcome = await generateCadProgram(this.provider, request, previous, inspectPart);
-      if (cancellation.signal.aborted) throw new Error('CAD request cancelled.');
-      return { mode, outcome };
-    } finally {
-      if (this.activeCancellation === cancellation) this.activeCancellation = null;
-      if (!cancellation.signal.aborted) this.patch({ isBusy: false, requestStatus: 'idle', pipelineStage: 'idle', pipelineStartedAt: null });
-    }
-  }
-
   async applyRecipe(recipe: Recipe): Promise<void> {
     const spec = this.state.modelSpec;
     const projectId = this.state.projectId;
@@ -500,7 +388,7 @@ export class ChatController {
         failureSource: null,
         timings: response.timings ?? {},
       });
-      this.appendMessage("assistant", `Imported and validated “${response.modelSpec.scene.title}” as revision ${response.revision}.`);
+      this.appendMessage("assistant", `Projeto “${response.modelSpec.scene.title}” importado e validado na revisão ${response.revision}.`);
     } catch (error) {
       this.patch({ requestStatus: "failed", pipelineStage: "failed", failureSource: failureSource(error) });
       this.appendMessage("error", describeError(error));
@@ -521,10 +409,10 @@ export class ChatController {
     if (signal?.aborted) return;
     this.commitApplyResponse(response, spec);
     this.patch({ requestStatus: "succeeded", pipelineStage: "x3d-validation", failureSource: null, timings: response.timings ?? {} });
-    this.appendMessage("assistant", `Applied recipe “${recipe.name}” and validated revision ${response.revision}.`);
+    this.appendMessage("assistant", `Modelo “${recipe.name}” aplicado e validado na revisão ${response.revision}.`);
   }
 
-  async sendMessage(text: string): Promise<void> {
+  async sendMessage(text: string, options: SceneRequestOptions = {}): Promise<void> {
     const trimmed = text.trim();
     if (trimmed.length === 0) return;
     if (!this.canSend().canSend) return;
@@ -534,7 +422,7 @@ export class ChatController {
     if (!modelSpec || !projectId) return;
 
     const recentMessages = this.recentAgentMessages();
-    const strictNoOverlap = demandsNoOverlap(trimmed);
+    const strictNoOverlap = options.overlapPolicy === 'strict';
     this.appendMessage("user", trimmed);
 
     const startedAt = this.now();
@@ -559,7 +447,7 @@ export class ChatController {
     const providerRequestMs = (): number => Math.max(0, this.now() - startedAt - applyMs);
 
     try {
-      if (modelSpec.objects.length === 0 && this.api.matchRecipe) {
+      if (modelSpec.objects.length === 0 && this.api.matchRecipe && !strictNoOverlap) {
         let recipe: Recipe | null = null;
         try {
           recipe = await this.api.matchRecipe(trimmed);
@@ -582,14 +470,13 @@ export class ChatController {
       attemptedProvider = true;
       const outcome = await generateScene({
         provider: this.provider,
-        request: trimmed,
+        request: strictNoOverlap ? `${trimmed}\n\nExigir separação global: nenhum par de objetos pode ter caixas delimitadoras sobrepostas. Preserve folga entre todos os objetos, incluindo partes estruturais.` : trimmed,
         modelSpec,
         recentMessages,
         signal: cancellation.signal,
-        allowOverlapResolution: !strictNoOverlap,
+        allowOverlapResolution: false,
         counters,
-        describeRepairableApplyError: (error) =>
-          isRepairableApplyError(error) ? `${error.code}: ${error.message}` : null,
+        describeRepairableApplyError: applyRejectionDiagnostic,
         onProgress: (progress) => {
           if (cancellation.signal.aborted) return;
           this.patch({
@@ -611,6 +498,7 @@ export class ChatController {
               expectedRevision: current.revision,
               requestId: this.makeId(),
               plan: guardedPlan,
+              overlapPolicy: strictNoOverlap ? 'strict' : 'visual',
               ...(resolveOverlaps ? { resolveOverlaps } : {}),
             }, cancellation.signal);
             lastResponse = response;
@@ -653,7 +541,7 @@ export class ChatController {
       this.appendMessage(
         "assistant",
         unchanged
-          ? "No model changes were needed; the current revision remains active."
+          ? "Nenhuma alteração necessária. A revisão atual continua ativa."
           : `${outcome.batches > 0 || response === null ? summarizeBatchedResult(outcome) : summarizeApplyResult(response)}${separatedNote}`,
       );
     } catch (error) {

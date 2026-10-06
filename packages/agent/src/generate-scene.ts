@@ -16,8 +16,8 @@
  * Finite limits: one format-repair retry per generated plan (FR-30), up to
  * `MAX_APPLY_REPAIRS` apply-repair rounds per plan when
  * `describeRepairableApplyError` accepts the error, then one final apply
- * with `resolveOverlaps` so the backend separates any parts that still
- * penetrate; at most `MAX_SCENE_BATCHES` batches per request. An apply
+ * with `resolveOverlaps` only when the caller explicitly opted into part
+ * displacement; at most `MAX_SCENE_BATCHES` batches per request. An apply
  * repair sends the rejected plan back with the backend's diagnostic, so the
  * model corrects it rather than starting over.
  *
@@ -38,7 +38,7 @@ import {
   type ModelPlanContinuation,
 } from "./generate-model-plan.ts";
 import type { PlanValidationFailure } from "./plan-diagnostics.ts";
-import type { CompletionMetadata } from "./provider.ts";
+import { ProviderRequestError, type CompletionMetadata } from "./provider.ts";
 
 export const SCENE_BATCH_OPERATIONS = 25;
 export const MAX_SCENE_BATCHES = 12;
@@ -107,7 +107,7 @@ export interface GenerateSceneInput
   readonly signal?: AbortSignal;
   readonly onProgress?: (progress: SceneProgress) => void;
   readonly counters?: SceneGenerationCounters;
-  /** Explicit no-overlap requests must never trigger automatic part displacement. */
+  /** Part displacement requires an explicit opt-in; visual joints stay in place by default. */
   readonly allowOverlapResolution?: boolean;
 }
 
@@ -210,6 +210,7 @@ async function step(
   continuation: ModelPlanContinuation | undefined,
 ): Promise<StepResult> {
   const batch = continuation?.batch ?? 0;
+  const maxApplyRepairs = input.provider.generationPolicy?.maxSceneRepairAttempts ?? MAX_APPLY_REPAIRS;
   const progress = (stage: SceneProgress["stage"]): void =>
     input.onProgress?.({ stage, batch, maxBatches: MAX_SCENE_BATCHES, committedBatches: counters.committedBatches });
 
@@ -221,7 +222,7 @@ async function step(
     if (isPureClarify(plan)) return { kind: "clarify", question: plan.operations[0].question };
     if (continuation && isPureNoChange(plan)) return { kind: "done" };
 
-    const resolveOverlaps = applyAttempt === MAX_APPLY_REPAIRS && input.allowOverlapResolution !== false;
+    const resolveOverlaps = applyAttempt === maxApplyRepairs && input.allowOverlapResolution === true;
     progress("applying");
     try {
       const committed = await input.applyPlan(plan, modelSpec, { resolveOverlaps });
@@ -229,7 +230,10 @@ async function step(
       return { kind: "applied", modelSpec: committed, operations: plan.operations.length };
     } catch (error) {
       if (input.signal?.aborted) return { kind: "cancelled" };
-      const diagnostics = applyAttempt < MAX_APPLY_REPAIRS ? input.describeRepairableApplyError?.(error) ?? null : null;
+      if (applyAttempt >= maxApplyRepairs && input.provider.generationPolicy) {
+        throw new ProviderRequestError('O plano X3D ainda não passou na validação após a correção permitida. A revisão anterior permanece ativa; novas chamadas automáticas foram interrompidas.', { cause: error });
+      }
+      const diagnostics = applyAttempt < maxApplyRepairs ? input.describeRepairableApplyError?.(error) ?? null : null;
       if (diagnostics === null) throw error;
       counters.applyRepairs += 1;
       progress("generating");

@@ -78,7 +78,7 @@ def test_seeded_kitchen_passes_real_mcp_validation(
     recipe_client: tuple[TestClient, ProjectSessionService, RecipeStore], x3d_mcp_server: str,
 ) -> None:
     client, projects, store = recipe_client
-    app.dependency_overrides[get_settings] = lambda: Settings(mcp_base_url=AnyHttpUrl(x3d_mcp_server))
+    app.dependency_overrides[get_settings] = lambda: Settings(x3d_backend="mcp", mcp_base_url=AnyHttpUrl(x3d_mcp_server))
     project = projects.create_project()
     recipe = store.get("builtin_kitchen")
     assert recipe is not None
@@ -125,7 +125,7 @@ def test_seeded_table_passes_real_mcp_validation(
     recipe_client: tuple[TestClient, ProjectSessionService, RecipeStore], x3d_mcp_server: str
 ) -> None:
     client, projects, store = recipe_client
-    app.dependency_overrides[get_settings] = lambda: Settings(mcp_base_url=AnyHttpUrl(x3d_mcp_server))
+    app.dependency_overrides[get_settings] = lambda: Settings(x3d_backend="mcp", mcp_base_url=AnyHttpUrl(x3d_mcp_server))
     project = projects.create_project()
     recipe = store.get("builtin_table")
     assert recipe is not None

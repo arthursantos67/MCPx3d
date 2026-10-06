@@ -275,3 +275,46 @@ async def test_deleting_a_project_cancels_its_inflight_artifact_build() -> None:
     with pytest.raises(asyncio.CancelledError):
         await artifact
     assert not service._artifact_cache._entries
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("failed", [False, True])
+async def test_cancelled_artifact_waiter_does_not_leak_completed_builds(failed):
+    service = _service()
+    session = service.create_project()
+    committed = service.commit_revision(session.project_id, 0, _add_object(session.model_spec), "<X3D/>")
+    snapshot = service.snapshot_revision(session.project_id, committed.revision)
+    assert snapshot is not None
+    started, release = asyncio.Event(), asyncio.Event()
+    calls = 0
+
+    async def build():
+        nonlocal calls
+        calls += 1
+        started.set()
+        await release.wait()
+        if failed:
+            raise RuntimeError("Conversion unavailable")
+        return "<html>validated revision</html>"
+
+    waiting = asyncio.create_task(service.get_or_build_artifact(snapshot, "html", build))
+    await started.wait()
+    waiting.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await waiting
+    running = next(iter(service._artifact_cache._inflight.values()))
+    release.set()
+    if failed:
+        with pytest.raises(RuntimeError):
+            await running
+    else:
+        assert await running == "<html>validated revision</html>"
+    assert not service._artifact_cache._inflight
+    if not failed:
+        assert await service.get_or_build_artifact(snapshot, "html", build) == "<html>validated revision</html>"
+        assert calls == 1
+    else:
+        assert not service._artifact_cache._entries
+        with pytest.raises(RuntimeError):
+            await service.get_or_build_artifact(snapshot, "html", build)
+        assert calls == 2

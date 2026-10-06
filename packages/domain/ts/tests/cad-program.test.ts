@@ -34,3 +34,15 @@ test('patterns repeat any cut or union while keeping the base unique', () => {
     ...spec.steps[1], pattern: { kind: 'linear', count: 4, offset: { x: 0, y: 0, z: 0 } },
   }] }), /linear pattern/)
 })
+
+test('runtime CAD validation enforces the shared strict structure for imported JSON', () => {
+  const malformed = [
+    { ...spec, partId: 123 },
+    { ...spec, unexpected: true },
+    { ...spec, steps: [{ ...spec.steps[0], diameter: 10 }] },
+    { ...spec, steps: [{ ...spec.steps[0], position: { x: 0, y: 0 } }] },
+    { ...spec, steps: [{ ...spec.steps[0], position: { x: 0, y: 0, z: 0, extra: 1 } }] },
+    { ...spec, steps: [{ ...spec.steps[0], points: [{ x: 0, y: 0 }, { x: 20, y: 0, extra: 1 }, { x: 0, y: 20 }] }] },
+  ]
+  for (const raw of malformed) assert.throws(() => validateCadProgram(raw as unknown as CadProgramSpec))
+})

@@ -7,6 +7,9 @@
 
 import type { ModelSpec } from "../../../../packages/domain/ts/src/model-spec.ts";
 import type { ArtifactDescriptor, ValidationSummary } from "../api/client.ts";
+import type { AgentPhase } from "../ai/types.ts";
+
+export type { AgentPhase, AgentStatus } from "../ai/types.ts";
 
 export type ChatMessageRole = "user" | "assistant" | "error";
 
@@ -17,7 +20,6 @@ export interface ChatMessage {
   readonly createdAt: number;
 }
 
-export type AgentPhase = "idle" | "unsupported" | "loading" | "ready" | "generating" | "error";
 export type RequestStatus = "idle" | "working" | "succeeded" | "no-change" | "cancelled" | "failed" | "session-expired";
 export type PipelineStage =
   | "idle"
@@ -30,14 +32,6 @@ export type PipelineStage =
   | "ready"
   | "failed";
 export type FailureSource = "provider" | "modeling" | "mcp" | "session" | null;
-
-export interface AgentStatus {
-  readonly phase: AgentPhase;
-  /** Set when `phase` is `"loading"` (WebLLM model download/init progress). */
-  readonly progressText?: string;
-  /** Set when `phase` is `"unsupported"` or `"error"`. */
-  readonly reason?: string;
-}
 
 /** What the composer/chat panel needs to know before it may accept a submit. */
 export type SendGate =

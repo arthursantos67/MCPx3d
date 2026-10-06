@@ -130,7 +130,8 @@ def register_error_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(UnintendedOverlapError)
     async def _unintended_overlap(request: Request, exc: UnintendedOverlapError) -> JSONResponse:
-        return error_response(422, "UNINTENDED_OVERLAP", str(exc), correlation_id=_correlation_id(request))
+        return error_response(422, "UNINTENDED_OVERLAP", str(exc), details=[exc.diagnostics],
+                              correlation_id=_correlation_id(request))
 
     @app.exception_handler(ComplexityLimitError)
     async def _complexity_limit(request: Request, exc: ComplexityLimitError) -> JSONResponse:

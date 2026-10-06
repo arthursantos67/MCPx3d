@@ -52,15 +52,15 @@ from pydantic import BaseModel, ConfigDict, Field
 from api.config import Settings, get_settings
 from api.errors import api_error
 from api.limits import ComplexityLimitError
-from api.mcp_client import X3DMcpClient
 from api.mutation import apply_plan
-from api.overlap import resolve_unintended_overlaps, validate_no_unintended_overlap
+from api.overlap import check_scene_layout
 from api.projects import (
     ProjectSessionService,
     RevisionConflictError,
     get_project_service,
 )
 from api.timing import StageTimer
+from api.x3d_backend import connect_x3d
 from api.x3d_validation import build_and_validate_candidate
 
 logger = logging.getLogger(__name__)
@@ -84,6 +84,7 @@ class ApplyPlanRequest(BaseModel):
     expectedRevision: int = Field(ge=0)
     requestId: str | None = None
     plan: ModelPlan
+    overlapPolicy: Literal["visual", "strict"] = "visual"
     resolveOverlaps: bool = False
     """Separate penetrating parts deterministically instead of rejecting (Issue #71 follow-up)."""
 
@@ -189,11 +190,10 @@ async def apply_plan_endpoint(
             session.model_spec, plan_request.plan, max_objects=settings.max_objects_per_project
         )
 
-    overlap_fixes: list[dict[str, object]] = []
-    if plan_request.resolveOverlaps:
-        candidate, overlap_fixes = resolve_unintended_overlaps(session.model_spec, candidate, plan_request.plan)
-    else:
-        validate_no_unintended_overlap(candidate, plan_request.plan)
+    candidate, layout_warnings, overlap_fixes = check_scene_layout(
+        session.model_spec, candidate, plan_request.plan,
+        policy=plan_request.overlapPolicy, resolve=plan_request.resolveOverlaps,
+    )
 
     if all(isinstance(operation, NoChange) for operation in plan_request.plan.operations):
         return ApplyPlanResponse(
@@ -201,7 +201,7 @@ async def apply_plan_endpoint(
             revision=session.revision,
             modelSpec=session.model_spec,
             validation=ValidationSummary(
-                schemaValid=True, semanticValid=True, warnings=[], autofixes=[]
+                schemaValid=True, semanticValid=True, warnings=layout_warnings, autofixes=[]
             ),
             preview=(
                 PreviewInfo(url=f"/api/projects/{project_id}/artifacts/html?revision={session.revision}")
@@ -213,23 +213,25 @@ async def apply_plan_endpoint(
         )
 
     # McpUnavailableError/McpToolError/X3DValidationError propagate to their handlers.
-    timer.start("mcp_connect")
-    async with X3DMcpClient.connect(
-        str(settings.mcp_base_url), settings.mcp_request_timeout_seconds
-    ) as client:
-        timer.finish("mcp_connect")
+    connection_stage = "mcp_connect" if settings.x3d_backend == "mcp" else "x3d_backend"
+    timer.start(connection_stage)
+    async with connect_x3d(settings) as client:
+        timer.finish(connection_stage)
         stage_timings: dict[str, int] = {}
         _def_names, validation = await build_and_validate_candidate(client, candidate, stage_timings)
         timer.add(stage_timings)
 
     # RevisionConflictError/ProjectNotFoundError propagate to their handlers (a race
     # with another request between the pre-check above and this commit).
+    semantic_warnings = [{"check": warning.check, "message": warning.message} for warning in validation.warnings]
+    summary = {**validation.to_summary(), "warnings": [*layout_warnings, *semantic_warnings],
+               "autofixes": [*overlap_fixes, *validation.autofixes]}
     updated_session = project_service.commit_revision(
         project_id,
         plan_request.expectedRevision,
         candidate,
         validation.content,
-        {**validation.to_summary(), "autofixes": [*overlap_fixes, *validation.autofixes]},
+        summary,
     )
 
     logger.info(
@@ -243,9 +245,7 @@ async def apply_plan_endpoint(
         projectId=project_id,
         revision=updated_session.revision,
         modelSpec=updated_session.model_spec,
-        validation=ValidationSummary.model_validate(
-            {**validation.to_summary(), "autofixes": [*overlap_fixes, *validation.autofixes]}
-        ),
+        validation=ValidationSummary.model_validate(summary),
         preview=PreviewInfo(
             url=f"/api/projects/{project_id}/artifacts/html?revision={updated_session.revision}"
         ),

@@ -20,7 +20,7 @@ interface X3DPreviewFrameProps {
 }
 
 /**
- * Sandboxed X3D preview (PRD §10.3/§11.4, Issue #28): fetches the backend's
+ * Sandboxed XPrévia 3D (PRD §10.3/§11.4, Issue #28): fetches the backend's
  * standalone X3DOM HTML, embeds it via a Blob URL in a sandboxed iframe
  * (never `srcDoc`/`dangerouslySetInnerHTML` with raw HTML -- the generated
  * page never touches the parent DOM), and revokes the previous Blob URL only
@@ -84,7 +84,7 @@ function X3DPreviewFrame({ previewUrl, onStatusChange }: X3DPreviewFrameProps) {
     return (
       <div className="viewer-frame">
         <p className="workspace-placeholder">
-          {currentError ? `Preview failed to load: ${currentError}` : 'The 3D viewer will appear here.'}
+          {currentError ? `Falha ao carregar a prévia: ${currentError}` : 'Sua cena aparecerá aqui. Descreva um modelo na conversa ao lado.'}
         </p>
       </div>
     )
@@ -92,15 +92,15 @@ function X3DPreviewFrame({ previewUrl, onStatusChange }: X3DPreviewFrameProps) {
 
   return (
     <div className="viewer-frame">
-      <div className="viewer-frame__controls" aria-label="Camera controls">
-        <button type="button" onClick={() => document.querySelector<HTMLIFrameElement>('.viewer-frame__iframe')?.contentWindow?.postMessage({ type: 'ai-web3d-camera', action: 'zoom', amount: -120 }, '*')}>Zoom in</button>
-        <button type="button" onClick={() => document.querySelector<HTMLIFrameElement>('.viewer-frame__iframe')?.contentWindow?.postMessage({ type: 'ai-web3d-camera', action: 'zoom', amount: 120 }, '*')}>Zoom out</button>
-        <button type="button" onClick={() => document.querySelector<HTMLIFrameElement>('.viewer-frame__iframe')?.contentWindow?.postMessage({ type: 'ai-web3d-camera', action: 'fit' }, '*')}>Fit scene</button>
-        <button type="button" onClick={() => document.querySelector<HTMLIFrameElement>('.viewer-frame__iframe')?.contentWindow?.postMessage({ type: 'ai-web3d-camera', action: 'reset' }, '*')}>Reset camera</button>
+      <div className="viewer-frame__controls" aria-label="Controles da câmera">
+        <button type="button" onClick={() => document.querySelector<HTMLIFrameElement>('.viewer-frame__iframe')?.contentWindow?.postMessage({ type: 'ai-web3d-camera', action: 'zoom', amount: -120 }, '*')}>Aproximar</button>
+        <button type="button" onClick={() => document.querySelector<HTMLIFrameElement>('.viewer-frame__iframe')?.contentWindow?.postMessage({ type: 'ai-web3d-camera', action: 'zoom', amount: 120 }, '*')}>Afastar</button>
+        <button type="button" onClick={() => document.querySelector<HTMLIFrameElement>('.viewer-frame__iframe')?.contentWindow?.postMessage({ type: 'ai-web3d-camera', action: 'fit' }, '*')}>Enquadrar</button>
+        <button type="button" onClick={() => document.querySelector<HTMLIFrameElement>('.viewer-frame__iframe')?.contentWindow?.postMessage({ type: 'ai-web3d-camera', action: 'reset' }, '*')}>Redefinir câmera</button>
       </div>
       <iframe
         className="viewer-frame__iframe"
-        title="3D preview"
+        title="Prévia 3D"
         src={blobUrl}
         sandbox="allow-scripts"
         onLoad={() => {
@@ -110,7 +110,7 @@ function X3DPreviewFrame({ previewUrl, onStatusChange }: X3DPreviewFrameProps) {
       />
       {currentError && (
         <div className="viewer-frame__error" role="alert">
-          Preview failed to load: {currentError}
+          Falha ao carregar a prévia: {currentError}
         </div>
       )}
     </div>

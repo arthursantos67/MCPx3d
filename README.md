@@ -1,64 +1,60 @@
-# AI Web3D Modeler
+# Forma
 
-A web app where a user describes a 3D object in chat, a local in-browser AI agent turns that into a structured `ModelPlan`, the app applies it to a renderer-independent `ModelSpec`, and X3D generation/validation/rendering is delegated to the `x3d_mcp` tool service.
+Estúdio de modelagem com dois agentes de IA: **CAD**, para peças e conjuntos compostos com download STEP/STL, e **X3D**, para cenas editadas por conversa. A API constrói e valida a geometria; a IA propõe somente dados estruturados.
 
-- Product/architecture baseline: [`PRD-AI-Web3D-Modeler-v1.0.md`](PRD-AI-Web3D-Modeler-v1.0.md)
-- Implementation plan: [`ISSUES-AI-Web3D-Modeler-v1.0.md`](ISSUES-AI-Web3D-Modeler-v1.0.md)
+## Iniciar
 
-## Prerequisites
+Requisitos: Node.js 24, Python 3.12+, Git e uv. No Windows, `python -m pip install uv` instala uv; os scripts também funcionam quando apenas `python -m uv` está disponível.
 
-- Node.js current LTS (tested with Node v24)
-- Python 3.12+
-- [`uv`](https://docs.astral.sh/uv/) (`python -m pip install uv`, or see the official installer; ensure its install location is on `PATH`, e.g. `%APPDATA%\Python\Python3XX\Scripts` on Windows)
-- Git
-- A browser with WebGPU support (for the default local AI mode) -- or an API key from an OpenAI-compatible provider (e.g. Groq) if not, see `apps/web`'s "AI Provider" settings
-
-No AI API key is required for the default local setup.
-
-## Reusable recipes
-
-The API keeps a local SQLite catalog at `apps/api/data/recipes.sqlite3` (override with `RECIPE_DATABASE_PATH`). It starts with a validated nine-part dining table and a 65-part kitchen with a separate island, two pendants, cabinet and refrigerator handles, a recessed sink, a stove and its hood. Open **Recipes** in the workspace to apply a saved recipe to an empty project or save the current validated model. Generic requests such as “quero uma mesa” or “crie uma cozinha completa, sem sobreposição, com puxadores, torneira e lustres” use the catalog directly; requests with custom dimensions, layout, appliances or colors still use the AI planner. Recipe application passes through the same X3D validation and revision commit as any other plan.
-
-Recipes survive API restarts; active projects still use temporary in-memory sessions. The catalog is shared by everyone who can access this API, so run this deployment as a private workspace until account ownership and authorization are implemented. Recipes describe the current primitive-based Web3D model, not manufacturing-ready CAD features. See [`docs/cad-readiness.md`](docs/cad-readiness.md) for the next-stage contract.
-
-## Experimental CAD parts
-
-Start the API with `uv run --extra cad api` from `apps/api`, then select **CAD** in the workspace. **Construção livre** is the default editor: describe a part, inspect the rotatable 3D preview, adjust individual construction steps, save a revision and download STEP. The program combines positioned and rotated boxes, cylinders, spheres, cones and extruded polygon profiles using union and cut operations. Repeated shapes and cuts can be arranged in circular or linear patterns for teeth, bolt circles, ribs and hole rows. The [example program](examples/cad/construction_program.json) and [STEP](examples/cad/construction_program.step) passed an independent FreeCAD import check. The earlier mounting plate, L bracket, rounded plate, circular flange and composite part editors remain under **Moldes**. CAD projects use a separate SQLite store (`CAD_DATABASE_PATH`, default `apps/api/data/cad.sqlite3`) and do not change Web3D scenes or its recipe catalog. See [`docs/cad-readiness.md`](docs/cad-readiness.md) for the exact geometry limits and remaining mechanical features.
-
-For a new CAD project, enter a request in **Construção CAD**. Try “Crie um suporte mecânico em L com base de 80 × 50 × 10 mm, ressalto cilíndrico Ø30 com altura 10 mm, furo central Ø12 atravessando a base e o ressalto, e dois furos transversais Ø6”. The provider proposes a complete construction sequence and lists inferred dimensions. The server verifies one connected solid and checks its STEP round trip before saving. The 3D preview is a mesh of that geometry; the STEP is the exchange artifact for FreeCAD. Native constrained sketches, fillets, true threads, assemblies and manufacturing tolerances are not yet supported.
-
-## Project recovery
-
-Reloading the page reconnects to the last live project session in the same browser. Use **Download → MANIFEST** to keep a portable JSON copy; **Import** restores it into the current session after schema, domain and X3D validation. Importing replaces the current model and conversation after confirmation. Browser reload recovery lasts only while the API session is alive; keep a manifest for longer-term storage.
-
-## Startup
-
-Start these in order -- `apps/api` needs `x3d_mcp` reachable, and `apps/web` needs `apps/api` reachable.
-
-### 1. `x3d_mcp` (`services/x3d-mcp`)
+Na raiz:
 
 ```bash
-git submodule update --init --recursive services/x3d-mcp/vendor
-./services/x3d-mcp/run.sh
+git submodule update --init --recursive
+npm ci
+npm run dev
 ```
 
-Serves at `http://localhost:8000`.
+Abra **http://127.0.0.1:5173**. A API fica em **http://127.0.0.1:8001**, com contratos interativos em `/docs`. O primeiro início instala as dependências Python, incluindo CadQuery; os seguintes reutilizam o ambiente. `Ctrl+C` encerra os processos iniciados pelo comando. Em PowerShell com scripts bloqueados, use `npm.cmd`.
 
-### 2. API (`apps/api`)
+**Não é necessário iniciar um servidor MCP.** O submódulo fornece a biblioteca e os schemas de validação X3D usados localmente. O modo remoto continua opcional: [docs/x3d-mcp.md](docs/x3d-mcp.md).
+
+Em **Configurar IA**, escolha WebLLM, um endpoint compatível com OpenAI, **Codex · assinatura ChatGPT** ou **Claude Code · assinatura Claude**. WebLLM precisa de WebGPU. O endpoint externo recebe os pedidos diretamente do navegador e exige chave, modelo e CORS. Os modos de assinatura usam o cliente oficial instalado e autenticado no computador do servidor; pedidos passam pela API local, sem transferir tokens ao navegador. Os limites da conta continuam valendo.
+
+Para assinaturas, instale o cliente oficial e execute `codex login` ou `claude auth login` no terminal. Reinicie o servidor após instalar o cliente. Deixe **Modelo** vazio no primeiro teste. **Verificar instalação e login** não gera uma resposta; **Testar conexão** faz uma pequena chamada real, confere JSON e mostra erros antes de qualquer validação CAD/X3D. Testar não salva nem troca o provedor ativo: use **Salvar e aplicar** depois. [Detalhes da integração](docs/ai-providers.md).
+
+## Usar
+
+No CAD, descreva uma peça ou conjunto no **Projeto livre**. O agente escolhe um sólido ou planeja componentes independentes; **Conjunto composto** permite pedir uma montagem diretamente. A proposta aprovada é salva automaticamente e libera STEP/STL. Cada componente também pode ser exportado nos dois formatos. Ajustes manuais e movimentos pedem uma nova revisão antes do download.
+
+No X3D, descreva a cena, peça alterações ou aplique uma receita da biblioteca. Baixe X3D, HTML, ClassicVRML ou JSON do projeto. O JSON permite importar a cena depois de reiniciar a API. A prévia HTML utiliza X3DOM e precisa de internet para carregar esse visualizador.
+
+CAD e receitas usam SQLite em `apps/api/data`. Projetos X3D são temporários e expiram após uma hora de inatividade por padrão. A linguagem CAD possui limites explícitos: [formatos e capacidades](docs/cad-readiness.md).
+
+## Desenvolvimento
 
 ```bash
-cd apps/api
-cp .env.example .env  # optional, defaults work out of the box
-uv run api
-```
-
-Serves at `http://localhost:8001` (interactive docs at `/docs`).
-
-### 3. Frontend (`apps/web`)
-
-```bash
-npm install
+npm run dev:api
 npm run dev:web
+npm run typecheck
+npm run lint:web
+npm test
+npm run build
+npm run test:browser
 ```
 
-Serves at `http://localhost:5173`. Open this in a browser to use the app.
+Para configurar os testes de navegador e executar as suítes Python, consulte [docs/testing.md](docs/testing.md). Os scripts direcionam arquivos temporários e caches Python para `.cache` neste checkout, evitando consumo desnecessário do disco C: neste ambiente.
+
+## Organização
+
+| Pasta | Responsabilidade |
+|---|---|
+| `apps/web/src/cad` | Agente CAD, editores, movimento e visualizador de malha |
+| `apps/web/src/chat` e `src/x3d` | Conversa e área X3D |
+| `apps/web/src/ai` e `src/workspace` | Provedor configurado e navegação compartilhada |
+| `apps/api/src/api` | Motores, validação, persistência e rotas |
+| `packages/agent` | Provedores, prompts, planejamento e reparos estruturados |
+| `packages/domain` | Schemas compartilhados e regras TS/Python |
+| `services/x3d-mcp` | Biblioteca upstream fixada e servidor opcional |
+| `scripts`, `tests`, `examples`, `docs` | Execução, testes, exemplos e documentação |
+
+Referências atuais: [PRD](PRD.md), [estado e próximos trabalhos](ISSUES.md), [arquitetura](docs/architecture.md). O histórico está em [docs/archive](docs/archive/README.md).

@@ -1,0 +1,157 @@
+{
+  "schemaVersion": "3.0",
+  "units": "mm",
+  "partId": "mechanical_mount",
+  "steps": [
+    {
+      "id": "foot",
+      "shape": "box",
+      "op": "base",
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "width": 100,
+      "depth": 70,
+      "height": 14
+    },
+    {
+      "id": "round_corners",
+      "shape": "fillet",
+      "op": "modify",
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "radius": 3,
+      "selector": "parallel_z"
+    },
+    {
+      "id": "top_edge",
+      "shape": "chamfer",
+      "op": "modify",
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "distance": 1,
+      "selector": "top"
+    },
+    {
+      "id": "transition_boss",
+      "shape": "loft",
+      "op": "union",
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "sections": [
+        {
+          "kind": "circle",
+          "z": 6,
+          "diameter": 24
+        },
+        {
+          "kind": "rectangle",
+          "z": 22,
+          "width": 32,
+          "depth": 20
+        }
+      ],
+      "ruled": true
+    },
+    {
+      "id": "adjustment_slot",
+      "shape": "slot",
+      "op": "cut",
+      "position": {
+        "x": -28,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "length": 30,
+      "width": 8,
+      "height": 20
+    },
+    {
+      "id": "mounting_holes",
+      "shape": "hole",
+      "op": "cut",
+      "position": {
+        "x": 30,
+        "y": -22,
+        "z": 7
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "holeType": "counterbore",
+      "diameter": 6.5,
+      "height": 16,
+      "headDiameter": 12,
+      "headDepth": 4,
+      "pattern": {
+        "kind": "linear",
+        "count": 2,
+        "offset": {
+          "x": 0,
+          "y": 44,
+          "z": 0
+        }
+      }
+    },
+    {
+      "id": "boss_thread",
+      "shape": "thread",
+      "op": "cut",
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 7
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "diameter": 12,
+      "pitch": 1.75,
+      "height": 32,
+      "profile": "metric",
+      "handedness": "right",
+      "clearance": 0.15,
+      "starts": 1
+    }
+  ]
+}

@@ -17,6 +17,7 @@
 
 export type ProviderConfig =
   | { readonly mode: "local" }
+  | { readonly mode: "cli"; readonly client: "codex" | "claude"; readonly model: string }
   | { readonly mode: "byok"; readonly baseUrl: string; readonly apiKey: string; readonly model: string };
 
 export interface KeyValueStore {
@@ -48,10 +49,16 @@ export function loadProviderConfig(storage: KeyValueStore = defaultStorage()): P
     const raw = storage.getItem(STORAGE_KEY);
     if (!raw) return LOCAL_CONFIG;
     const parsed: unknown = JSON.parse(raw);
-    return isByokConfig(parsed) ? parsed : LOCAL_CONFIG;
+    return isByokConfig(parsed) || isCliConfig(parsed) ? parsed : LOCAL_CONFIG;
   } catch {
     return LOCAL_CONFIG;
   }
+}
+
+function isCliConfig(value: unknown): value is Extract<ProviderConfig, { mode: "cli" }> {
+  if (typeof value !== "object" || value === null) return false;
+  const record = value as Record<string, unknown>;
+  return record.mode === "cli" && (record.client === "codex" || record.client === "claude") && typeof record.model === "string";
 }
 
 export function saveProviderConfig(config: ProviderConfig, storage: KeyValueStore = defaultStorage()): void {

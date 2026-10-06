@@ -1,0 +1,195 @@
+{
+  "schemaVersion": "4.0",
+  "units": "mm",
+  "partId": "manual_press",
+  "components": [
+    {
+      "id": "frame",
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "steps": [
+        {
+          "id": "base",
+          "op": "base",
+          "shape": "box",
+          "width": 120,
+          "depth": 70,
+          "height": 12,
+          "position": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "rotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          }
+        },
+        {
+          "id": "left_column",
+          "op": "union",
+          "shape": "box",
+          "width": 12,
+          "depth": 70,
+          "height": 90,
+          "position": {
+            "x": -50,
+            "y": 0,
+            "z": 45
+          },
+          "rotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          }
+        },
+        {
+          "id": "right_column",
+          "op": "union",
+          "shape": "box",
+          "width": 12,
+          "depth": 70,
+          "height": 90,
+          "position": {
+            "x": 50,
+            "y": 0,
+            "z": 45
+          },
+          "rotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          }
+        },
+        {
+          "id": "crossbeam",
+          "op": "union",
+          "shape": "box",
+          "width": 112,
+          "depth": 70,
+          "height": 12,
+          "position": {
+            "x": 0,
+            "y": 0,
+            "z": 90
+          },
+          "rotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          }
+        },
+        {
+          "id": "thread_clearance",
+          "op": "cut",
+          "shape": "cylinder",
+          "diameter": 12,
+          "height": 24,
+          "position": {
+            "x": 0,
+            "y": 0,
+            "z": 90
+          },
+          "rotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          }
+        }
+      ]
+    },
+    {
+      "id": "spindle",
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 67
+      },
+      "motion": {
+        "kind": "screw",
+        "axis": "z",
+        "minimum": -2,
+        "maximum": 8,
+        "value": 0,
+        "pitch": 4,
+        "group": "press"
+      },
+      "steps": [
+        {
+          "id": "shaft",
+          "op": "base",
+          "shape": "cylinder",
+          "diameter": 10,
+          "height": 76,
+          "position": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "rotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          }
+        },
+        {
+          "id": "handle",
+          "op": "union",
+          "shape": "cylinder",
+          "diameter": 7,
+          "height": 70,
+          "position": {
+            "x": 0,
+            "y": 0,
+            "z": 37
+          },
+          "rotation": {
+            "x": 0,
+            "y": 90,
+            "z": 0
+          }
+        }
+      ]
+    },
+    {
+      "id": "platen",
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 24
+      },
+      "motion": {
+        "kind": "slider",
+        "axis": "z",
+        "minimum": -2,
+        "maximum": 8,
+        "value": 0,
+        "group": "press"
+      },
+      "steps": [
+        {
+          "id": "plate",
+          "op": "base",
+          "shape": "box",
+          "width": 60,
+          "depth": 40,
+          "height": 10,
+          "position": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "rotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          }
+        }
+      ]
+    }
+  ]
+}

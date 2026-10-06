@@ -1,0 +1,1055 @@
+{
+  "intent": "create_model",
+  "operations": [
+    {
+      "op": "create_object",
+      "id": "piso",
+      "name": "Piso",
+      "kind": "box",
+      "dimensions": {
+        "width": 1800,
+        "height": 20,
+        "depth": 1400
+      },
+      "position": [
+        0,
+        -10,
+        0
+      ],
+      "color": "#dce2e5"
+    },
+    {
+      "op": "create_object",
+      "id": "esteira_superficie",
+      "name": "Superficie Esteira",
+      "kind": "box",
+      "dimensions": {
+        "width": 1000,
+        "height": 12,
+        "depth": 280
+      },
+      "position": [
+        0,
+        250,
+        0
+      ],
+      "color": "#242b30"
+    },
+    {
+      "op": "create_object",
+      "id": "esteira_estrutura_1",
+      "name": "Estrutura Esteira 1",
+      "kind": "box",
+      "dimensions": {
+        "width": 1000,
+        "height": 30,
+        "depth": 30
+      },
+      "position": [
+        0,
+        220,
+        -140
+      ],
+      "color": "#687680"
+    },
+    {
+      "op": "create_object",
+      "id": "esteira_estrutura_2",
+      "name": "Estrutura Esteira 2",
+      "kind": "box",
+      "dimensions": {
+        "width": 1000,
+        "height": 30,
+        "depth": 30
+      },
+      "position": [
+        0,
+        220,
+        140
+      ],
+      "color": "#687680"
+    },
+    {
+      "op": "create_object",
+      "id": "esteira_cilindro_1",
+      "name": "Cilindro Esteira 1",
+      "kind": "cylinder",
+      "dimensions": {
+        "radius": 30,
+        "height": 300
+      },
+      "position": [
+        -480,
+        245,
+        0
+      ],
+      "color": "#687680",
+      "rotation": [
+        1.5707963267948966,
+        0,
+        0
+      ]
+    },
+    {
+      "op": "create_object",
+      "id": "esteira_cilindro_2",
+      "name": "Cilindro Esteira 2",
+      "kind": "cylinder",
+      "dimensions": {
+        "radius": 30,
+        "height": 300
+      },
+      "position": [
+        480,
+        245,
+        0
+      ],
+      "color": "#687680",
+      "rotation": [
+        1.5707963267948966,
+        0,
+        0
+      ]
+    },
+    {
+      "op": "create_object",
+      "id": "esteira_perna_1",
+      "name": "Perna Esteira 1",
+      "kind": "box",
+      "dimensions": {
+        "width": 30,
+        "height": 220,
+        "depth": 30
+      },
+      "position": [
+        -400,
+        110,
+        -140
+      ],
+      "color": "#687680"
+    },
+    {
+      "op": "create_object",
+      "id": "esteira_perna_2",
+      "name": "Perna Esteira 2",
+      "kind": "box",
+      "dimensions": {
+        "width": 30,
+        "height": 220,
+        "depth": 30
+      },
+      "position": [
+        -400,
+        110,
+        140
+      ],
+      "color": "#687680"
+    },
+    {
+      "op": "create_object",
+      "id": "esteira_perna_3",
+      "name": "Perna Esteira 3",
+      "kind": "box",
+      "dimensions": {
+        "width": 30,
+        "height": 220,
+        "depth": 30
+      },
+      "position": [
+        400,
+        110,
+        -140
+      ],
+      "color": "#687680"
+    },
+    {
+      "op": "create_object",
+      "id": "esteira_perna_4",
+      "name": "Perna Esteira 4",
+      "kind": "box",
+      "dimensions": {
+        "width": 30,
+        "height": 220,
+        "depth": 30
+      },
+      "position": [
+        400,
+        110,
+        140
+      ],
+      "color": "#687680"
+    },
+    {
+      "op": "create_object",
+      "id": "caixa_1",
+      "name": "Caixa 1",
+      "kind": "box",
+      "dimensions": {
+        "width": 80,
+        "height": 100,
+        "depth": 80
+      },
+      "position": [
+        -350,
+        306.0,
+        0
+      ],
+      "color": "#be925c"
+    },
+    {
+      "op": "create_object",
+      "id": "caixa_2",
+      "name": "Caixa 2",
+      "kind": "box",
+      "dimensions": {
+        "width": 80,
+        "height": 120,
+        "depth": 80
+      },
+      "position": [
+        -210,
+        316.0,
+        0
+      ],
+      "color": "#be925c"
+    },
+    {
+      "op": "create_object",
+      "id": "caixa_3",
+      "name": "Caixa 3",
+      "kind": "box",
+      "dimensions": {
+        "width": 80,
+        "height": 80,
+        "depth": 80
+      },
+      "position": [
+        -70,
+        296.0,
+        0
+      ],
+      "color": "#be925c"
+    },
+    {
+      "op": "create_object",
+      "id": "caixa_4",
+      "name": "Caixa 4",
+      "kind": "box",
+      "dimensions": {
+        "width": 80,
+        "height": 100,
+        "depth": 80
+      },
+      "position": [
+        70,
+        306.0,
+        0
+      ],
+      "color": "#be925c"
+    },
+    {
+      "op": "create_object",
+      "id": "caixa_5",
+      "name": "Caixa 5",
+      "kind": "box",
+      "dimensions": {
+        "width": 80,
+        "height": 120,
+        "depth": 80
+      },
+      "position": [
+        210,
+        316.0,
+        0
+      ],
+      "color": "#be925c"
+    },
+    {
+      "op": "create_object",
+      "id": "caixa_6",
+      "name": "Caixa 6",
+      "kind": "box",
+      "dimensions": {
+        "width": 80,
+        "height": 80,
+        "depth": 80
+      },
+      "position": [
+        350,
+        296.0,
+        0
+      ],
+      "color": "#be925c"
+    },
+    {
+      "op": "create_object",
+      "id": "robo_base",
+      "name": "Base Robo",
+      "kind": "cylinder",
+      "dimensions": {
+        "radius": 90,
+        "height": 40
+      },
+      "position": [
+        -650,
+        20,
+        250
+      ],
+      "color": "#e87524"
+    },
+    {
+      "op": "create_object",
+      "id": "robo_pedestal",
+      "name": "Pedestal Robo",
+      "kind": "cylinder",
+      "dimensions": {
+        "radius": 50,
+        "height": 120
+      },
+      "position": [
+        -650,
+        95,
+        250
+      ],
+      "color": "#e87524"
+    },
+    {
+      "op": "create_object",
+      "id": "robo_ombro",
+      "name": "Ombro Robo",
+      "kind": "sphere",
+      "dimensions": {
+        "radius": 60
+      },
+      "position": [
+        -650,
+        175,
+        250
+      ],
+      "color": "#e87524"
+    },
+    {
+      "op": "create_object",
+      "id": "robo_braco",
+      "name": "Braco Robo",
+      "kind": "box",
+      "dimensions": {
+        "width": 70,
+        "height": 240,
+        "depth": 70
+      },
+      "position": [
+        -650,
+        275,
+        250
+      ],
+      "color": "#e87524",
+      "rotation": [
+        0,
+        0,
+        -0.25
+      ]
+    },
+    {
+      "op": "create_object",
+      "id": "robo_cotovelo",
+      "name": "Cotovelo Robo",
+      "kind": "sphere",
+      "dimensions": {
+        "radius": 50
+      },
+      "position": [
+        -590,
+        400,
+        250
+      ],
+      "color": "#e87524"
+    },
+    {
+      "op": "create_object",
+      "id": "robo_antebraco",
+      "name": "Antebraco Robo",
+      "kind": "box",
+      "dimensions": {
+        "width": 60,
+        "height": 220,
+        "depth": 60
+      },
+      "position": [
+        -500,
+        430,
+        250
+      ],
+      "color": "#e87524",
+      "rotation": [
+        0,
+        0,
+        -1
+      ]
+    },
+    {
+      "op": "create_object",
+      "id": "robo_junta_punho",
+      "name": "Junta Punho",
+      "kind": "sphere",
+      "dimensions": {
+        "radius": 40
+      },
+      "position": [
+        -405,
+        490,
+        250
+      ],
+      "color": "#e87524"
+    },
+    {
+      "op": "create_object",
+      "id": "robo_punho",
+      "name": "Punho Robo",
+      "kind": "cylinder",
+      "dimensions": {
+        "radius": 25,
+        "height": 65
+      },
+      "position": [
+        -360,
+        490,
+        250
+      ],
+      "color": "#e87524",
+      "rotation": [
+        0,
+        0,
+        1.5707963267948966
+      ]
+    },
+    {
+      "op": "create_object",
+      "id": "robo_garra",
+      "name": "Garra Robo",
+      "kind": "box",
+      "dimensions": {
+        "width": 20,
+        "height": 70,
+        "depth": 70
+      },
+      "position": [
+        -322,
+        490,
+        250
+      ],
+      "color": "#242b30"
+    },
+    {
+      "op": "create_object",
+      "id": "robo_dedo_1",
+      "name": "Dedo Garra 1",
+      "kind": "box",
+      "dimensions": {
+        "width": 70,
+        "height": 14,
+        "depth": 14
+      },
+      "position": [
+        -282,
+        467,
+        227
+      ],
+      "color": "#242b30"
+    },
+    {
+      "op": "create_object",
+      "id": "robo_dedo_2",
+      "name": "Dedo Garra 2",
+      "kind": "box",
+      "dimensions": {
+        "width": 70,
+        "height": 14,
+        "depth": 14
+      },
+      "position": [
+        -282,
+        467,
+        273
+      ],
+      "color": "#242b30"
+    },
+    {
+      "op": "create_object",
+      "id": "bandeja_1_fundo",
+      "name": "Fundo Bandeja 1",
+      "kind": "box",
+      "dimensions": {
+        "width": 240,
+        "height": 14,
+        "depth": 240
+      },
+      "position": [
+        180,
+        7,
+        430
+      ],
+      "color": "#2469b2"
+    },
+    {
+      "op": "create_object",
+      "id": "bandeja_1_parede_1",
+      "name": "Parede 1 Bandeja 1",
+      "kind": "box",
+      "dimensions": {
+        "width": 10,
+        "height": 80,
+        "depth": 240
+      },
+      "position": [
+        65,
+        50,
+        430
+      ],
+      "color": "#2469b2"
+    },
+    {
+      "op": "create_object",
+      "id": "bandeja_1_parede_2",
+      "name": "Parede 2 Bandeja 1",
+      "kind": "box",
+      "dimensions": {
+        "width": 10,
+        "height": 80,
+        "depth": 240
+      },
+      "position": [
+        295,
+        50,
+        430
+      ],
+      "color": "#2469b2"
+    },
+    {
+      "op": "create_object",
+      "id": "bandeja_1_parede_3",
+      "name": "Parede 3 Bandeja 1",
+      "kind": "box",
+      "dimensions": {
+        "width": 220,
+        "height": 80,
+        "depth": 10
+      },
+      "position": [
+        180,
+        50,
+        315
+      ],
+      "color": "#2469b2"
+    },
+    {
+      "op": "create_object",
+      "id": "bandeja_1_parede_4",
+      "name": "Parede 4 Bandeja 1",
+      "kind": "box",
+      "dimensions": {
+        "width": 220,
+        "height": 80,
+        "depth": 10
+      },
+      "position": [
+        180,
+        50,
+        545
+      ],
+      "color": "#2469b2"
+    },
+    {
+      "op": "create_object",
+      "id": "bandeja_2_fundo",
+      "name": "Fundo Bandeja 2",
+      "kind": "box",
+      "dimensions": {
+        "width": 240,
+        "height": 14,
+        "depth": 240
+      },
+      "position": [
+        500,
+        7,
+        430
+      ],
+      "color": "#298854"
+    },
+    {
+      "op": "create_object",
+      "id": "bandeja_2_parede_1",
+      "name": "Parede 1 Bandeja 2",
+      "kind": "box",
+      "dimensions": {
+        "width": 10,
+        "height": 80,
+        "depth": 240
+      },
+      "position": [
+        385,
+        50,
+        430
+      ],
+      "color": "#298854"
+    },
+    {
+      "op": "create_object",
+      "id": "bandeja_2_parede_2",
+      "name": "Parede 2 Bandeja 2",
+      "kind": "box",
+      "dimensions": {
+        "width": 10,
+        "height": 80,
+        "depth": 240
+      },
+      "position": [
+        615,
+        50,
+        430
+      ],
+      "color": "#298854"
+    },
+    {
+      "op": "create_object",
+      "id": "bandeja_2_parede_3",
+      "name": "Parede 3 Bandeja 2",
+      "kind": "box",
+      "dimensions": {
+        "width": 220,
+        "height": 80,
+        "depth": 10
+      },
+      "position": [
+        500,
+        50,
+        315
+      ],
+      "color": "#298854"
+    },
+    {
+      "op": "create_object",
+      "id": "bandeja_2_parede_4",
+      "name": "Parede 4 Bandeja 2",
+      "kind": "box",
+      "dimensions": {
+        "width": 220,
+        "height": 80,
+        "depth": 10
+      },
+      "position": [
+        500,
+        50,
+        545
+      ],
+      "color": "#298854"
+    },
+    {
+      "op": "create_object",
+      "id": "painel_base",
+      "name": "Base Painel",
+      "kind": "box",
+      "dimensions": {
+        "width": 160,
+        "height": 20,
+        "depth": 140
+      },
+      "position": [
+        600,
+        10,
+        -400
+      ],
+      "color": "#687680"
+    },
+    {
+      "op": "create_object",
+      "id": "painel_pedestal",
+      "name": "Pedestal Painel",
+      "kind": "box",
+      "dimensions": {
+        "width": 30,
+        "height": 240,
+        "depth": 30
+      },
+      "position": [
+        600,
+        130,
+        -400
+      ],
+      "color": "#687680"
+    },
+    {
+      "op": "create_object",
+      "id": "painel_corpo",
+      "name": "Painel Controle",
+      "kind": "box",
+      "dimensions": {
+        "width": 200,
+        "height": 140,
+        "depth": 30
+      },
+      "position": [
+        600,
+        300,
+        -400
+      ],
+      "color": "#687680"
+    },
+    {
+      "op": "create_object",
+      "id": "painel_tela",
+      "name": "Tela Painel",
+      "kind": "box",
+      "dimensions": {
+        "width": 140,
+        "height": 70,
+        "depth": 6
+      },
+      "position": [
+        600,
+        325,
+        -382
+      ],
+      "color": "#242b30"
+    },
+    {
+      "op": "create_object",
+      "id": "painel_botao_1",
+      "name": "Botao Painel 1",
+      "kind": "cylinder",
+      "dimensions": {
+        "radius": 10,
+        "height": 10
+      },
+      "position": [
+        550,
+        270,
+        -382
+      ],
+      "color": "#cb3030",
+      "rotation": [
+        1.5707963267948966,
+        0,
+        0
+      ]
+    },
+    {
+      "op": "create_object",
+      "id": "painel_botao_2",
+      "name": "Botao Painel 2",
+      "kind": "cylinder",
+      "dimensions": {
+        "radius": 10,
+        "height": 10
+      },
+      "position": [
+        600,
+        270,
+        -382
+      ],
+      "color": "#e7b82e",
+      "rotation": [
+        1.5707963267948966,
+        0,
+        0
+      ]
+    },
+    {
+      "op": "create_object",
+      "id": "painel_botao_3",
+      "name": "Botao Painel 3",
+      "kind": "cylinder",
+      "dimensions": {
+        "radius": 10,
+        "height": 10
+      },
+      "position": [
+        650,
+        270,
+        -382
+      ],
+      "color": "#298854",
+      "rotation": [
+        1.5707963267948966,
+        0,
+        0
+      ]
+    },
+    {
+      "op": "create_object",
+      "id": "cerca_poste_1",
+      "name": "Poste Cerca 1",
+      "kind": "box",
+      "dimensions": {
+        "width": 25,
+        "height": 420,
+        "depth": 25
+      },
+      "position": [
+        -750,
+        210,
+        -600
+      ],
+      "color": "#687680"
+    },
+    {
+      "op": "create_object",
+      "id": "cerca_poste_2",
+      "name": "Poste Cerca 2",
+      "kind": "box",
+      "dimensions": {
+        "width": 25,
+        "height": 420,
+        "depth": 25
+      },
+      "position": [
+        -450,
+        210,
+        -600
+      ],
+      "color": "#687680"
+    },
+    {
+      "op": "create_object",
+      "id": "cerca_poste_3",
+      "name": "Poste Cerca 3",
+      "kind": "box",
+      "dimensions": {
+        "width": 25,
+        "height": 420,
+        "depth": 25
+      },
+      "position": [
+        -150,
+        210,
+        -600
+      ],
+      "color": "#687680"
+    },
+    {
+      "op": "create_object",
+      "id": "cerca_poste_4",
+      "name": "Poste Cerca 4",
+      "kind": "box",
+      "dimensions": {
+        "width": 25,
+        "height": 420,
+        "depth": 25
+      },
+      "position": [
+        150,
+        210,
+        -600
+      ],
+      "color": "#687680"
+    },
+    {
+      "op": "create_object",
+      "id": "cerca_poste_5",
+      "name": "Poste Cerca 5",
+      "kind": "box",
+      "dimensions": {
+        "width": 25,
+        "height": 420,
+        "depth": 25
+      },
+      "position": [
+        450,
+        210,
+        -600
+      ],
+      "color": "#687680"
+    },
+    {
+      "op": "create_object",
+      "id": "cerca_poste_6",
+      "name": "Poste Cerca 6",
+      "kind": "box",
+      "dimensions": {
+        "width": 25,
+        "height": 420,
+        "depth": 25
+      },
+      "position": [
+        750,
+        210,
+        -600
+      ],
+      "color": "#687680"
+    },
+    {
+      "op": "create_object",
+      "id": "cerca_painel_1",
+      "name": "Painel Cerca 1",
+      "kind": "box",
+      "dimensions": {
+        "width": 280,
+        "height": 360,
+        "depth": 8
+      },
+      "position": [
+        -600,
+        220,
+        -600
+      ],
+      "color": "#b7d6de"
+    },
+    {
+      "op": "set_material",
+      "target": "cerca_painel_1",
+      "transparency": 0.6
+    },
+    {
+      "op": "create_object",
+      "id": "cerca_painel_2",
+      "name": "Painel Cerca 2",
+      "kind": "box",
+      "dimensions": {
+        "width": 280,
+        "height": 360,
+        "depth": 8
+      },
+      "position": [
+        -300,
+        220,
+        -600
+      ],
+      "color": "#b7d6de"
+    },
+    {
+      "op": "set_material",
+      "target": "cerca_painel_2",
+      "transparency": 0.6
+    },
+    {
+      "op": "create_object",
+      "id": "cerca_painel_3",
+      "name": "Painel Cerca 3",
+      "kind": "box",
+      "dimensions": {
+        "width": 280,
+        "height": 360,
+        "depth": 8
+      },
+      "position": [
+        0,
+        220,
+        -600
+      ],
+      "color": "#b7d6de"
+    },
+    {
+      "op": "set_material",
+      "target": "cerca_painel_3",
+      "transparency": 0.6
+    },
+    {
+      "op": "create_object",
+      "id": "cerca_painel_4",
+      "name": "Painel Cerca 4",
+      "kind": "box",
+      "dimensions": {
+        "width": 280,
+        "height": 360,
+        "depth": 8
+      },
+      "position": [
+        300,
+        220,
+        -600
+      ],
+      "color": "#b7d6de"
+    },
+    {
+      "op": "set_material",
+      "target": "cerca_painel_4",
+      "transparency": 0.6
+    },
+    {
+      "op": "create_object",
+      "id": "cerca_painel_5",
+      "name": "Painel Cerca 5",
+      "kind": "box",
+      "dimensions": {
+        "width": 280,
+        "height": 360,
+        "depth": 8
+      },
+      "position": [
+        600,
+        220,
+        -600
+      ],
+      "color": "#b7d6de"
+    },
+    {
+      "op": "set_material",
+      "target": "cerca_painel_5",
+      "transparency": 0.6
+    },
+    {
+      "op": "create_object",
+      "id": "torre_base",
+      "name": "Base Torre",
+      "kind": "cylinder",
+      "dimensions": {
+        "radius": 18,
+        "height": 30
+      },
+      "position": [
+        600,
+        495,
+        -400
+      ],
+      "color": "#687680"
+    },
+    {
+      "op": "create_object",
+      "id": "torre_luz_1",
+      "name": "Luz Torre 1",
+      "kind": "cylinder",
+      "dimensions": {
+        "radius": 15,
+        "height": 30
+      },
+      "position": [
+        600,
+        525,
+        -400
+      ],
+      "color": "#cb3030"
+    },
+    {
+      "op": "create_object",
+      "id": "torre_luz_2",
+      "name": "Luz Torre 2",
+      "kind": "cylinder",
+      "dimensions": {
+        "radius": 15,
+        "height": 30
+      },
+      "position": [
+        600,
+        555,
+        -400
+      ],
+      "color": "#e7b82e"
+    },
+    {
+      "op": "create_object",
+      "id": "torre_luz_3",
+      "name": "Luz Torre 3",
+      "kind": "cylinder",
+      "dimensions": {
+        "radius": 15,
+        "height": 30
+      },
+      "position": [
+        600,
+        585,
+        -400
+      ],
+      "color": "#298854"
+    }
+  ]
+}

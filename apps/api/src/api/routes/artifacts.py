@@ -1,24 +1,3 @@
-"""Standalone HTML artifact endpoint (PRD §9.1/§10.3, Issue #11's HTTP half,
-wired for Issue #28's preview iframe).
-
-`POST /plans` (`routes/plans.py`, Issue #22) already returns
-`preview.url = "/api/projects/{id}/artifacts/html?revision=N"`, and
-`api.artifacts.build_html_artifact` (Issue #11) already builds the standalone
-X3DOM HTML from validated X3D content -- this module is only the HTTP wiring
-between them, the same shape Issue #21/#22 already used to wire #7/#8/#10's
-module logic to HTTP.
-
-`ProjectSessionService` only stores the current `ModelSpec` (PRD §3.12: no
-database, and X3D content is never persisted -- ModelSpec is the semantic
-source of truth). So this route rebuilds the X3D content from the project's
-already-committed, already-valid `ModelSpec` via `build_and_validate_candidate`
-rather than reading cached content; a committed `ModelSpec` is guaranteed
-valid (nothing commits otherwise, PRD FE-08/NFR-06), so this rebuild is not
-expected to ever fail validation in practice -- it exists to regenerate X3D
-from the renderer-independent source of truth, not to re-validate a proposed
-change.
-"""
-
 from __future__ import annotations
 
 from typing import Annotated, Literal
@@ -35,8 +14,8 @@ from api.artifacts import (
     normalized_artifact_filename,
 )
 from api.config import Settings, get_settings
-from api.mcp_client import X3DMcpClient
 from api.projects import ProjectSessionService, get_project_service
+from api.x3d_backend import connect_x3d
 
 router = APIRouter(prefix="/api/projects", tags=["artifacts"])
 
@@ -56,9 +35,7 @@ async def get_html_artifact(
         raise StaleArtifactRequestError(project_id, revision, current_revision)
 
     async def build() -> str:
-        async with X3DMcpClient.connect(
-            str(settings.mcp_base_url), settings.mcp_request_timeout_seconds
-        ) as client:
+        async with connect_x3d(settings) as client:
             artifact = await build_html_artifact(
                 client,
                 project_id=snapshot.project_id,
@@ -129,9 +106,7 @@ async def get_download_artifact(
             )
         else:
             async def build() -> str:
-                async with X3DMcpClient.connect(
-                    str(settings.mcp_base_url), settings.mcp_request_timeout_seconds
-                ) as client:
+                async with connect_x3d(settings) as client:
                     converted = await build_converted_artifact(
                         client,
                         format=format,

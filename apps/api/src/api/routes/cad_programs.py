@@ -11,14 +11,15 @@ from api.cad_adapter import (
     CadGeometryError,
 )
 from api.cad_program_adapter import build_program_mesh
+from api.cad_service import build_cad_artifact
 from api.config import Settings, get_settings
 from api.errors import api_error
-from api.routes.cad import CadInspection, build_cad_artifact
+from api.routes.cad import CadInspection
 
 router = APIRouter(prefix="/api/cad/programs", tags=["cad"])
 
 
-@router.post("/inspect", response_model=CadInspection)
+@router.post("/inspect", response_model=CadInspection, response_model_exclude_none=True)
 def inspect_program(spec: CadProgramSpec, settings: Annotated[Settings, Depends(get_settings)]) -> CadInspection:
     artifact = build_cad_artifact(spec, settings)
     return CadInspection(partId=spec.partId, solidCount=1, volumeMm3=artifact.volume_mm3,

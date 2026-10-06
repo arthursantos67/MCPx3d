@@ -68,7 +68,7 @@ def test_cors_accepts_local_frontend_origins(origin: str) -> None:
 
 
 def test_mcp_health_reports_unreachable_for_closed_port() -> None:
-    app.dependency_overrides[get_settings] = lambda: Settings(mcp_base_url=AnyHttpUrl("http://127.0.0.1:1"))
+    app.dependency_overrides[get_settings] = lambda: Settings(x3d_backend="mcp", mcp_base_url=AnyHttpUrl("http://127.0.0.1:1"))
     client = TestClient(app)
 
     response = client.get("/api/health/mcp")
@@ -80,7 +80,7 @@ def test_mcp_health_reports_unreachable_for_closed_port() -> None:
 
 
 def test_mcp_health_reports_reachable(stub_mcp_server: str) -> None:
-    app.dependency_overrides[get_settings] = lambda: Settings(mcp_base_url=AnyHttpUrl(stub_mcp_server))
+    app.dependency_overrides[get_settings] = lambda: Settings(x3d_backend="mcp", mcp_base_url=AnyHttpUrl(stub_mcp_server))
     client = TestClient(app)
 
     response = client.get("/api/health/mcp")

@@ -14,7 +14,6 @@ from pydantic import ValidationError
 from api.config import Settings, get_settings
 from api.errors import api_error
 from api.limits import ComplexityLimitError
-from api.mcp_client import X3DMcpClient
 from api.mutation import validate_spec_dimensions
 from api.projects import (
     ProjectSessionService,
@@ -28,6 +27,7 @@ from api.routes.plans import (
     artifact_descriptors,
 )
 from api.timing import StageTimer
+from api.x3d_backend import connect_x3d
 from api.x3d_validation import build_and_validate_candidate
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
@@ -68,11 +68,10 @@ async def import_manifest(
         raise RevisionConflictError(project_id, expected_revision, session.revision)
     candidate = manifest.model_copy(update={"projectId": project_id, "revision": expected_revision})
 
-    timer.start("mcp_connect")
-    async with X3DMcpClient.connect(
-        str(settings.mcp_base_url), settings.mcp_request_timeout_seconds
-    ) as client:
-        timer.finish("mcp_connect")
+    connection_stage = "mcp_connect" if settings.x3d_backend == "mcp" else "x3d_backend"
+    timer.start(connection_stage)
+    async with connect_x3d(settings) as client:
+        timer.finish(connection_stage)
         stage_timings: dict[str, int] = {}
         _def_names, validation = await build_and_validate_candidate(client, candidate, stage_timings)
         timer.add(stage_timings)

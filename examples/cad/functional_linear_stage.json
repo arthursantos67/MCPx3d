@@ -1,0 +1,842 @@
+{
+  "schemaVersion": "4.0",
+  "units": "mm",
+  "partId": "functional_linear_stage_tr12x3",
+  "components": [
+    {
+      "id": "base",
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 6
+      },
+      "steps": [
+        {
+          "id": "plate",
+          "op": "base",
+          "shape": "box",
+          "position": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "rotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "width": 240,
+          "depth": 100,
+          "height": 12
+        },
+        {
+          "id": "mount_left",
+          "op": "cut",
+          "shape": "hole",
+          "position": {
+            "x": -104,
+            "y": -18,
+            "z": 6
+          },
+          "rotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "diameter": 6.4,
+          "height": 14,
+          "holeType": "plain",
+          "headDiameter": 0,
+          "headDepth": 0,
+          "pattern": {
+            "kind": "linear",
+            "count": 2,
+            "offset": {
+              "x": 0,
+              "y": 36,
+              "z": 0
+            }
+          }
+        },
+        {
+          "id": "mount_right",
+          "op": "cut",
+          "shape": "hole",
+          "position": {
+            "x": 104,
+            "y": -18,
+            "z": 6
+          },
+          "rotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "diameter": 6.4,
+          "height": 14,
+          "holeType": "plain",
+          "headDiameter": 0,
+          "headDepth": 0,
+          "pattern": {
+            "kind": "linear",
+            "count": 2,
+            "offset": {
+              "x": 0,
+              "y": 36,
+              "z": 0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "support_left",
+      "position": {
+        "x": -104,
+        "y": 0,
+        "z": 12
+      },
+      "steps": [
+        {
+          "id": "body",
+          "op": "base",
+          "shape": "box",
+          "position": {
+            "x": 0,
+            "y": 0,
+            "z": 30
+          },
+          "rotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "width": 16,
+          "depth": 80,
+          "height": 60
+        },
+        {
+          "id": "mount",
+          "op": "cut",
+          "shape": "hole",
+          "position": {
+            "x": 0,
+            "y": -18,
+            "z": 60
+          },
+          "rotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "diameter": 6.4,
+          "height": 62,
+          "holeType": "plain",
+          "headDiameter": 0,
+          "headDepth": 0,
+          "pattern": {
+            "kind": "linear",
+            "count": 2,
+            "offset": {
+              "x": 0,
+              "y": 36,
+              "z": 0
+            }
+          }
+        },
+        {
+          "id": "guide_front",
+          "op": "cut",
+          "shape": "hole",
+          "position": {
+            "x": 8,
+            "y": -30,
+            "z": 33
+          },
+          "rotation": {
+            "x": 0,
+            "y": 90,
+            "z": 0
+          },
+          "diameter": 8.4,
+          "height": 18,
+          "holeType": "plain",
+          "headDiameter": 0,
+          "headDepth": 0
+        },
+        {
+          "id": "guide_rear",
+          "op": "cut",
+          "shape": "hole",
+          "position": {
+            "x": 8,
+            "y": 30,
+            "z": 33
+          },
+          "rotation": {
+            "x": 0,
+            "y": 90,
+            "z": 0
+          },
+          "diameter": 8.4,
+          "height": 18,
+          "holeType": "plain",
+          "headDiameter": 0,
+          "headDepth": 0
+        },
+        {
+          "id": "journal",
+          "op": "cut",
+          "shape": "hole",
+          "position": {
+            "x": 8,
+            "y": 0,
+            "z": 18
+          },
+          "rotation": {
+            "x": 0,
+            "y": 90,
+            "z": 0
+          },
+          "diameter": 9.4,
+          "height": 18,
+          "holeType": "plain",
+          "headDiameter": 0,
+          "headDepth": 0
+        }
+      ]
+    },
+    {
+      "id": "support_right",
+      "position": {
+        "x": 104,
+        "y": 0,
+        "z": 12
+      },
+      "steps": [
+        {
+          "id": "body",
+          "op": "base",
+          "shape": "box",
+          "position": {
+            "x": 0,
+            "y": 0,
+            "z": 30
+          },
+          "rotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "width": 16,
+          "depth": 80,
+          "height": 60
+        },
+        {
+          "id": "mount",
+          "op": "cut",
+          "shape": "hole",
+          "position": {
+            "x": 0,
+            "y": -18,
+            "z": 60
+          },
+          "rotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "diameter": 6.4,
+          "height": 62,
+          "holeType": "plain",
+          "headDiameter": 0,
+          "headDepth": 0,
+          "pattern": {
+            "kind": "linear",
+            "count": 2,
+            "offset": {
+              "x": 0,
+              "y": 36,
+              "z": 0
+            }
+          }
+        },
+        {
+          "id": "guide_front",
+          "op": "cut",
+          "shape": "hole",
+          "position": {
+            "x": -8,
+            "y": -30,
+            "z": 33
+          },
+          "rotation": {
+            "x": 0,
+            "y": -90,
+            "z": 0
+          },
+          "diameter": 8.4,
+          "height": 18,
+          "holeType": "plain",
+          "headDiameter": 0,
+          "headDepth": 0
+        },
+        {
+          "id": "guide_rear",
+          "op": "cut",
+          "shape": "hole",
+          "position": {
+            "x": -8,
+            "y": 30,
+            "z": 33
+          },
+          "rotation": {
+            "x": 0,
+            "y": -90,
+            "z": 0
+          },
+          "diameter": 8.4,
+          "height": 18,
+          "holeType": "plain",
+          "headDiameter": 0,
+          "headDepth": 0
+        },
+        {
+          "id": "journal",
+          "op": "cut",
+          "shape": "hole",
+          "position": {
+            "x": -8,
+            "y": 0,
+            "z": 18
+          },
+          "rotation": {
+            "x": 0,
+            "y": -90,
+            "z": 0
+          },
+          "diameter": 9.4,
+          "height": 18,
+          "holeType": "plain",
+          "headDiameter": 0,
+          "headDepth": 0
+        }
+      ]
+    },
+    {
+      "id": "guide_front",
+      "position": {
+        "x": 0,
+        "y": -30,
+        "z": 45
+      },
+      "steps": [
+        {
+          "id": "shaft",
+          "op": "base",
+          "shape": "cylinder",
+          "position": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "rotation": {
+            "x": 0,
+            "y": 90,
+            "z": 0
+          },
+          "diameter": 8,
+          "height": 224
+        }
+      ]
+    },
+    {
+      "id": "guide_rear",
+      "position": {
+        "x": 0,
+        "y": 30,
+        "z": 45
+      },
+      "steps": [
+        {
+          "id": "shaft",
+          "op": "base",
+          "shape": "cylinder",
+          "position": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "rotation": {
+            "x": 0,
+            "y": 90,
+            "z": 0
+          },
+          "diameter": 8,
+          "height": 224
+        }
+      ]
+    },
+    {
+      "id": "screw",
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 30
+      },
+      "motion": {
+        "kind": "rotary",
+        "axis": "x",
+        "minimum": -30,
+        "maximum": 30,
+        "value": 0,
+        "group": "drive",
+        "factor": -120
+      },
+      "steps": [
+        {
+          "id": "core",
+          "op": "base",
+          "shape": "cylinder",
+          "position": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "rotation": {
+            "x": 0,
+            "y": 90,
+            "z": 0
+          },
+          "diameter": 8.99,
+          "height": 244
+        },
+        {
+          "id": "journal_left",
+          "op": "union",
+          "shape": "cylinder",
+          "position": {
+            "x": -102,
+            "y": 0,
+            "z": 0
+          },
+          "rotation": {
+            "x": 0,
+            "y": 90,
+            "z": 0
+          },
+          "diameter": 9,
+          "height": 24
+        },
+        {
+          "id": "journal_right",
+          "op": "union",
+          "shape": "cylinder",
+          "position": {
+            "x": 102,
+            "y": 0,
+            "z": 0
+          },
+          "rotation": {
+            "x": 0,
+            "y": 90,
+            "z": 0
+          },
+          "diameter": 9,
+          "height": 24
+        },
+        {
+          "id": "shoulder_inner",
+          "op": "union",
+          "shape": "cylinder",
+          "position": {
+            "x": -95,
+            "y": 0,
+            "z": 0
+          },
+          "rotation": {
+            "x": 0,
+            "y": 90,
+            "z": 0
+          },
+          "diameter": 16,
+          "height": 2
+        },
+        {
+          "id": "wheel_stub",
+          "op": "union",
+          "shape": "cylinder",
+          "position": {
+            "x": -118,
+            "y": 0,
+            "z": 0
+          },
+          "rotation": {
+            "x": 0,
+            "y": 90,
+            "z": 0
+          },
+          "diameter": 9,
+          "height": 12
+        },
+        {
+          "id": "drive_thread",
+          "op": "union",
+          "height": 180,
+          "position": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "clearance": 0,
+          "shape": "thread",
+          "rotation": {
+            "x": 0,
+            "y": 90,
+            "z": 0
+          },
+          "diameter": 12,
+          "pitch": 3,
+          "profile": "trapezoidal",
+          "handedness": "right",
+          "starts": 1
+        }
+      ]
+    },
+    {
+      "id": "carriage",
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 42
+      },
+      "motion": {
+        "kind": "slider",
+        "axis": "x",
+        "minimum": -30,
+        "maximum": 30,
+        "value": 0,
+        "group": "drive",
+        "factor": 1
+      },
+      "steps": [
+        {
+          "id": "body",
+          "op": "base",
+          "shape": "box",
+          "position": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "rotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "width": 56,
+          "depth": 76,
+          "height": 50
+        },
+        {
+          "id": "guide_front",
+          "op": "cut",
+          "shape": "hole",
+          "position": {
+            "x": 28,
+            "y": -30,
+            "z": 3
+          },
+          "rotation": {
+            "x": 0,
+            "y": 90,
+            "z": 0
+          },
+          "diameter": 8.4,
+          "height": 58,
+          "holeType": "plain",
+          "headDiameter": 0,
+          "headDepth": 0
+        },
+        {
+          "id": "guide_rear",
+          "op": "cut",
+          "shape": "hole",
+          "position": {
+            "x": 28,
+            "y": 30,
+            "z": 3
+          },
+          "rotation": {
+            "x": 0,
+            "y": 90,
+            "z": 0
+          },
+          "diameter": 8.4,
+          "height": 58,
+          "holeType": "plain",
+          "headDiameter": 0,
+          "headDepth": 0
+        },
+        {
+          "id": "nut_thread",
+          "op": "cut",
+          "height": 58,
+          "position": {
+            "x": 0,
+            "y": 0,
+            "z": -12
+          },
+          "clearance": 0.2,
+          "shape": "thread",
+          "rotation": {
+            "x": 0,
+            "y": 90,
+            "z": 0
+          },
+          "diameter": 12,
+          "pitch": 3,
+          "profile": "trapezoidal",
+          "handedness": "right",
+          "starts": 1
+        }
+      ]
+    },
+    {
+      "id": "handwheel",
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 30
+      },
+      "motion": {
+        "kind": "rotary",
+        "axis": "x",
+        "minimum": -30,
+        "maximum": 30,
+        "value": 0,
+        "group": "drive",
+        "factor": -120
+      },
+      "steps": [
+        {
+          "id": "wheel",
+          "op": "base",
+          "shape": "cylinder",
+          "position": {
+            "x": -120,
+            "y": 0,
+            "z": 0
+          },
+          "rotation": {
+            "x": 0,
+            "y": 90,
+            "z": 0
+          },
+          "diameter": 28,
+          "height": 8
+        },
+        {
+          "id": "sleeve",
+          "op": "union",
+          "shape": "cylinder",
+          "position": {
+            "x": -118,
+            "y": 0,
+            "z": 0
+          },
+          "rotation": {
+            "x": 0,
+            "y": 90,
+            "z": 0
+          },
+          "diameter": 14,
+          "height": 12
+        },
+        {
+          "id": "shoulder_outer",
+          "op": "union",
+          "shape": "cylinder",
+          "position": {
+            "x": -113,
+            "y": 0,
+            "z": 0
+          },
+          "rotation": {
+            "x": 0,
+            "y": 90,
+            "z": 0
+          },
+          "diameter": 16,
+          "height": 2
+        },
+        {
+          "id": "shaft_bore",
+          "op": "cut",
+          "shape": "cylinder",
+          "position": {
+            "x": -118,
+            "y": 0,
+            "z": 0
+          },
+          "rotation": {
+            "x": 0,
+            "y": 90,
+            "z": 0
+          },
+          "diameter": 9.4,
+          "height": 14
+        }
+      ]
+    }
+  ],
+  "mechanics": {
+    "grounded": "base",
+    "connections": [
+      {
+        "id": "mount_left",
+        "kind": "fixed",
+        "first": "support_left",
+        "second": "base",
+        "firstFeature": "mount",
+        "secondFeature": "mount_left",
+        "maxClearance": 0.3,
+        "minEngagement": 12,
+        "fastening": "bolted",
+        "fastenerDiameter": 6
+      },
+      {
+        "id": "mount_right",
+        "kind": "fixed",
+        "first": "support_right",
+        "second": "base",
+        "firstFeature": "mount",
+        "secondFeature": "mount_right",
+        "maxClearance": 0.3,
+        "minEngagement": 12,
+        "fastening": "bolted",
+        "fastenerDiameter": 6
+      },
+      {
+        "id": "bond_front_left",
+        "kind": "fixed",
+        "first": "guide_front",
+        "second": "support_left",
+        "firstFeature": "shaft",
+        "secondFeature": "guide_front",
+        "maxClearance": 0.3,
+        "minEngagement": 12,
+        "fastening": "bonded",
+        "fastenerDiameter": 0
+      },
+      {
+        "id": "bond_front_right",
+        "kind": "fixed",
+        "first": "guide_front",
+        "second": "support_right",
+        "firstFeature": "shaft",
+        "secondFeature": "guide_front",
+        "maxClearance": 0.3,
+        "minEngagement": 12,
+        "fastening": "bonded",
+        "fastenerDiameter": 0
+      },
+      {
+        "id": "bond_rear_left",
+        "kind": "fixed",
+        "first": "guide_rear",
+        "second": "support_left",
+        "firstFeature": "shaft",
+        "secondFeature": "guide_rear",
+        "maxClearance": 0.3,
+        "minEngagement": 12,
+        "fastening": "bonded",
+        "fastenerDiameter": 0
+      },
+      {
+        "id": "bond_rear_right",
+        "kind": "fixed",
+        "first": "guide_rear",
+        "second": "support_right",
+        "firstFeature": "shaft",
+        "secondFeature": "guide_rear",
+        "maxClearance": 0.3,
+        "minEngagement": 12,
+        "fastening": "bonded",
+        "fastenerDiameter": 0
+      },
+      {
+        "id": "slide_front",
+        "kind": "linear",
+        "first": "guide_front",
+        "second": "carriage",
+        "firstFeature": "shaft",
+        "secondFeature": "guide_front",
+        "maxClearance": 0.3,
+        "minEngagement": 54,
+        "fastening": "none",
+        "fastenerDiameter": 0
+      },
+      {
+        "id": "slide_rear",
+        "kind": "linear",
+        "first": "guide_rear",
+        "second": "carriage",
+        "firstFeature": "shaft",
+        "secondFeature": "guide_rear",
+        "maxClearance": 0.3,
+        "minEngagement": 54,
+        "fastening": "none",
+        "fastenerDiameter": 0
+      },
+      {
+        "id": "bearing_left",
+        "kind": "rotary",
+        "first": "screw",
+        "second": "support_left",
+        "firstFeature": "journal_left",
+        "secondFeature": "journal",
+        "maxClearance": 0.3,
+        "minEngagement": 12,
+        "fastening": "none",
+        "fastenerDiameter": 0
+      },
+      {
+        "id": "bearing_right",
+        "kind": "rotary",
+        "first": "screw",
+        "second": "support_right",
+        "firstFeature": "journal_right",
+        "secondFeature": "journal",
+        "maxClearance": 0.3,
+        "minEngagement": 12,
+        "fastening": "none",
+        "fastenerDiameter": 0
+      },
+      {
+        "id": "drive",
+        "kind": "thread",
+        "first": "screw",
+        "second": "carriage",
+        "firstFeature": "drive_thread",
+        "secondFeature": "nut_thread",
+        "maxClearance": 0.3,
+        "minEngagement": 54,
+        "fastening": "none",
+        "fastenerDiameter": 0
+      },
+      {
+        "id": "wheel_fixation",
+        "kind": "fixed",
+        "first": "screw",
+        "second": "handwheel",
+        "firstFeature": "wheel_stub",
+        "secondFeature": "shaft_bore",
+        "maxClearance": 0.3,
+        "minEngagement": 10,
+        "fastening": "bonded",
+        "fastenerDiameter": 0
+      }
+    ]
+  }
+}

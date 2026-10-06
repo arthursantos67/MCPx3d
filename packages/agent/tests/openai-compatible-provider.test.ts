@@ -6,7 +6,7 @@ import {
   type FetchLike,
   type OpenAICompatibleProviderState,
 } from "../src/openai-compatible-provider.ts";
-import { StructuredOutputError, type CompletionMetadata } from "../src/provider.ts";
+import { ProviderRequestError, StructuredOutputError, type CompletionMetadata } from "../src/provider.ts";
 import modelPlanSchema from "../../domain/schemas/model-plan.v1.schema.json" with { type: "json" };
 
 const CONFIG = { baseUrl: "https://api.example.com/v1", apiKey: "sk-test", model: "test-model" };
@@ -366,7 +366,8 @@ test("a short explicit 429 retry interval is honored once", async () => {
 
   await provider.generateStructured([], {});
   assert.equal(calls, 2);
-  assert.deepEqual(delays, [3000]);
+  assert.equal(delays.length, 1);
+  assert.ok(delays[0] > 2900 && delays[0] <= 3000);
 });
 
 test("a long 429 retry interval is reported without waiting or retrying", async () => {
@@ -377,8 +378,83 @@ test("a long 429 retry interval is reported without waiting or retrying", async 
   }), async () => { throw new Error("must not wait"); });
   await provider.initialize();
 
-  await assert.rejects(() => provider.generateStructured([], {}), /about 60 seconds/);
+  await assert.rejects(() => provider.generateStructured([], {}), /cerca de 60 segundos/);
+  await assert.rejects(() => provider.generateStructured([], {}), /status 429, 0 attempts/);
   assert.equal(calls, 1);
+});
+
+test('Gemini RetryInfo supplies a retry interval even without exposed HTTP headers', async () => {
+  let calls = 0;
+  const delays: number[] = [];
+  const provider = new OpenAICompatibleProvider(CONFIG, fakeFetch(async () => {
+    calls++;
+    return calls === 1 ? { status: 429, body: { error: { status: 'RESOURCE_EXHAUSTED', details: [
+      { '@type': 'type.googleapis.com/google.rpc.RetryInfo', retryDelay: '3s' },
+    ] } } } : { status: 200, body: { choices: [{ message: { content: '{}' } }] } };
+  }), async (delay) => { delays.push(delay); });
+  await provider.initialize();
+  await provider.generateStructured([], {});
+  assert.equal(calls, 2);
+  assert.equal(delays.length, 1);
+  assert.ok(delays[0] > 2900 && delays[0] <= 3000);
+});
+
+test('daily Gemini quota stops immediately even when a short RetryInfo is present', async () => {
+  let calls = 0;
+  const provider = new OpenAICompatibleProvider(CONFIG, fakeFetch(async () => {
+    calls++;
+    return { status: 429, body: { error: { status: 'RESOURCE_EXHAUSTED', message: 'secret request and key', details: [
+      { '@type': 'type.googleapis.com/google.rpc.QuotaFailure', violations: [{ quotaId: 'GenerateRequestsPerDayPerProjectPerModel-FreeTier' }] },
+      { '@type': 'type.googleapis.com/google.rpc.RetryInfo', retryDelay: '3s' },
+    ] } } };
+  }), async () => { throw new Error('must not retry daily quota'); });
+  await provider.initialize();
+  await assert.rejects(provider.generateStructured([], {}), (error: unknown) => {
+    assert.ok(error instanceof ProviderRequestError);
+    assert.equal(error.limit?.kind, 'quota');
+    assert.equal(error.limit?.code, 'RESOURCE_EXHAUSTED');
+    assert.match(error.message, /quota.*esgotada/);
+    assert.doesNotMatch(error.message, /secret|request and key/);
+    return true;
+  });
+  assert.equal(calls, 1);
+});
+
+test('billing quota and oversized requests are distinguished without echoing response content', async () => {
+  for (const [body, kind] of [
+    [{ error: { code: 'insufficient_quota', message: 'private account' } }, 'quota'],
+    [{ error: { type: 'tokens', message: 'Request too large for private prompt' } }, 'request-size'],
+  ] as const) {
+    const provider = new OpenAICompatibleProvider(CONFIG, fakeFetch(async () => ({ status: 429, body })));
+    await provider.initialize();
+    await assert.rejects(provider.generateStructured([], {}), (error: unknown) => {
+      assert.ok(error instanceof ProviderRequestError);
+      assert.equal(error.limit?.kind, kind);
+      assert.doesNotMatch(error.message, /private/);
+      return true;
+    });
+  }
+});
+
+test('expired retry deadlines permit a fresh request and clear the cooldown on success', async () => {
+  const originalNow = Date.now;
+  let now = originalNow();
+  Date.now = () => now;
+  try {
+    let calls = 0;
+    const provider = new OpenAICompatibleProvider(CONFIG, fakeFetch(async () => {
+      calls++;
+      return calls === 1 ? { status: 429, headers: { 'retry-after': '60' }, body: {} }
+        : { status: 200, body: { choices: [{ message: { content: '{}' } }] } };
+    }));
+    await provider.initialize();
+    await assert.rejects(provider.generateStructured([], {}), /status 429/);
+    await assert.rejects(provider.generateStructured([], {}), /0 attempts/);
+    now += 60000;
+    await provider.generateStructured([], {});
+    await provider.generateStructured([], {});
+    assert.equal(calls, 3);
+  } finally { Date.now = originalNow; }
 });
 
 test("stops after four retries and replaces a raw 503 payload with an actionable message", async () => {

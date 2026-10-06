@@ -1,24 +1,3 @@
-/**
- * `WebLLMProvider`: the required `LLMProvider` implementation (PRD §3.6/§3.7,
- * FR-27/FR-28, Issue #18), running `@mlc-ai/web-llm` in a Web Worker so
- * model download/inference never blocks the caller's thread. JSON-mode
- * structured generation uses WebLLM's own `response_format: { type:
- * "json_object", schema }` (see `@mlc-ai/web-llm`'s
- * `ChatCompletionRequestBase.response_format`) rather than free-text
- * prompting plus hopeful parsing.
- *
- * `detectWebGpu`/`createWorker`/`createEngine` are injected (mirroring
- * `apps/web/src/ai/webllm-runtime.ts`'s Issue #16 DI pattern) so this can be
- * unit-tested without a browser, a GPU, or a network model download.
- * This is intentionally a separate implementation from that Issue #16 spike
- * code, not a reuse of it: `apps/web/src/ai/*` was Phase-0 spike code (PRD
- * §14.1) built before this package existed and is not wired into any UI yet,
- * while FR-27 assigns "the provider package" (this one, per the repository
- * layout table) as the only place allowed to call WebLLM directly. Future
- * chat UI work (Issue #27) should depend on this provider, not on
- * `apps/web/src/ai/webllm-runtime.ts`.
- */
-
 import type { ChatCompletionMessageParam, MLCEngineInterface } from "@mlc-ai/web-llm";
 
 import type { AgentMessage, GenerationOptions, JsonSchema, LLMProvider } from "./provider.ts";

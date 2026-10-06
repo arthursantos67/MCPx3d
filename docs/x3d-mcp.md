@@ -1,32 +1,36 @@
-# `x3d_mcp` dependency
+# Biblioteca X3D e transporte MCP opcional
 
-**Upstream:** [github.com/Web3DConsortium/x3d_mcp](https://github.com/Web3DConsortium/x3d_mcp)
-**Vendored as:** git submodule at `services/x3d-mcp/vendor`
-**Pinned commit:** `74da0ec46f477f0048aee813ecfc5fc87e655537` (upstream `main`, tested 2026-09-21)
-**License:** [Web3D Consortium Open-Source License](https://www.web3d.org/license) (BSD-style) — see `services/x3d-mcp/vendor/LICENSE`. Retain the upstream copyright/license notice in any redistribution.
+Upstream: [Web3D Consortium x3d_mcp](https://github.com/Web3DConsortium/x3d_mcp). Submódulo: `services/x3d-mcp/vendor`. Commit fixado: `74da0ec46f477f0048aee813ecfc5fc87e655537`. Licença: veja `services/x3d-mcp/vendor/LICENSE`; preserve seus avisos em redistribuições.
 
-Operational setup, running, and health-check details live in [`services/x3d-mcp/README.md`](../services/x3d-mcp/README.md).
+## Modo padrão: local
 
-## Why this commit
+`apps/api` instala o submódulo como dependência editable para conservar os caminhos dos recursos/schema usados pelo upstream. Isso é intencional: uma instalação do wheel upstream sem os recursos pode não encontrar os schemas. Inicialize o submódulo antes de instalar a API:
 
-At the time of pinning, this was the tip of upstream `main`. It was verified to:
+```bash
+git submodule update --init --recursive
+```
 
-- start in Streamable HTTP mode (`MCP_TRANSPORT=streamable-http`);
-- serve a dependency-free health check at `GET /pulse`;
-- accept a real MCP client session at `/mcp` (`initialize()` + `list_tools()` returned 34 tools, matching the tool groups described in the PRD §3.5/Appendix C).
+`X3D_BACKEND=local` usa serialização determinística da aplicação e chama os validadores upstream diretamente em threads. Não inicia o servidor MCP e não faz chamadas HTTP para construir ou validar a cena. Escala, transparência e rotação usam o mesmo contrato do domínio.
 
-See `services/x3d-mcp/README.md` for the `mcp<2` dependency pin required to run this exact commit, and the procedure for updating the pin later.
+A biblioteca também fornece extração HTML e conversão ClassicVRML. O HTML usa X3DOM 1.8.2 externo. O cabeçalho ClassicVRML local é normalizado para `#X3D V...`; o serializer upstream devolve `#VRML V...` mesmo para a versão 4.0.
 
-## Known upstream limitation: `convert_x3d(to_encoding="json")` (found in Issue #13, 2026-09-21)
+## Modo opcional: MCP
 
-At this pinned commit, `convert_x3d`'s JSON target (`.x3dj`) never returns well-formed JSON -- confirmed even for an empty `<Scene/>`, so it isn't content-specific. The bug is in the vendored `x3d` pip package's `X3D.JSON()` serializer (invoked by `services/x3d-mcp/vendor/src/tools/convert.py`), not in this repository's code, and not something to patch inside the pinned submodule. It appears to have gone unnoticed upstream because the vendored server's own test suite (`tests/test_tools.py::test_convert_xml_to_json`) only asserts substrings like `"X3D" in json_out`, never that the result actually parses.
+Para interoperar com um servidor existente, configure em `apps/api/.env`:
 
-`apps/api` advertises `.x3dj` with `available: false` and rejects malformed conversion output, so the UI must not offer that download at this pin. `.x3dv` (ClassicVRML) continues to work. Revisit this note if the pinned commit is ever bumped past an upstream fix.
+```dotenv
+X3D_BACKEND=mcp
+MCP_BASE_URL=http://localhost:8000
+```
 
-## Scene batching and revision artifacts
+A inicialização do servidor está em [services/x3d-mcp/README.md](../services/x3d-mcp/README.md). O modo remoto mantém composição em lote quando compatível e chamadas granulares para campos que o workflow upstream não representa. Ambos passam pela mesma validação antes de publicar uma revisão.
 
-For scenes whose objects use only the fields supported by upstream `compose_scene`, the API sends one ordered `compose_scene` command instead of the granular node-by-node sequence. The granular path remains the safe fallback for transform scale or material transparency, which the pinned workflow tool does not represent. Both paths finish at the same schema and semantic validation boundary.
+A dependência `mcp<2` mantém compatibilidade com a API FastMCP deste commit. `GET /api/health/engines` informa o backend selecionado; `/api/health/mcp` continua disponível para diagnóstico do serviço opcional.
 
-The granular baseline is one reset plus ten MCP calls per primitive; the compatible composed fixtures use one build call. `apps/api/tests/test_mcp_integration.py` records the composed fixture's call count and elapsed build time and asserts the round-trip reduction against that baseline.
+## Limitações e atualização
 
-The API retains validated X3D and generated artifacts by exact project/revision/format in a bounded, TTL-based in-memory cache. Concurrent HTML or VRML requests for the same cache key share one MCP build; a new committed revision receives a separate key and cannot relabel an earlier response. Cache entries are released when their temporary project expires or is deleted.
+A conversão X3DJ upstream retorna JSON malformado neste commit. A aplicação detecta isso, anuncia o formato como indisponível e não libera esse download. O manifesto JSON do domínio continua disponível e é um formato diferente de X3DJ.
+
+Não modifique silenciosamente o submódulo. Para atualizar, teste o novo commit, recursos/schema, validação local, conversões e integração MCP; atualize o pin e o lock da API e execute as suítes correspondentes.
+
+Artefatos possuem cache limitado por projeto/revisão/formato, TTL e deduplicação de requisições concorrentes. A troca de backend não altera as garantias de revisão nem a regra de preservar a última cena válida.

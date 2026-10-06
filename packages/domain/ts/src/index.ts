@@ -3,3 +3,7 @@ export * from "./model-plan.ts";
 export * from "./cad-part.ts";
 export * from "./cad-plan.ts";
 export * from "./cad-program.ts";
+export * from "./cad-assembly.ts";
+export * from "./cad-assembly-diagnostics.ts";
+export * from './cad-features.ts'
+export * from './cad-mechanics.ts'

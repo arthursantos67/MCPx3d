@@ -1,25 +1,51 @@
-# Placa de fixação no FreeCAD
+# Exemplos CAD
 
-Abra `mounting_plate.FCStd` no FreeCAD para inspecionar o sólido de 120 × 80 × 10 mm. O arquivo `.step` contém a mesma geometria para intercâmbio com outros programas CAD. O documento nativo contém um corpo selecionável, criado a partir do STEP validado; os parâmetros editáveis de furos e chanfros permanecem no projeto CAD do aplicativo.
+Os arquivos STEP contêm sólidos B-rep; STL contém malha em milímetros. Os documentos `.FCStd` históricos guardam sólidos importados. O histórico paramétrico editável pertence aos specs e revisões do Forma, não aos arquivos importados no FreeCAD.
 
-Para enxergar a espessura, escolha **Exibir → Vistas padrão → Axonométrica** ou clique num canto do cubo de navegação. Use **Ajustar tudo** se a peça estiver fora do enquadramento.
+## Conjunto composto
 
-Para deslocar a peça com o mouse, selecione **Placa de fixação** na árvore de modelo, clique com o botão direito e escolha **Transformar**. Arraste as setas do manipulador que aparecer na vista 3D e confirme a transformação. Arrastar diretamente a face sem ativar esse comando apenas seleciona a geometria.
+- [functional_linear_stage.json](functional_linear_stage.json) e [STEP](functional_linear_stage.step): atuador de oito corpos com Tr12×3 real, duas guias, mancais, volante removível, retenção axial e 12 vínculos mecânicos verificados. `generate_functional_sample.py` verifica o conjunto e reimporta STEP antes de escrever o arquivo. Os fixadores e adesivos declarados precisam ser instalados; o exemplo não dimensiona carga ou fabricação. Consulte [o perfil, a sequência proposta e os requisitos de montagem](../../docs/mechanical-assemblies.md).
 
-O documento é gerado por `create_freecad_document.py`. `check_step_freecad.py` verifica o STEP, e `check_freecad_document.py` reabre o documento nativo e confirma que o corpo é 3D e aceita uma mudança de posição.
+- [manual_press.json](manual_press.json): prensa simplificada com estrutura, fuso/haste e prato, três corpos independentes e movimento vinculado.
+- [manual_press.step](manual_press.step): conjunto com três sólidos validados após reimportação.
+- [manual_press.stl](manual_press.stl): malha dos mesmos corpos, 1.888 triângulos.
 
-## Suporte em L
+Para reproduzir, em `apps/api`:
 
-Abra `mounting_bracket.FCStd` ou `mounting_bracket.step` para ver um suporte de 120 × 80 × 70 mm: base horizontal de 8 mm, parede traseira de 8 mm, dois furos na base e dois na parede. É um único sólido unido, com canto interno reto. No aplicativo, escolha **CAD → New CAD part → L bracket (base + upright)** para criar e editar esse tipo de peça.
+```bash
+uv run python ../../examples/cad/generate_assembly_sample.py
+```
 
-`generate_bracket_sample.py` reproduz o STEP a partir da especificação versionada. `check_bracket_freecad.py` importa o STEP no FreeCAD e verifica sólido, dimensões, volume e furos. `create_bracket_freecad_document.py` gera o documento nativo; `check_bracket_freecad_document.py` confirma que ele reabre e pode ser deslocado.
+O script verifica geometria, interferências em amostras do curso e STEP reimportado antes de escrever os arquivos. É um exemplo geométrico: não representa rosca real, resistência, tolerâncias ou projeto mecânico aprovado.
 
-## Perfis curvos
+Na interface, use **Projeto livre** para um pedido novo ou **Conjunto composto** para uma montagem explícita. Propostas aprovadas são salvas e liberam STEP/STL completos e por componente. Ajustar curso ou posição exige salvar uma nova revisão.
 
-`rounded_plate.step` tem contorno retangular com raio de 12 mm nos quatro cantos e dois furos. `round_flange.step` é um disco de diâmetro 100 mm e espessura 12 mm com furo central e dois furos de fixação. Os arquivos `.FCStd` correspondentes permitem abrir e posicionar cada sólido no FreeCAD. A árvore nativa contém o sólido importado; os parâmetros editáveis ficam nas revisões do aplicativo.
+## Peça com programa livre
 
-No aplicativo, escolha **CAD → New CAD part → Rounded plate** ou **Circular flange**. Também é possível escrever "Crie uma placa com cantos arredondados" ou "Crie um flange circular com furo central e dois furos de fixação". `generate_curved_samples.py`, `check_curved_freecad.py`, `create_curved_freecad_documents.py` e `check_curved_freecad_documents.py` reproduzem e verificam os exemplos.
+### Recursos mecânicos e roscas
 
-## Peça composta
+- [mechanical_mount.json](mechanical_mount.json): suporte com arredondamento, chanfro, loft, rasgo, dois furos rebaixados e rosca interna M12 × 1,75.
+- [mechanical_mount.step](mechanical_mount.step) e [mechanical_mount.stl](mechanical_mount.stl): um sólido, limites de 100 × 70 × 29 mm, 113.970 triângulos no STL; prévia com 18.236 triângulos.
+- [threaded_drive.json](threaded_drive.json): pedestal separado, haste com cabeça sextavada e rosca M12 × 2, porca com folga radial de 0,15 mm. Rotação da haste e translação da porca compartilham um comando; o curso de ±2,3 mm inclui frações do passo para verificar o encaixe.
+- [threaded_drive.step](threaded_drive.step) e [threaded_drive.stl](threaded_drive.stl): três sólidos reimportados e validados, 64.576 triângulos no STL; prévia com 9.984 triângulos.
+- `generate_feature_samples.py`: valida STEP reimportado, interferências amostradas e prévia, e escreve STEP/STL dos dois exemplos. Execute em `apps/api`: `uv run python ../../examples/cad/generate_feature_samples.py`.
 
-`composite_mount.step` e `composite_mount.FCStd` contêm uma placa de cantos arredondados com ressalto cilíndrico unido, furo central atravessando base e ressalto, e quatro furos de fixação na base. O arquivo nativo contém um corpo selecionável importado do STEP; a parametrização e as revisões ficam no aplicativo. Escolha **CAD → New CAD part → Composite: base + fused cylinders** para editar esse tipo de peça. Os scripts `generate_composite_sample.py`, `check_composite_freecad.py`, `create_composite_freecad_document.py` e `check_composite_freecad_document.py` reproduzem as verificações.
+São exemplos geométricos sem certificação de classe de ajuste, resistência ou fabricação. O pedestal do segundo exemplo está ao lado do mecanismo para servir de corpo fixo; não é um suporte funcional de bancada. O mecanismo completo pode ser solicitado usando os [prompts de teste](../../docs/cad-prompts.md).
+
+[construction_program.json](construction_program.json) e [construction_program.step](construction_program.step) descrevem uma peça conectada com perfil extrudado, ressalto e furo transversal. `check_construction_program_freecad.py` preserva o verificador independente usado no marco histórico.
+
+## Peças históricas
+
+| Arquivo | Geometria |
+|---|---|
+| `mounting_plate.step` / `.FCStd` | Placa 120 × 80 × 10 mm, furos e chanfros |
+| `mounting_bracket.step` / `.FCStd` | Suporte em L 120 × 80 × 70 mm com furos |
+| `rounded_plate.step` / `.FCStd` | Placa com cantos arredondados e furos |
+| `round_flange.step` / `.FCStd` | Flange circular com furo central e furos de fixação |
+| `composite_mount.step` / `.FCStd` | Placa com ressalto unido e furos |
+
+Os scripts `generate_*`, `create_*_freecad_*` e `check_*_freecad*` reproduzem a geração e os checks históricos. A API mantém os contratos 2.x, mas os editores de moldes foram retirados; projetos novos usam programa 3.0 ou conjunto 4.0.
+
+No FreeCAD, abra o STEP ou documento nativo, escolha uma vista axonométrica e **Ajustar tudo**. Para mover um corpo importado, selecione-o na árvore e use **Transformar** no menu de contexto.
+
+[Capacidades e limites atuais](../../docs/cad-readiness.md) · [Verificações desta reorganização](../../docs/verification.md).

@@ -39,9 +39,9 @@ function PromptComposer({ gate, onSend, showProviderLink, onOpenProviderSettings
         value={value}
         onChange={(event) => setValue(event.target.value)}
         onKeyDown={handleKeyDown}
-        placeholder="Describe the 3D object you want to create or change…"
+        placeholder="Descreva o que deseja criar ou modificar…"
         rows={3}
-        aria-label="Message"
+        aria-label="Mensagem"
       />
       <div className="chat-composer__footer">
         <span className="chat-composer__hint">
@@ -50,7 +50,7 @@ function PromptComposer({ gate, onSend, showProviderLink, onOpenProviderSettings
             <>
               {" "}
               <button type="button" className="chat-composer__provider-link" onClick={onOpenProviderSettings}>
-                Configure a custom provider instead
+                Configurar IA
               </button>
             </>
           )}
@@ -61,7 +61,7 @@ function PromptComposer({ gate, onSend, showProviderLink, onOpenProviderSettings
           onClick={submit}
           disabled={!gate.canSend || value.trim().length === 0}
         >
-          Send
+          Enviar
         </button>
       </div>
     </div>

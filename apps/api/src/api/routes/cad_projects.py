@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import Annotated
+from typing import Annotated, Literal
 
 from domain.cad_assembly import CadAssemblySpec
 from domain.cad_part import CadPartSpec
@@ -15,20 +15,24 @@ from api.cad_adapter import (
     CadEngineUnavailableError,
     CadGeometryError,
 )
-from api.cad_assembly_adapter import _component_solid
 from api.cad_mutation import CadMutationError, apply_cad_plan
-from api.cad_program_adapter import _engine
 from api.cad_projects import (
     CadProjectNotFoundError,
     CadProjectStore,
     CadRevision,
     CadRevisionNotFoundError,
 )
-from api.cad_stl import stl_from_saved_step, stl_from_shape
+from api.cad_service import build_cad_artifact
+from api.cad_stl import (
+    component_from_saved_step,
+    step_from_shape,
+    stl_from_saved_step,
+    stl_from_shape,
+)
 from api.config import Settings, get_settings
 from api.errors import api_error
 from api.projects import RevisionConflictError
-from api.routes.cad import CadInspection, build_cad_artifact
+from api.routes.cad import CadInspection
 
 router = APIRouter(prefix="/api/cad/projects", tags=["cad"])
 
@@ -79,6 +83,7 @@ def _response(record: CadRevision) -> CadProjectResponse:
             volumeMm3=artifact.volume_mm3,
             boundsMm=artifact.bounds_mm,
             stepBytes=len(artifact.step),
+            mechanicalStatus=("verified" if record.spec.mechanics else "unverified") if isinstance(record.spec, CadAssemblySpec) else None,
         ),
     )
 
@@ -205,11 +210,12 @@ def download_cad_revision_stl(
                     headers={"Content-Disposition": f'attachment; filename="{record.spec.partId}-r{revision}.stl"'})
 
 
-@router.get("/{project_id}/revisions/{revision}/components/{component_id}/stl")
-def download_cad_component_stl(
+@router.get("/{project_id}/revisions/{revision}/components/{component_id}/{format}")
+def download_cad_component(
     project_id: str,
     revision: Annotated[int, Path(ge=0)],
     component_id: str,
+    format: Literal["stl", "step"],
     store: Annotated[CadProjectStore, Depends(get_cad_project_store)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> Response:
@@ -219,16 +225,17 @@ def download_cad_component_stl(
         raise _not_found(exc) from exc
     if not isinstance(record.spec, CadAssemblySpec):
         raise api_error(422, "CAD_SPEC_TYPE_CHANGED", "This CAD revision is not an assembly")
-    component = next((item for item in record.spec.components if item.id == component_id), None)
-    if component is None:
+    index = next((index for index, item in enumerate(record.spec.components) if item.id == component_id), None)
+    if index is None:
         raise api_error(404, "CAD_COMPONENT_NOT_FOUND", "CAD component was not found")
     try:
-        stl = stl_from_shape(_component_solid(component, _engine()), settings.max_artifact_bytes)
+        solid = component_from_saved_step(record.artifact.step, index)
+        content = stl_from_shape(solid, settings.max_artifact_bytes) if format == "stl" else step_from_shape(solid, settings.max_artifact_bytes)
     except CadEngineUnavailableError as exc:
         raise api_error(503, "CAD_ENGINE_UNAVAILABLE", str(exc)) from exc
     except CadArtifactTooLargeError as exc:
         raise api_error(413, "COMPLEXITY_LIMIT", str(exc)) from exc
     except CadGeometryError as exc:
         raise api_error(422, "CAD_GEOMETRY_INVALID", str(exc)) from exc
-    return Response(content=stl, media_type="model/stl",
-                    headers={"Content-Disposition": f'attachment; filename="{record.spec.partId}-{component.id}-r{revision}.stl"'})
+    return Response(content=content, media_type="model/stl" if format == "stl" else "application/step",
+                    headers={"Content-Disposition": f'attachment; filename="{record.spec.partId}-{component_id}-r{revision}.{format}"'})

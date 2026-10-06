@@ -10,13 +10,22 @@ from typing import Any
 from domain.cad_program import (
     BoxStep,
     CadProgramSpec,
+    ChamferStep,
     CircularPattern,
     ConeStep,
     CylinderStep,
+    FilletStep,
+    HoleStep,
     LinearPattern,
+    LoftStep,
     PolygonStep,
     RevolveStep,
+    ShellStep,
+    SlotStep,
     SphereStep,
+    ThreadStep,
+    TorusStep,
+    TubeStep,
 )
 
 from api.cad_adapter import (
@@ -25,6 +34,8 @@ from api.cad_adapter import (
     CadEngineUnavailableError,
     CadGeometryError,
 )
+from api.cad_features import build_feature, finish_part
+from api.cad_mesh import preview_tessellation
 
 _logger = logging.getLogger(__name__)
 
@@ -33,13 +44,15 @@ def _engine() -> Any:
     try:
         return import_module("cadquery")
     except ImportError as exc:
-        raise CadEngineUnavailableError("Start the API with uv run --extra cad api to enable CAD exports") from exc
+        raise CadEngineUnavailableError("CAD engine unavailable. Run uv sync in apps/api and restart the API.") from exc
 
 
 def _one_solid(workplane: Any, context: str | None = None) -> Any:
     solids = workplane.solids().vals()
-    if len(solids) == 1 and solids[0].isValid() and solids[0].Volume() > 0:
-        return solids[0]
+    if len(solids) == 1 and solids[0].isValid():
+        volume = solids[0].Volume()
+        if math.isfinite(volume) and volume > 0:
+            return solids[0]
     if context is None:
         raise CadGeometryError("Each CAD step must produce one valid connected solid")
     if len(solids) > 1:
@@ -90,11 +103,11 @@ def _profile_issue(points: list[Any]) -> str | None:
     count = len(points)
 
     def cross(a: Any, b: Any, c: Any) -> float:
-        return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x)
+        return float((b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x))
 
     def on_segment(a: Any, b: Any, c: Any) -> bool:
-        return (min(a.x, b.x) <= c.x <= max(a.x, b.x)
-                and min(a.y, b.y) <= c.y <= max(a.y, b.y))
+        return bool(min(a.x, b.x) <= c.x <= max(a.x, b.x)
+                    and min(a.y, b.y) <= c.y <= max(a.y, b.y))
 
     for index, point in enumerate(points):
         following = points[(index + 1) % count]
@@ -127,7 +140,14 @@ def build_program_solid(spec: CadProgramSpec, cq: Any | None = None) -> Any:
     part = None
     for step in spec.steps:
         try:
-            if isinstance(step, BoxStep):
+            if isinstance(step, (FilletStep, ChamferStep, ShellStep)):
+                if part is None:
+                    raise CadGeometryError(f"CAD step {step.id} needs an existing solid for finishing")
+                part = finish_part(part, step)
+                continue
+            if isinstance(step, (TubeStep, TorusStep, SlotStep, HoleStep, ThreadStep, LoftStep)):
+                feature = build_feature(step, cq)
+            elif isinstance(step, BoxStep):
                 feature = cq.Workplane("XY").box(step.width, step.depth, step.height)
             elif isinstance(step, CylinderStep):
                 feature = cq.Workplane("XY").circle(step.diameter / 2).extrude(step.height).translate((0, 0, -step.height / 2))
@@ -151,15 +171,16 @@ def build_program_solid(spec: CadProgramSpec, cq: Any | None = None) -> Any:
             feature = feature.translate((step.position.x, step.position.y, step.position.z))
             if part is None:
                 part = feature
+                _one_solid(part, f"step {step.id} ({step.op})")
             else:
                 instances = _instances(feature, step.pattern)
                 for number, instance in enumerate(instances, start=1):
-                    current = _one_solid(part)
+                    current = part.solids().val()
                     before = current.Volume()
-                    before_bounds = current.BoundingBox()
                     part = part.union(instance) if step.op == "union" else part.cut(instance)
                     solid_count = len(part.solids().vals())
                     if solid_count > 1:
+                        before_bounds = current.BoundingBox()
                         tool = _one_solid(instance)
                         tool_bounds = tool.BoundingBox()
                         if step.op == "union":
@@ -180,6 +201,7 @@ def build_program_solid(spec: CadProgramSpec, cq: Any | None = None) -> Any:
                         )
                     after = _one_solid(part, f"step {step.id}{f' instance {number}' if step.pattern else ''} ({step.op})").Volume()
                     if not math.isfinite(after) or abs(after - before) <= max(1e-6, before * 1e-9):
+                        before_bounds = current.BoundingBox()
                         duplicate_hint = ""
                         if step.pattern and number > 1:
                             try:
@@ -199,8 +221,6 @@ def build_program_solid(spec: CadProgramSpec, cq: Any | None = None) -> Any:
                             f"current solid bounds: {_bounds(before_bounds)}; "
                             f"tool bounds: {_bounds(_one_solid(instance).BoundingBox())}{duplicate_hint}"
                         )
-                    _one_solid(part)
-            _one_solid(part, f"step {step.id} ({step.op})")
         except CadGeometryError:
             raise
         except Exception as exc:
@@ -227,7 +247,7 @@ def build_program_step(spec: CadProgramSpec, max_bytes: int) -> CadArtifact:
     a, b = original.BoundingBox(), imported.BoundingBox()
     if not math.isclose(original.Volume(), imported.Volume(), rel_tol=1e-5, abs_tol=1e-4) or any(
         not math.isclose(getattr(a, key), getattr(b, key), rel_tol=1e-5, abs_tol=1e-4)
-        for key in ("xlen", "ylen", "zlen")
+        for key in ("xmin", "xmax", "ymin", "ymax", "zmin", "zmax")
     ):
         raise CadGeometryError("STEP geometry differs from the CAD program")
     return CadArtifact(step=step, volume_mm3=imported.Volume(), bounds_mm=(b.xlen, b.ylen, b.zlen))
@@ -235,9 +255,7 @@ def build_program_step(spec: CadProgramSpec, max_bytes: int) -> CadArtifact:
 
 def build_program_mesh(spec: CadProgramSpec) -> dict[str, Any]:
     solid = _one_solid(build_program_solid(spec))
-    vertices, triangles = solid.tessellate(0.5)
-    if len(triangles) > 50_000:
-        raise CadArtifactTooLargeError("CAD mesh exceeds 50,000 triangles")
+    vertices, triangles = preview_tessellation([solid])[0]
     return {
         "vertices": [[vertex.x, vertex.y, vertex.z] for vertex in vertices],
         "triangles": [list(triangle) for triangle in triangles],

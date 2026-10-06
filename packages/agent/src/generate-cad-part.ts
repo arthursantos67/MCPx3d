@@ -1,4 +1,5 @@
 import { Ajv2020 } from 'ajv/dist/2020.js'
+import { cadResponseMetadataSchema } from './cad-response-metadata.ts'
 
 import partSchemaSource from '../../domain/schemas/cad-part.v2.1.schema.json' with { type: 'json' }
 import bracketSchemaSource from '../../domain/schemas/cad-part.v2.2.schema.json' with { type: 'json' }
@@ -44,8 +45,7 @@ function outputSchemaFor(shape: CadPartShape) { return {
     decision: { enum: ['create', 'clarify'] },
     spec: { anyOf: [shape === 'bracket' ? bracketSchema : shape === 'plate' ? partSchema
       : shape === 'flange' ? flangeSchema : shape === 'composite' ? compositeSchema : roundedSchema, { type: 'null' }] },
-    question: { type: 'string', maxLength: 240 },
-    assumptions: { type: 'array', minItems: 0, maxItems: 10, items: { type: 'string', minLength: 1, maxLength: 180 } },
+    ...cadResponseMetadataSchema,
   },
 } }
 

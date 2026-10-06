@@ -8,11 +8,18 @@
     "packages/domain/ts"
   ],
   "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "dev:api": "node scripts/run-api.mjs",
+    "test:browser": "playwright test",
+    "build": "npm run build --workspace web",
     "dev:web": "npm run dev --workspace web",
     "lint:web": "npm run lint --workspace web",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present && node --test tests/golden/*.test.mjs",
     "benchmark:report": "node tests/golden/run-benchmark.mjs",
     "benchmark:provider": "node tests/golden/run-provider-benchmark.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0"
   }
 }

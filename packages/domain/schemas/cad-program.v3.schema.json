@@ -1,67 +1,1474 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "type": "object",
-  "additionalProperties": false,
-  "required": ["schemaVersion", "units", "partId", "steps"],
-  "properties": {
-    "schemaVersion": { "const": "3.0" },
-    "units": { "const": "mm" },
-    "partId": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}$" },
-    "steps": { "type": "array", "minItems": 1, "maxItems": 32, "items": { "oneOf": [
-      { "$ref": "#/$defs/box" }, { "$ref": "#/$defs/cylinder" },
-      { "$ref": "#/$defs/sphere" }, { "$ref": "#/$defs/cone" }, { "$ref": "#/$defs/polygon" }, { "$ref": "#/$defs/revolve" }
-    ] } }
-  },
   "$defs": {
-    "vector": { "type": "object", "additionalProperties": false, "required": ["x", "y", "z"], "properties": {
-      "x": { "type": "number", "minimum": -10000, "maximum": 10000 },
-      "y": { "type": "number", "minimum": -10000, "maximum": 10000 },
-      "z": { "type": "number", "minimum": -10000, "maximum": 10000 }
-    } },
-    "rotation": { "type": "object", "additionalProperties": false, "required": ["x", "y", "z"], "properties": {
-      "x": { "type": "number", "minimum": -360, "maximum": 360 },
-      "y": { "type": "number", "minimum": -360, "maximum": 360 },
-      "z": { "type": "number", "minimum": -360, "maximum": 360 }
-    } },
-    "pattern": { "oneOf": [
-      { "type": "object", "additionalProperties": false, "required": ["kind", "count"], "properties": {
-        "kind": { "const": "circular" }, "count": { "type": "integer", "minimum": 2, "maximum": 64 },
-        "axis": { "enum": ["x", "y", "z"] }, "center": { "$ref": "#/$defs/vector" },
-        "sweepAngle": { "type": "number", "exclusiveMinimum": 0, "maximum": 360 }
-      } },
-      { "type": "object", "additionalProperties": false, "required": ["kind", "count", "offset"], "properties": {
-        "kind": { "const": "linear" }, "count": { "type": "integer", "minimum": 2, "maximum": 64 },
-        "offset": { "$ref": "#/$defs/vector" }
-      } }
-    ] },
-    "box": { "type": "object", "additionalProperties": false,
-      "required": ["id", "op", "shape", "position", "rotation", "width", "depth", "height"],
-      "properties": { "id": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}$" }, "op": { "enum": ["base", "union", "cut"] }, "shape": { "const": "box" },
-        "position": { "$ref": "#/$defs/vector" }, "rotation": { "$ref": "#/$defs/rotation" },
-        "width": { "type": "number", "minimum": 0.1, "maximum": 10000 }, "depth": { "type": "number", "minimum": 0.1, "maximum": 10000 }, "height": { "type": "number", "minimum": 0.1, "maximum": 10000 }, "pattern": { "$ref": "#/$defs/pattern" } } },
-    "cylinder": { "type": "object", "additionalProperties": false, "required": ["id", "op", "shape", "position", "rotation", "diameter", "height"],
-      "properties": { "id": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}$" }, "op": { "enum": ["base", "union", "cut"] }, "shape": { "const": "cylinder" },
-        "position": { "$ref": "#/$defs/vector" }, "rotation": { "$ref": "#/$defs/rotation" },
-        "diameter": { "type": "number", "minimum": 0.1, "maximum": 10000 }, "height": { "type": "number", "minimum": 0.1, "maximum": 10000 }, "pattern": { "$ref": "#/$defs/pattern" } } },
-    "sphere": { "type": "object", "additionalProperties": false, "required": ["id", "op", "shape", "position", "rotation", "diameter"],
-      "properties": { "id": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}$" }, "op": { "enum": ["base", "union", "cut"] }, "shape": { "const": "sphere" },
-        "position": { "$ref": "#/$defs/vector" }, "rotation": { "$ref": "#/$defs/rotation" },
-        "diameter": { "type": "number", "minimum": 0.1, "maximum": 10000 }, "pattern": { "$ref": "#/$defs/pattern" } } },
-    "cone": { "type": "object", "additionalProperties": false, "required": ["id", "op", "shape", "position", "rotation", "bottomDiameter", "topDiameter", "height"],
-      "properties": { "id": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}$" }, "op": { "enum": ["base", "union", "cut"] }, "shape": { "const": "cone" },
-        "position": { "$ref": "#/$defs/vector" }, "rotation": { "$ref": "#/$defs/rotation" },
-        "bottomDiameter": { "type": "number", "minimum": 0.1, "maximum": 10000 }, "topDiameter": { "type": "number", "minimum": 0, "maximum": 10000 }, "height": { "type": "number", "minimum": 0.1, "maximum": 10000 }, "pattern": { "$ref": "#/$defs/pattern" } } },
-    "polygon": { "type": "object", "additionalProperties": false, "required": ["id", "op", "shape", "position", "rotation", "points", "height"],
-      "properties": { "id": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}$" }, "op": { "enum": ["base", "union", "cut"] }, "shape": { "const": "polygon_prism" },
-        "position": { "$ref": "#/$defs/vector" }, "rotation": { "$ref": "#/$defs/rotation" },
-        "points": { "type": "array", "minItems": 3, "maxItems": 32, "items": { "type": "object", "additionalProperties": false, "required": ["x", "y"], "properties": {
-          "x": { "type": "number", "minimum": -10000, "maximum": 10000 }, "y": { "type": "number", "minimum": -10000, "maximum": 10000 }
-        } } }, "height": { "type": "number", "minimum": 0.1, "maximum": 10000 }, "pattern": { "$ref": "#/$defs/pattern" } } },
-    "revolve": { "type": "object", "additionalProperties": false, "required": ["id", "op", "shape", "position", "rotation", "points"],
-      "properties": { "id": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}$" }, "op": { "enum": ["base", "union", "cut"] }, "shape": { "const": "revolve_profile" },
-        "position": { "$ref": "#/$defs/vector" }, "rotation": { "$ref": "#/$defs/rotation" },
-        "points": { "type": "array", "minItems": 3, "maxItems": 32, "items": { "type": "object", "additionalProperties": false, "required": ["x", "y"], "properties": {
-          "x": { "type": "number", "minimum": 0, "maximum": 10000 }, "y": { "type": "number", "minimum": -10000, "maximum": 10000 }
-        } } }, "pattern": { "$ref": "#/$defs/pattern" } } }
-  }
+    "BoxStep": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "title": "Id",
+          "type": "string"
+        },
+        "position": {
+          "$ref": "#/$defs/Vector3"
+        },
+        "rotation": {
+          "$ref": "#/$defs/Rotation3"
+        },
+        "pattern": {
+          "anyOf": [
+            {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/CircularPattern"
+                },
+                {
+                  "$ref": "#/$defs/LinearPattern"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pattern"
+        },
+        "op": {
+          "enum": [
+            "base",
+            "union",
+            "cut"
+          ],
+          "title": "Op",
+          "type": "string"
+        },
+        "shape": {
+          "const": "box",
+          "title": "Shape",
+          "type": "string"
+        },
+        "width": {
+          "maximum": 10000,
+          "minimum": 0.1,
+          "title": "Width",
+          "type": "number"
+        },
+        "depth": {
+          "maximum": 10000,
+          "minimum": 0.1,
+          "title": "Depth",
+          "type": "number"
+        },
+        "height": {
+          "maximum": 10000,
+          "minimum": 0.1,
+          "title": "Height",
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "position",
+        "rotation",
+        "op",
+        "shape",
+        "width",
+        "depth",
+        "height"
+      ],
+      "title": "BoxStep",
+      "type": "object"
+    },
+    "ChamferStep": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "title": "Id",
+          "type": "string"
+        },
+        "position": {
+          "$ref": "#/$defs/Vector3"
+        },
+        "rotation": {
+          "$ref": "#/$defs/Rotation3"
+        },
+        "pattern": {
+          "default": null,
+          "title": "Pattern",
+          "type": "null"
+        },
+        "op": {
+          "const": "modify",
+          "title": "Op",
+          "type": "string"
+        },
+        "shape": {
+          "const": "chamfer",
+          "title": "Shape",
+          "type": "string"
+        },
+        "selector": {
+          "enum": [
+            "all",
+            "parallel_x",
+            "parallel_y",
+            "parallel_z",
+            "circular",
+            "top",
+            "bottom",
+            "positive_x",
+            "negative_x",
+            "positive_y",
+            "negative_y"
+          ],
+          "title": "Selector",
+          "type": "string"
+        },
+        "distance": {
+          "maximum": 1000,
+          "minimum": 0.1,
+          "title": "Distance",
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "position",
+        "rotation",
+        "op",
+        "shape",
+        "selector",
+        "distance"
+      ],
+      "title": "ChamferStep",
+      "type": "object"
+    },
+    "CircleSection": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "circle",
+          "title": "Kind",
+          "type": "string"
+        },
+        "z": {
+          "maximum": 10000,
+          "minimum": -10000,
+          "title": "Z",
+          "type": "number"
+        },
+        "diameter": {
+          "maximum": 10000,
+          "minimum": 0.1,
+          "title": "Diameter",
+          "type": "number"
+        }
+      },
+      "required": [
+        "kind",
+        "z",
+        "diameter"
+      ],
+      "title": "CircleSection",
+      "type": "object"
+    },
+    "CircularPattern": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "circular",
+          "title": "Kind",
+          "type": "string"
+        },
+        "count": {
+          "maximum": 64,
+          "minimum": 2,
+          "title": "Count",
+          "type": "integer"
+        },
+        "axis": {
+          "default": "z",
+          "enum": [
+            "x",
+            "y",
+            "z"
+          ],
+          "title": "Axis",
+          "type": "string"
+        },
+        "center": {
+          "$ref": "#/$defs/Vector3"
+        },
+        "sweepAngle": {
+          "default": 360,
+          "exclusiveMinimum": 0,
+          "maximum": 360,
+          "title": "Sweepangle",
+          "type": "number"
+        }
+      },
+      "required": [
+        "kind",
+        "count"
+      ],
+      "title": "CircularPattern",
+      "type": "object"
+    },
+    "ConeStep": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "title": "Id",
+          "type": "string"
+        },
+        "position": {
+          "$ref": "#/$defs/Vector3"
+        },
+        "rotation": {
+          "$ref": "#/$defs/Rotation3"
+        },
+        "pattern": {
+          "anyOf": [
+            {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/CircularPattern"
+                },
+                {
+                  "$ref": "#/$defs/LinearPattern"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pattern"
+        },
+        "op": {
+          "enum": [
+            "base",
+            "union",
+            "cut"
+          ],
+          "title": "Op",
+          "type": "string"
+        },
+        "shape": {
+          "const": "cone",
+          "title": "Shape",
+          "type": "string"
+        },
+        "bottomDiameter": {
+          "maximum": 10000,
+          "minimum": 0.1,
+          "title": "Bottomdiameter",
+          "type": "number"
+        },
+        "topDiameter": {
+          "maximum": 10000,
+          "minimum": 0,
+          "title": "Topdiameter",
+          "type": "number"
+        },
+        "height": {
+          "maximum": 10000,
+          "minimum": 0.1,
+          "title": "Height",
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "position",
+        "rotation",
+        "op",
+        "shape",
+        "bottomDiameter",
+        "topDiameter",
+        "height"
+      ],
+      "title": "ConeStep",
+      "type": "object"
+    },
+    "CylinderStep": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "title": "Id",
+          "type": "string"
+        },
+        "position": {
+          "$ref": "#/$defs/Vector3"
+        },
+        "rotation": {
+          "$ref": "#/$defs/Rotation3"
+        },
+        "pattern": {
+          "anyOf": [
+            {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/CircularPattern"
+                },
+                {
+                  "$ref": "#/$defs/LinearPattern"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pattern"
+        },
+        "op": {
+          "enum": [
+            "base",
+            "union",
+            "cut"
+          ],
+          "title": "Op",
+          "type": "string"
+        },
+        "shape": {
+          "const": "cylinder",
+          "title": "Shape",
+          "type": "string"
+        },
+        "diameter": {
+          "maximum": 10000,
+          "minimum": 0.1,
+          "title": "Diameter",
+          "type": "number"
+        },
+        "height": {
+          "maximum": 10000,
+          "minimum": 0.1,
+          "title": "Height",
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "position",
+        "rotation",
+        "op",
+        "shape",
+        "diameter",
+        "height"
+      ],
+      "title": "CylinderStep",
+      "type": "object"
+    },
+    "FilletStep": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "title": "Id",
+          "type": "string"
+        },
+        "position": {
+          "$ref": "#/$defs/Vector3"
+        },
+        "rotation": {
+          "$ref": "#/$defs/Rotation3"
+        },
+        "pattern": {
+          "default": null,
+          "title": "Pattern",
+          "type": "null"
+        },
+        "op": {
+          "const": "modify",
+          "title": "Op",
+          "type": "string"
+        },
+        "shape": {
+          "const": "fillet",
+          "title": "Shape",
+          "type": "string"
+        },
+        "selector": {
+          "enum": [
+            "all",
+            "parallel_x",
+            "parallel_y",
+            "parallel_z",
+            "circular",
+            "top",
+            "bottom",
+            "positive_x",
+            "negative_x",
+            "positive_y",
+            "negative_y"
+          ],
+          "title": "Selector",
+          "type": "string"
+        },
+        "radius": {
+          "maximum": 1000,
+          "minimum": 0.1,
+          "title": "Radius",
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "position",
+        "rotation",
+        "op",
+        "shape",
+        "selector",
+        "radius"
+      ],
+      "title": "FilletStep",
+      "type": "object"
+    },
+    "HoleStep": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "title": "Id",
+          "type": "string"
+        },
+        "position": {
+          "$ref": "#/$defs/Vector3"
+        },
+        "rotation": {
+          "$ref": "#/$defs/Rotation3"
+        },
+        "pattern": {
+          "anyOf": [
+            {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/CircularPattern"
+                },
+                {
+                  "$ref": "#/$defs/LinearPattern"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pattern"
+        },
+        "op": {
+          "const": "cut",
+          "title": "Op",
+          "type": "string"
+        },
+        "shape": {
+          "const": "hole",
+          "title": "Shape",
+          "type": "string"
+        },
+        "holeType": {
+          "enum": [
+            "plain",
+            "counterbore",
+            "countersink"
+          ],
+          "title": "Holetype",
+          "type": "string"
+        },
+        "diameter": {
+          "maximum": 10000,
+          "minimum": 0.1,
+          "title": "Diameter",
+          "type": "number"
+        },
+        "height": {
+          "maximum": 10000,
+          "minimum": 0.1,
+          "title": "Height",
+          "type": "number"
+        },
+        "headDiameter": {
+          "maximum": 10000,
+          "minimum": 0,
+          "title": "Headdiameter",
+          "type": "number"
+        },
+        "headDepth": {
+          "maximum": 10000,
+          "minimum": 0,
+          "title": "Headdepth",
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "position",
+        "rotation",
+        "op",
+        "shape",
+        "holeType",
+        "diameter",
+        "height",
+        "headDiameter",
+        "headDepth"
+      ],
+      "title": "HoleStep",
+      "type": "object"
+    },
+    "LinearPattern": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "linear",
+          "title": "Kind",
+          "type": "string"
+        },
+        "count": {
+          "maximum": 64,
+          "minimum": 2,
+          "title": "Count",
+          "type": "integer"
+        },
+        "offset": {
+          "$ref": "#/$defs/Vector3"
+        }
+      },
+      "required": [
+        "kind",
+        "count",
+        "offset"
+      ],
+      "title": "LinearPattern",
+      "type": "object"
+    },
+    "LoftStep": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "title": "Id",
+          "type": "string"
+        },
+        "position": {
+          "$ref": "#/$defs/Vector3"
+        },
+        "rotation": {
+          "$ref": "#/$defs/Rotation3"
+        },
+        "pattern": {
+          "anyOf": [
+            {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/CircularPattern"
+                },
+                {
+                  "$ref": "#/$defs/LinearPattern"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pattern"
+        },
+        "op": {
+          "enum": [
+            "base",
+            "union",
+            "cut"
+          ],
+          "title": "Op",
+          "type": "string"
+        },
+        "shape": {
+          "const": "loft",
+          "title": "Shape",
+          "type": "string"
+        },
+        "sections": {
+          "items": {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/CircleSection"
+              },
+              {
+                "$ref": "#/$defs/RectangleSection"
+              }
+            ]
+          },
+          "maxItems": 8,
+          "minItems": 2,
+          "title": "Sections",
+          "type": "array"
+        },
+        "ruled": {
+          "default": false,
+          "title": "Ruled",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "position",
+        "rotation",
+        "op",
+        "shape",
+        "sections"
+      ],
+      "title": "LoftStep",
+      "type": "object"
+    },
+    "Point2": {
+      "additionalProperties": false,
+      "properties": {
+        "x": {
+          "maximum": 10000,
+          "minimum": -10000,
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "maximum": 10000,
+          "minimum": -10000,
+          "title": "Y",
+          "type": "number"
+        }
+      },
+      "required": [
+        "x",
+        "y"
+      ],
+      "title": "Point2",
+      "type": "object"
+    },
+    "PolygonStep": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "title": "Id",
+          "type": "string"
+        },
+        "position": {
+          "$ref": "#/$defs/Vector3"
+        },
+        "rotation": {
+          "$ref": "#/$defs/Rotation3"
+        },
+        "pattern": {
+          "anyOf": [
+            {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/CircularPattern"
+                },
+                {
+                  "$ref": "#/$defs/LinearPattern"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pattern"
+        },
+        "op": {
+          "enum": [
+            "base",
+            "union",
+            "cut"
+          ],
+          "title": "Op",
+          "type": "string"
+        },
+        "shape": {
+          "const": "polygon_prism",
+          "title": "Shape",
+          "type": "string"
+        },
+        "points": {
+          "items": {
+            "$ref": "#/$defs/Point2"
+          },
+          "maxItems": 32,
+          "minItems": 3,
+          "title": "Points",
+          "type": "array"
+        },
+        "height": {
+          "maximum": 10000,
+          "minimum": 0.1,
+          "title": "Height",
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "position",
+        "rotation",
+        "op",
+        "shape",
+        "points",
+        "height"
+      ],
+      "title": "PolygonStep",
+      "type": "object"
+    },
+    "RectangleSection": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "rectangle",
+          "title": "Kind",
+          "type": "string"
+        },
+        "z": {
+          "maximum": 10000,
+          "minimum": -10000,
+          "title": "Z",
+          "type": "number"
+        },
+        "width": {
+          "maximum": 10000,
+          "minimum": 0.1,
+          "title": "Width",
+          "type": "number"
+        },
+        "depth": {
+          "maximum": 10000,
+          "minimum": 0.1,
+          "title": "Depth",
+          "type": "number"
+        }
+      },
+      "required": [
+        "kind",
+        "z",
+        "width",
+        "depth"
+      ],
+      "title": "RectangleSection",
+      "type": "object"
+    },
+    "RevolveStep": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "title": "Id",
+          "type": "string"
+        },
+        "position": {
+          "$ref": "#/$defs/Vector3"
+        },
+        "rotation": {
+          "$ref": "#/$defs/Rotation3"
+        },
+        "pattern": {
+          "anyOf": [
+            {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/CircularPattern"
+                },
+                {
+                  "$ref": "#/$defs/LinearPattern"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pattern"
+        },
+        "op": {
+          "enum": [
+            "base",
+            "union",
+            "cut"
+          ],
+          "title": "Op",
+          "type": "string"
+        },
+        "shape": {
+          "const": "revolve_profile",
+          "title": "Shape",
+          "type": "string"
+        },
+        "points": {
+          "items": {
+            "$ref": "#/$defs/Point2"
+          },
+          "maxItems": 32,
+          "minItems": 3,
+          "title": "Points",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "position",
+        "rotation",
+        "op",
+        "shape",
+        "points"
+      ],
+      "title": "RevolveStep",
+      "type": "object"
+    },
+    "Rotation3": {
+      "additionalProperties": false,
+      "properties": {
+        "x": {
+          "maximum": 360,
+          "minimum": -360,
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "maximum": 360,
+          "minimum": -360,
+          "title": "Y",
+          "type": "number"
+        },
+        "z": {
+          "maximum": 360,
+          "minimum": -360,
+          "title": "Z",
+          "type": "number"
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "z"
+      ],
+      "title": "Rotation3",
+      "type": "object"
+    },
+    "ShellStep": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "title": "Id",
+          "type": "string"
+        },
+        "position": {
+          "$ref": "#/$defs/Vector3"
+        },
+        "rotation": {
+          "$ref": "#/$defs/Rotation3"
+        },
+        "pattern": {
+          "default": null,
+          "title": "Pattern",
+          "type": "null"
+        },
+        "op": {
+          "const": "modify",
+          "title": "Op",
+          "type": "string"
+        },
+        "shape": {
+          "const": "shell",
+          "title": "Shape",
+          "type": "string"
+        },
+        "selector": {
+          "enum": [
+            "top",
+            "bottom",
+            "positive_x",
+            "negative_x",
+            "positive_y",
+            "negative_y"
+          ],
+          "title": "Selector",
+          "type": "string"
+        },
+        "thickness": {
+          "maximum": 1000,
+          "minimum": 0.1,
+          "title": "Thickness",
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "position",
+        "rotation",
+        "op",
+        "shape",
+        "selector",
+        "thickness"
+      ],
+      "title": "ShellStep",
+      "type": "object"
+    },
+    "SlotStep": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "title": "Id",
+          "type": "string"
+        },
+        "position": {
+          "$ref": "#/$defs/Vector3"
+        },
+        "rotation": {
+          "$ref": "#/$defs/Rotation3"
+        },
+        "pattern": {
+          "anyOf": [
+            {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/CircularPattern"
+                },
+                {
+                  "$ref": "#/$defs/LinearPattern"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pattern"
+        },
+        "op": {
+          "enum": [
+            "base",
+            "union",
+            "cut"
+          ],
+          "title": "Op",
+          "type": "string"
+        },
+        "shape": {
+          "const": "slot",
+          "title": "Shape",
+          "type": "string"
+        },
+        "length": {
+          "maximum": 10000,
+          "minimum": 0.1,
+          "title": "Length",
+          "type": "number"
+        },
+        "width": {
+          "maximum": 10000,
+          "minimum": 0.1,
+          "title": "Width",
+          "type": "number"
+        },
+        "height": {
+          "maximum": 10000,
+          "minimum": 0.1,
+          "title": "Height",
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "position",
+        "rotation",
+        "op",
+        "shape",
+        "length",
+        "width",
+        "height"
+      ],
+      "title": "SlotStep",
+      "type": "object"
+    },
+    "SphereStep": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "title": "Id",
+          "type": "string"
+        },
+        "position": {
+          "$ref": "#/$defs/Vector3"
+        },
+        "rotation": {
+          "$ref": "#/$defs/Rotation3"
+        },
+        "pattern": {
+          "anyOf": [
+            {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/CircularPattern"
+                },
+                {
+                  "$ref": "#/$defs/LinearPattern"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pattern"
+        },
+        "op": {
+          "enum": [
+            "base",
+            "union",
+            "cut"
+          ],
+          "title": "Op",
+          "type": "string"
+        },
+        "shape": {
+          "const": "sphere",
+          "title": "Shape",
+          "type": "string"
+        },
+        "diameter": {
+          "maximum": 10000,
+          "minimum": 0.1,
+          "title": "Diameter",
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "position",
+        "rotation",
+        "op",
+        "shape",
+        "diameter"
+      ],
+      "title": "SphereStep",
+      "type": "object"
+    },
+    "ThreadStep": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "title": "Id",
+          "type": "string"
+        },
+        "position": {
+          "$ref": "#/$defs/Vector3"
+        },
+        "rotation": {
+          "$ref": "#/$defs/Rotation3"
+        },
+        "pattern": {
+          "anyOf": [
+            {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/CircularPattern"
+                },
+                {
+                  "$ref": "#/$defs/LinearPattern"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pattern"
+        },
+        "op": {
+          "enum": [
+            "base",
+            "union",
+            "cut"
+          ],
+          "title": "Op",
+          "type": "string"
+        },
+        "shape": {
+          "const": "thread",
+          "title": "Shape",
+          "type": "string"
+        },
+        "diameter": {
+          "maximum": 1000,
+          "minimum": 1,
+          "title": "Diameter",
+          "type": "number"
+        },
+        "pitch": {
+          "maximum": 100,
+          "minimum": 0.25,
+          "title": "Pitch",
+          "type": "number"
+        },
+        "height": {
+          "maximum": 10000,
+          "minimum": 0.25,
+          "title": "Height",
+          "type": "number"
+        },
+        "profile": {
+          "enum": [
+            "metric",
+            "trapezoidal"
+          ],
+          "title": "Profile",
+          "type": "string"
+        },
+        "handedness": {
+          "enum": [
+            "right",
+            "left"
+          ],
+          "title": "Handedness",
+          "type": "string"
+        },
+        "clearance": {
+          "maximum": 2,
+          "minimum": 0,
+          "title": "Clearance",
+          "type": "number"
+        },
+        "starts": {
+          "default": 1,
+          "maximum": 4,
+          "minimum": 1,
+          "title": "Starts",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "position",
+        "rotation",
+        "op",
+        "shape",
+        "diameter",
+        "pitch",
+        "height",
+        "profile",
+        "handedness",
+        "clearance"
+      ],
+      "title": "ThreadStep",
+      "type": "object"
+    },
+    "TorusStep": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "title": "Id",
+          "type": "string"
+        },
+        "position": {
+          "$ref": "#/$defs/Vector3"
+        },
+        "rotation": {
+          "$ref": "#/$defs/Rotation3"
+        },
+        "pattern": {
+          "anyOf": [
+            {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/CircularPattern"
+                },
+                {
+                  "$ref": "#/$defs/LinearPattern"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pattern"
+        },
+        "op": {
+          "enum": [
+            "base",
+            "union",
+            "cut"
+          ],
+          "title": "Op",
+          "type": "string"
+        },
+        "shape": {
+          "const": "torus",
+          "title": "Shape",
+          "type": "string"
+        },
+        "majorRadius": {
+          "maximum": 5000,
+          "minimum": 0.1,
+          "title": "Majorradius",
+          "type": "number"
+        },
+        "minorRadius": {
+          "maximum": 5000,
+          "minimum": 0.1,
+          "title": "Minorradius",
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "position",
+        "rotation",
+        "op",
+        "shape",
+        "majorRadius",
+        "minorRadius"
+      ],
+      "title": "TorusStep",
+      "type": "object"
+    },
+    "TubeStep": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "title": "Id",
+          "type": "string"
+        },
+        "position": {
+          "$ref": "#/$defs/Vector3"
+        },
+        "rotation": {
+          "$ref": "#/$defs/Rotation3"
+        },
+        "pattern": {
+          "anyOf": [
+            {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/CircularPattern"
+                },
+                {
+                  "$ref": "#/$defs/LinearPattern"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pattern"
+        },
+        "op": {
+          "enum": [
+            "base",
+            "union",
+            "cut"
+          ],
+          "title": "Op",
+          "type": "string"
+        },
+        "shape": {
+          "const": "tube",
+          "title": "Shape",
+          "type": "string"
+        },
+        "diameter": {
+          "maximum": 10000,
+          "minimum": 0.1,
+          "title": "Diameter",
+          "type": "number"
+        },
+        "innerDiameter": {
+          "exclusiveMinimum": 0,
+          "maximum": 10000,
+          "title": "Innerdiameter",
+          "type": "number"
+        },
+        "height": {
+          "maximum": 10000,
+          "minimum": 0.1,
+          "title": "Height",
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "position",
+        "rotation",
+        "op",
+        "shape",
+        "diameter",
+        "innerDiameter",
+        "height"
+      ],
+      "title": "TubeStep",
+      "type": "object"
+    },
+    "Vector3": {
+      "additionalProperties": false,
+      "properties": {
+        "x": {
+          "maximum": 10000,
+          "minimum": -10000,
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "maximum": 10000,
+          "minimum": -10000,
+          "title": "Y",
+          "type": "number"
+        },
+        "z": {
+          "maximum": 10000,
+          "minimum": -10000,
+          "title": "Z",
+          "type": "number"
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "z"
+      ],
+      "title": "Vector3",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "const": "3.0",
+      "title": "Schemaversion",
+      "type": "string"
+    },
+    "units": {
+      "const": "mm",
+      "title": "Units",
+      "type": "string"
+    },
+    "partId": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Partid",
+      "type": "string"
+    },
+    "steps": {
+      "items": {
+        "oneOf": [
+          {
+            "$ref": "#/$defs/BoxStep"
+          },
+          {
+            "$ref": "#/$defs/CylinderStep"
+          },
+          {
+            "$ref": "#/$defs/SphereStep"
+          },
+          {
+            "$ref": "#/$defs/ConeStep"
+          },
+          {
+            "$ref": "#/$defs/PolygonStep"
+          },
+          {
+            "$ref": "#/$defs/RevolveStep"
+          },
+          {
+            "$ref": "#/$defs/TubeStep"
+          },
+          {
+            "$ref": "#/$defs/TorusStep"
+          },
+          {
+            "$ref": "#/$defs/SlotStep"
+          },
+          {
+            "$ref": "#/$defs/HoleStep"
+          },
+          {
+            "$ref": "#/$defs/ThreadStep"
+          },
+          {
+            "$ref": "#/$defs/LoftStep"
+          },
+          {
+            "$ref": "#/$defs/FilletStep"
+          },
+          {
+            "$ref": "#/$defs/ChamferStep"
+          },
+          {
+            "$ref": "#/$defs/ShellStep"
+          }
+        ]
+      },
+      "maxItems": 32,
+      "minItems": 1,
+      "title": "Steps",
+      "type": "array"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "units",
+    "partId",
+    "steps"
+  ],
+  "title": "CadProgramSpec",
+  "type": "object"
 }

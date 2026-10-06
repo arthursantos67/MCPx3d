@@ -1,121 +1,14 @@
-/**
- * React wrapper around `ChatController` (Issue #27). Uses
- * `useSyncExternalStore`, the same pattern `apps/web/src/ai/useWebLlmRuntime.ts`
- * already established for externally-mutated status that can change outside
- * a React event (here: `WebLLMProvider`'s worker callbacks and in-flight
- * network calls), and wires the one real `ChatApi` implementation
- * (`apps/web/src/api/client.ts`) plus the production `createWebLLMProvider()`
- * factory (`packages/agent`) -- the concrete instances a test would swap out.
- *
- * `toAgentProvider`/`toOpenAiCompatibleAgentProvider` adapt each real
- * provider's own status shape (`WebLLMProviderState`/
- * `OpenAICompatibleProviderState`) into `ChatController`'s own `AgentStatus`
- * shape; see `ChatController.ts`'s doc comment for why that mapping lives
- * here (this file compiles under `tsconfig.app.json`'s `"bundler"` module
- * resolution, where `packages/agent`'s `@mlc-ai/web-llm` type imports
- * resolve fine) rather than in `ChatController.ts` itself.
- *
- * Which provider gets constructed is decided once here, from
- * `loadProviderConfig()` (`../settings/providerConfig.ts`): `WebLLMProvider`
- * unless the user has explicitly saved a complete BYOK config. There is no
- * live hot-swap -- changing the setting takes effect on next reload, the
- * same way this controller itself is only ever constructed once per page load.
- */
-import { useCallback, useEffect, useMemo, useSyncExternalStore } from "react";
-
-import {
-  OpenAICompatibleProvider,
-  type OpenAICompatibleProviderState,
-} from "../../../../packages/agent/src/openai-compatible-provider.ts";
-import {
-  createWebLLMProvider,
-  type WebLLMProvider,
-  type WebLLMProviderState,
-} from "../../../../packages/agent/src/webllm-provider.ts";
-import * as apiClient from "../api/client.ts";
-import type { Recipe } from "../api/client.ts";
-import type { CadPartSpec } from "../../../../packages/domain/ts/src/cad-part.ts";
-import type { CadEditOutcome } from "../../../../packages/agent/src/generate-cad-edit.ts";
-import type { CadCreateOutcome } from "../../../../packages/agent/src/generate-cad-part.ts";
-import type { CadProgramOutcome } from "../../../../packages/agent/src/generate-cad-program.ts";
-import type { CadAssemblyOutcome, CadAssemblyProgressListener } from "../../../../packages/agent/src/generate-cad-assembly.ts";
-import type { CadDesignOutcome } from "../../../../packages/agent/src/classify-cad-design.ts";
-import type { CadProgramSpec } from "../../../../packages/domain/ts/src/cad-program.ts";
-import type { CadAssemblySpec } from "../../../../packages/domain/ts/src/cad-assembly.ts";
-import { isUsableByokConfig, loadProviderConfig } from "../settings/providerConfig.ts";
-
-import { ChatController, type AgentProvider, type ChatControllerState } from "./ChatController.ts";
-import type { AgentStatus, SendGate } from "./types.ts";
-
-function toAgentStatus(state: WebLLMProviderState): AgentStatus {
-  switch (state.phase) {
-    case "loading":
-      return {
-        phase: "loading",
-        progressText:
-          state.progress.text || `Loading local model… ${Math.round(state.progress.progress * 100)}%`,
-      };
-    case "unsupported":
-      return { phase: "unsupported", reason: state.reason };
-    case "error":
-      return { phase: "error", reason: state.message };
-    default:
-      return { phase: state.phase };
-  }
-}
-
-function toAgentProvider(webllm: WebLLMProvider): AgentProvider {
-  return {
-    id: webllm.id,
-    model: webllm.model,
-    maxOutputTokens: webllm.maxOutputTokens,
-    isAvailable: () => webllm.isAvailable(),
-    initialize: () => webllm.initialize(),
-    generateStructured: (messages, schema, options) => webllm.generateStructured(messages, schema, options),
-    cancel: () => webllm.cancel(),
-    getState: () => toAgentStatus(webllm.getState()),
-    onStateChange: (listener) => webllm.onStateChange((next) => listener(toAgentStatus(next))),
-  };
-}
-
-function toOpenAiCompatibleStatus(state: OpenAICompatibleProviderState): AgentStatus {
-  return state.phase === "error" ? { phase: "error", reason: state.message } : { phase: state.phase };
-}
-
-function toOpenAiCompatibleAgentProvider(provider: OpenAICompatibleProvider): AgentProvider {
-  return {
-    id: provider.id,
-    model: provider.model,
-    maxOutputTokens: provider.maxOutputTokens,
-    isAvailable: () => provider.isAvailable(),
-    initialize: () => provider.initialize(),
-    generateStructured: (messages, schema, options) => provider.generateStructured(messages, schema, options),
-    cancel: () => provider.cancel(),
-    getState: () => toOpenAiCompatibleStatus(provider.getState()),
-    onStateChange: (listener) => provider.onStateChange((next) => listener(toOpenAiCompatibleStatus(next))),
-  };
-}
-
-function createConfiguredProvider(): AgentProvider {
-  const config = loadProviderConfig();
-  if (isUsableByokConfig(config)) {
-    return toOpenAiCompatibleAgentProvider(
-      new OpenAICompatibleProvider({ baseUrl: config.baseUrl, apiKey: config.apiKey, model: config.model }),
-    );
-  }
-  return toAgentProvider(createWebLLMProvider());
-}
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import * as apiClient from "../api/x3d.ts";
+import type { Recipe } from "../api/x3d.ts";
+import { ChatController, type AgentProvider, type ChatControllerState, type SceneRequestOptions } from "./ChatController.ts";
+import type { SendGate } from "./types.ts";
 
 export interface UseChatController {
   readonly state: ChatControllerState;
   readonly canSend: () => SendGate;
-  readonly sendMessage: (text: string) => void;
+  readonly sendMessage: (text: string, options?: SceneRequestOptions) => void;
   readonly applyRecipe: (recipe: Recipe) => void;
-  readonly planCadEdit: (request: string, spec: CadPartSpec) => Promise<CadEditOutcome>;
-  readonly planCadCreate: (request: string, shape?: 'plate' | 'bracket' | 'rounded_plate' | 'flange' | 'composite') => Promise<CadCreateOutcome>;
-  readonly planCadProgram: (request: string, previous?: CadProgramSpec) => Promise<CadProgramOutcome>;
-  readonly planCadAssembly: (request: string, previous?: CadAssemblySpec, onProgress?: CadAssemblyProgressListener) => Promise<CadAssemblyOutcome>;
-  readonly planCadDesign: (request: string, previous?: CadProgramSpec, onProgress?: CadAssemblyProgressListener) => Promise<CadDesignOutcome>;
   readonly importManifest: (contents: string) => void;
   readonly cancelGeneration: () => void;
   readonly retryProject: () => void;
@@ -125,16 +18,14 @@ export interface UseChatController {
   readonly setViewerStatus: (status: "artifact-generation" | "loading" | "ready" | "failed") => void;
 }
 
-export function useChatController(): UseChatController {
-  const controller = useMemo(
-    () => new ChatController(createConfiguredProvider(), apiClient),
-    [],
-  );
+export function useChatController(provider: AgentProvider, enabled: boolean): UseChatController {
+  const [controller] = useState(() => new ChatController(provider, apiClient));
+  useEffect(() => { controller.setProvider(provider); }, [controller, provider]);
 
   useEffect(() => {
-    void controller.initialize();
+    if (enabled) void controller.initialize();
     return () => controller.dispose();
-  }, [controller]);
+  }, [controller, enabled]);
 
   const subscribe = useCallback(
     (onStoreChange: () => void) => controller.onChange(onStoreChange),
@@ -144,17 +35,12 @@ export function useChatController(): UseChatController {
   const state = useSyncExternalStore(subscribe, getSnapshot);
 
   const sendMessage = useCallback(
-    (text: string) => {
-      void controller.sendMessage(text);
+    (text: string, options?: SceneRequestOptions) => {
+      void controller.sendMessage(text, options);
     },
     [controller],
   );
   const applyRecipe = useCallback((recipe: Recipe) => { void controller.applyRecipe(recipe); }, [controller]);
-  const planCadEdit = useCallback((request: string, spec: CadPartSpec) => controller.planCadEdit(request, spec), [controller]);
-  const planCadCreate = useCallback((request: string, shape?: 'plate' | 'bracket' | 'rounded_plate' | 'flange' | 'composite') => controller.planCadCreate(request, shape), [controller]);
-  const planCadProgram = useCallback((request: string, previous?: CadProgramSpec) => controller.planCadProgram(request, previous), [controller]);
-  const planCadAssembly = useCallback((request: string, previous?: CadAssemblySpec, onProgress?: CadAssemblyProgressListener) => controller.planCadAssembly(request, previous, onProgress), [controller]);
-  const planCadDesign = useCallback((request: string, previous?: CadProgramSpec, onProgress?: CadAssemblyProgressListener) => controller.planCadDesign(request, previous, onProgress), [controller]);
   const importManifest = useCallback((contents: string) => { void controller.importManifest(contents); }, [controller]);
   const canSend = useCallback(() => controller.canSend(), [controller]);
   const cancelGeneration = useCallback(() => controller.cancelGeneration(), [controller]);
@@ -171,5 +57,5 @@ export function useChatController(): UseChatController {
     [controller],
   );
 
-  return { state, sendMessage, applyRecipe, planCadEdit, planCadCreate, planCadProgram, planCadAssembly, planCadDesign, importManifest, cancelGeneration, canSend, retryProject, resetProject, renameProject, persistProjectName, setViewerStatus };
+  return { state, sendMessage, applyRecipe, importManifest, cancelGeneration, canSend, retryProject, resetProject, renameProject, persistProjectName, setViewerStatus };
 }

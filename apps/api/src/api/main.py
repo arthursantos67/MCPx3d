@@ -5,10 +5,11 @@ from api.config import get_settings
 from api.error_handlers import register_error_handlers
 from api.routes.artifacts import router as artifacts_router
 from api.routes.cad import router as cad_router
-from api.routes.cad_programs import router as cad_programs_router
 from api.routes.cad_assemblies import router as cad_assemblies_router
+from api.routes.cad_programs import router as cad_programs_router
 from api.routes.cad_projects import router as cad_projects_router
 from api.routes.health import router as health_router
+from api.routes.local_ai import router as local_ai_router
 from api.routes.manifests import router as manifests_router
 from api.routes.plans import router as plans_router
 from api.routes.projects import router as projects_router
@@ -28,6 +29,7 @@ app.add_middleware(
 register_error_handlers(app)
 
 app.include_router(health_router)
+app.include_router(local_ai_router)
 app.include_router(projects_router)
 app.include_router(plans_router)
 app.include_router(artifacts_router)

@@ -25,7 +25,7 @@ function RecipeMenu({ modelSpec, isBusy, applyRecipe }: RecipeMenuProps) {
 
   const saveCurrent = async () => {
     if (!modelSpec || modelSpec.revision === 0) return
-    const name = window.prompt('Name this reusable recipe:', modelSpec.scene.title)
+    const name = window.prompt('Nome do modelo reutilizável:', modelSpec.scene.title)
     if (!name?.trim()) return
     setIsSaving(true)
     try {
@@ -43,23 +43,23 @@ function RecipeMenu({ modelSpec, isBusy, applyRecipe }: RecipeMenuProps) {
 
   return (
     <details className="recipe-menu">
-      <summary>Recipes</summary>
+      <summary>Biblioteca</summary>
       <div className="recipe-menu__body">
         <label>
-          Search recipes
+          Buscar modelos
           <input value={query} onChange={(event) => setQuery(event.target.value)} maxLength={80} />
         </label>
         <div className="recipe-menu__list">
           {recipes.map((recipe) => (
             <button key={recipe.id} type="button" disabled={!canApply || recipe.units !== modelSpec?.units || recipe.displayScale !== modelSpec?.scene.displayScale} onClick={() => applyRecipe(recipe)}>
-              {recipe.name} · {recipe.objectCount} parts
+              {recipe.name} · {recipe.objectCount} partes
             </button>
           ))}
-          {recipes.length === 0 && !error && <span>No recipes found.</span>}
+          {recipes.length === 0 && !error && <span>Nenhum modelo encontrado.</span>}
         </div>
-        {!canApply && <small>Start an empty project to apply a recipe.</small>}
+        {!canApply && <small>Abra um projeto vazio para aplicar um modelo.</small>}
         <button type="button" disabled={!modelSpec || modelSpec.revision === 0 || isBusy || isSaving} onClick={() => { void saveCurrent() }}>
-          {isSaving ? 'Saving…' : 'Save current model as recipe'}
+          {isSaving ? 'Salvando…' : 'Salvar modelo na biblioteca'}
         </button>
         {error && <span role="alert">{error}</span>}
       </div>

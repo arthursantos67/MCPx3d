@@ -38,7 +38,7 @@ def project_service() -> ProjectSessionService:
 @pytest.fixture
 def client_unreachable_mcp(project_service: ProjectSessionService) -> TestClient:
     """A client whose MCP is unreachable -- used to prove error paths short-circuit before MCP."""
-    app.dependency_overrides[get_settings] = lambda: Settings(mcp_base_url=_CLOSED_PORT_URL)
+    app.dependency_overrides[get_settings] = lambda: Settings(x3d_backend="mcp", mcp_base_url=_CLOSED_PORT_URL)
     return TestClient(app)
 
 
@@ -198,7 +198,7 @@ def test_mcp_unavailable_maps_to_503_and_does_not_mutate(
 def test_valid_plan_commits_and_returns_validation_and_artifacts(
     x3d_mcp_server: str, project_service: ProjectSessionService
 ) -> None:
-    app.dependency_overrides[get_settings] = lambda: Settings(mcp_base_url=AnyHttpUrl(x3d_mcp_server))
+    app.dependency_overrides[get_settings] = lambda: Settings(x3d_backend="mcp", mcp_base_url=AnyHttpUrl(x3d_mcp_server))
     client = TestClient(app)
     session = project_service.create_project()
     body = {"expectedRevision": 0, "requestId": "req-1", "plan": _CREATE_CUBE_PLAN}
@@ -245,24 +245,25 @@ _OVERLAPPING_KITCHEN_PLAN = {
 }
 
 
-def test_overlap_is_rejected_with_every_pair_unless_resolution_is_requested(
+def test_strict_overlap_is_rejected_before_x3d_validation(
     client_unreachable_mcp: TestClient, project_service: ProjectSessionService
 ) -> None:
     session = project_service.create_project()
-    body = {"expectedRevision": 0, "plan": _OVERLAPPING_KITCHEN_PLAN}
+    body = {"expectedRevision": 0, "plan": _OVERLAPPING_KITCHEN_PLAN, "overlapPolicy": "strict"}
 
     response = client_unreachable_mcp.post(f"/api/projects/{session.project_id}/plans", json=body)
 
     assert response.status_code == 422
     assert response.json()["code"] == "UNINTENDED_OVERLAP"
     assert "'Countertop' (countertop) intersects 'Sink' (sink)" in response.json()["message"]
+    assert response.json()["details"][0]["pairs"] == [{"objects": ["countertop", "sink"]}]
     assert project_service.get_project(session.project_id).revision == 0
 
 
 def test_resolve_overlaps_separates_parts_validates_and_reports_autofixes(
     x3d_mcp_server: str, project_service: ProjectSessionService
 ) -> None:
-    app.dependency_overrides[get_settings] = lambda: Settings(mcp_base_url=AnyHttpUrl(x3d_mcp_server))
+    app.dependency_overrides[get_settings] = lambda: Settings(x3d_backend="mcp", mcp_base_url=AnyHttpUrl(x3d_mcp_server))
     client = TestClient(app)
     session = project_service.create_project()
     body = {"expectedRevision": 0, "plan": _OVERLAPPING_KITCHEN_PLAN, "resolveOverlaps": True}
@@ -292,7 +293,7 @@ def test_mcp_tool_error_maps_to_503_and_does_not_mutate(
 
     monkeypatch.setattr("api.x3d_validation.apply_model_spec", _raise_mcp_tool_error)
 
-    app.dependency_overrides[get_settings] = lambda: Settings(mcp_base_url=AnyHttpUrl(x3d_mcp_server))
+    app.dependency_overrides[get_settings] = lambda: Settings(x3d_backend="mcp", mcp_base_url=AnyHttpUrl(x3d_mcp_server))
     client = TestClient(app)
     session = project_service.create_project()
     body = {"expectedRevision": 0, "plan": _CREATE_CUBE_PLAN}
@@ -312,7 +313,7 @@ def test_unexpected_error_maps_to_500_without_leaking_exception_text(
 
     monkeypatch.setattr("api.routes.plans.apply_plan", _explode)
 
-    app.dependency_overrides[get_settings] = lambda: Settings(mcp_base_url=_CLOSED_PORT_URL)
+    app.dependency_overrides[get_settings] = lambda: Settings(x3d_backend="mcp", mcp_base_url=_CLOSED_PORT_URL)
     client = TestClient(app, raise_server_exceptions=False)
     session = project_service.create_project()
     body = {"expectedRevision": 0, "plan": _CREATE_CUBE_PLAN}
@@ -455,7 +456,7 @@ def test_invalid_x3d_does_not_commit(
 
     monkeypatch.setattr("api.x3d_validation.apply_model_spec", _fake_apply_model_spec)
 
-    app.dependency_overrides[get_settings] = lambda: Settings(mcp_base_url=AnyHttpUrl(x3d_mcp_server))
+    app.dependency_overrides[get_settings] = lambda: Settings(x3d_backend="mcp", mcp_base_url=AnyHttpUrl(x3d_mcp_server))
     client = TestClient(app)
     session = project_service.create_project()
     body = {"expectedRevision": 0, "plan": _CREATE_CUBE_PLAN}

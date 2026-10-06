@@ -6,6 +6,10 @@ export type CadDesignOutcome =
   | { readonly mode: 'part'; readonly outcome: CadProgramOutcome }
   | { readonly mode: 'assembly'; readonly outcome: CadAssemblyOutcome }
 
+export function isCadClarification(result: CadProgramOutcome | CadAssemblyOutcome | CadDesignOutcome): boolean {
+  return ('outcome' in result ? result.outcome : result).kind === 'clarify'
+}
+
 const schema = {
   type: 'object', additionalProperties: false, required: ['kind', 'reason'],
   properties: { kind: { enum: ['part', 'assembly'] }, reason: { type: 'string' } },

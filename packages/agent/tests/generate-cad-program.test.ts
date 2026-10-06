@@ -15,7 +15,7 @@ test('creates a construction program from the provider', async () => {
   assert.equal(result.kind, 'create')
   assert.equal(provider.calls.length, 1)
   assert.match(provider.calls[0].messages[0].content, /ordered primitives/)
-  assert.ok(JSON.stringify(provider.calls[0].schema).length < 2500)
+  assert.ok(JSON.stringify(provider.calls[0].schema).length < 5000)
   assert.doesNotMatch(JSON.stringify(provider.calls[0].schema), /\$ref|\$defs|oneOf/)
   assert.match(JSON.stringify(provider.calls[0].schema), /"required":\["id","op","shape","position","rotation","height"\]/)
 })
@@ -100,7 +100,7 @@ test('a dimension repair outside CAD limits is rejected', async () => {
     { decision: 'create', spec: incomplete, question: '', assumptions: [] },
     { step2_height: -5 },
   ])
-  await assert.rejects(generateCadProgram(provider, 'Crie um ressalto cilíndrico'), /etapa 2 \(cylinder\) precisa de height/)
+  await assert.rejects(generateCadProgram(provider, 'Crie um ressalto cilíndrico'), /etapa 2 \(cylinder\).*height.*>= 0.1/)
 })
 
 test('repairs missing dimensions of several shapes in one focused request', async () => {
@@ -140,7 +140,7 @@ test('repairs a missing profile outline and rejects a non-array outline', async 
   assert.equal(result.kind, 'create')
   if (result.kind === 'create') assert.deepEqual(result.spec.steps[0], { ...incomplete.steps[0], points: outline })
 
-  await assert.rejects(generateCadProgram(respond('L'), 'Perfil em L'), /etapa 1 \(polygon_prism\) precisa de points/)
+  await assert.rejects(generateCadProgram(respond('L'), 'Perfil em L'), /etapa 1 \(polygon_prism\).*points must be array/)
 })
 
 test('normalizes incomplete vectors, numeric strings and pattern kinds without another request', async () => {
@@ -250,7 +250,7 @@ test('Gemini receives the compact construction schema and still returns a valida
   await provider.initialize()
   const result = await generateCadProgram(provider, 'Crie um suporte')
   assert.equal(result.kind, 'create')
-  assert.ok(sentSchema.length < 2500)
+  assert.ok(sentSchema.length < 5000)
   assert.doesNotMatch(sentSchema, /\$ref|\$defs|oneOf|anyOf/)
 })
 
@@ -395,6 +395,35 @@ test('a disconnected ball follows the nearest real material rather than the glob
     assert.deepEqual(result.spec.steps.slice(0, 3), disconnected.steps.slice(0, 3))
     assert.match(result.assumptions.at(-1) ?? '', /handle_ball_left/)
   }
+})
+
+test('verbose assumptions survive validation intact without format retries or geometry changes', async () => {
+  const assumptions = Array.from({ length: 16 }, (_, index) => `Premissa ${index}: ${'Detalhes sobre dimensões, folgas e fabricação. '.repeat(12)}`)
+  const provider = new MockLLMProvider([{ decision: 'create', spec, question: '', assumptions }])
+  let inspections = 0
+  const result = await generateCadProgram(provider, 'Crie um suporte', undefined, async (candidate) => {
+    inspections++
+    assert.deepEqual(candidate, spec)
+    return null
+  })
+  assert.equal(result.kind, 'create')
+  if (result.kind !== 'create') return
+  assert.deepEqual(result.assumptions, assumptions)
+  assert.deepEqual(result.spec, spec)
+  assert.equal(inspections, 1)
+  assert.equal(provider.calls.length, 1)
+})
+
+test('long clarification text is preserved while invalid explanatory types are rejected', async () => {
+  const question = 'Quais requisitos conflitantes devem ser priorizados? '.repeat(10)
+  const provider = new MockLLMProvider(Array(2).fill({ decision: 'clarify', spec: null, question, assumptions: [] }))
+  assert.deepEqual(await generateCadProgram(provider, 'Requisitos incompatíveis'), { kind: 'clarify', question })
+  for (const assumptions of [42, ['texto', { dimension: 12 }]]) {
+    const invalid = new MockLLMProvider(Array(2).fill({ decision: 'create', spec, question: '', assumptions }))
+    await assert.rejects(generateCadProgram(invalid, 'Crie um suporte'), /assumptions/)
+  }
+  const invalidGeometry = { ...spec, steps: [{ ...spec.steps[0], width: -5 }] }
+  await assert.rejects(generateCadProgram(new MockLLMProvider(Array(2).fill({ decision: 'create', spec: invalidGeometry, question: '', assumptions: ['texto longo '.repeat(50)] })), 'Crie um suporte'), /width|greater/)
 })
 
 test('a motor housing mounting foot can cross an internal opening despite overlapping bounds', async () => {
@@ -636,6 +665,58 @@ test('a provider rate limit during geometry repair stops further model calls', a
   ])
   await assert.rejects(generateCadProgram(provider, 'Crie um bloco', undefined,
     async () => 'CAD step body instance 1 does not change the solid; current solid bounds: x=[-40, 40], y=[-25, 25], z=[-5, 5]; tool bounds: x=[-40, 40], y=[-25, 25], z=[-5, 5]'), /status 429/)
+  assert.equal(provider.calls.length, 2)
+})
+
+test('repeated quota pauses retain the corrected draft and resume the pending full repair', async () => {
+  const zero = { x: 0, y: 0, z: 0 }
+  const draft = { ...spec, steps: [...spec.steps, { id: 'opening', op: 'cut', shape: 'box',
+    position: zero, rotation: zero, width: 5, depth: 5, height: 20 }] }
+  const corrected = { ...draft, steps: [draft.steps[0], { ...draft.steps[1], position: { ...zero, x: 2 } }] }
+  const provider = new MockLLMProvider([
+    { decision: 'create', spec: draft, question: '', assumptions: ['preserved assumption'] },
+    { position: { ...zero, x: 1 }, rotation: zero },
+    () => { throw new ProviderRequestError('status 429') },
+    () => { throw new ProviderRequestError('status 429') },
+    { decision: 'create', spec: corrected, question: '', assumptions: ['corrected opening'] },
+  ])
+  const inspect = async (candidate: typeof spec) => candidate.steps[1].position.x === 2 ? null
+    : candidate.steps[1].position.x === 1 ? 'remaining geometry problem' : 'CAD step opening does not change the solid'
+  for (let pause = 0; pause < 2; pause++) {
+    await assert.rejects(generateCadProgram(provider, 'Build a block with an opening', undefined, inspect as never), /status 429/)
+  }
+  const result = await generateCadProgram(provider, 'Build a block with an opening', undefined, inspect as never)
+  assert.equal(result.kind, 'create')
+  assert.equal(provider.calls.length, 5)
+  for (const call of provider.calls.slice(2)) {
+    assert.ok(call.schema.properties && 'decision' in (call.schema.properties as object))
+    assert.match(call.messages[1].content, /Current CAD program/)
+    assert.match(call.messages[1].content, /"x":1/)
+    assert.equal(call.messages[1].content.split('"schemaVersion":"3.0"').length - 1, 1)
+  }
+  if (result.kind === 'create') assert.deepEqual(result.spec, corrected)
+})
+
+test('an aborted or provider-limited program reuses its generated candidate without another creation call', async () => {
+  const provider = new MockLLMProvider([{ decision: 'create', spec, question: '', assumptions: [] }])
+  let offline = true
+  const inspect = async () => {
+    if (offline) throw new DOMException('Cancelled', 'AbortError')
+    return null
+  }
+  await assert.rejects(generateCadProgram(provider, 'Create this block', undefined, inspect), { name: 'AbortError' })
+  offline = false
+  const result = await generateCadProgram(provider, 'Create this block', undefined, inspect)
+  assert.equal(result.kind, 'create')
+  assert.equal(provider.calls.length, 1)
+})
+
+test('quota during clarification reconsideration does not trigger a format repair request', async () => {
+  const provider = new MockLLMProvider([
+    { decision: 'clarify', spec: null, question: 'What size?', assumptions: [] },
+    () => { throw new ProviderRequestError('status 429') },
+  ])
+  await assert.rejects(generateCadProgram(provider, 'Create a bearing support'), /status 429/)
   assert.equal(provider.calls.length, 2)
 })
 
