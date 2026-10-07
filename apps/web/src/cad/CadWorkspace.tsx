@@ -14,6 +14,9 @@ import type { CadProgressStatus } from './CadAssemblyProgressView.tsx'
 import { useCadPreview } from './useCadPreview.ts'
 import './CadWorkspace.css'
 import { ProviderRequestError } from '../../../../packages/agent/src/provider.ts'
+import type { CadDraftSnapshot } from '../../../../packages/domain/ts/src/cad-draft.ts'
+import { readCadDraft, storeCadDraft, clearCadDraft } from './cadDraftStorage.ts'
+import CadDraftPanel from './CadDraftPanel.tsx'
 
 interface Props {
   readonly provider: AgentProvider
@@ -38,13 +41,21 @@ export default function CadWorkspace({ provider, active, ready, agentDetail, onO
   const [recoveryError, setRecoveryError] = useState<string | null>(null)
   const [recovered, setRecovered] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [draft, setDraft] = useState<CadDraftSnapshot | null>(readCadDraft)
+  const [draftPersistenceFailed, setDraftPersistenceFailed] = useState(false)
   const [requireMechanics, setRequireMechanics] = useState(() => localStorage.getItem('modeler:cad-mechanics') !== 'concept')
-  const programPreview = useCadPreview(program, active && recovered && editor === 'program' && !busy)
-  const assemblyPreview = useCadPreview(assembly, active && recovered && editor === 'assembly' && !busy)
-  const preview = editor === 'program' ? programPreview : assemblyPreview
+  const currentProject = editor === 'program' ? programProject : assemblyProject
+  const currentSpec = draft?.spec ?? (editor === 'program' ? program : assembly)
+  const dirty = !currentProject || JSON.stringify(currentProject.spec) !== JSON.stringify(currentSpec)
+  const exportableDraft = draft ?? (dirty && currentSpec &&
+    (currentSpec.schemaVersion === '4.0' || JSON.stringify(currentSpec) !== JSON.stringify(initialCadProgram))
+    ? { spec: currentSpec, request: '' } : null)
+  const preview = useCadPreview(currentSpec, active && recovered && !busy, !!draft || dirty)
+  const discardDraft = () => { setDraft(null); clearCadDraft(); setDraftPersistenceFailed(false) }
 
   useEffect(() => () => agent.cancelGeneration(), [agent])
   useEffect(() => { agent.setProvider(provider) }, [agent, provider])
+  useEffect(() => { agent.setDraftListener((snapshot) => { setDraft(snapshot); setDraftPersistenceFailed(!storeCadDraft(snapshot)) }) }, [agent])
   useEffect(() => { localStorage.setItem('modeler:cad-editor', editor) }, [editor])
   useEffect(() => {
     if (!active || recovered) return
@@ -85,11 +96,10 @@ export default function CadWorkspace({ provider, active, ready, agentDetail, onO
   const receiveAssembly = async (outcome: Extract<CadAssemblyOutcome, { kind: 'create' }>) => {
     const saved = await api.saveCadAssembly(outcome.spec)
     agent.clearCompletedGeneration()
+    discardDraft()
     setAssemblyProject(saved); setAssembly(saved.spec); setAssumptions(outcome.assumptions); setEditor('assembly')
   }
   const cancel = () => { agent.cancelGeneration(); setProgressStatus('cancelled') }
-  const currentProject = editor === 'program' ? programProject : assemblyProject
-  const currentSpec = editor === 'program' ? program : assembly
 
   return <div className="cad-workspace" hidden={!active}>
     <aside className="cad-workspace__sidebar">
@@ -102,14 +112,20 @@ export default function CadWorkspace({ provider, active, ready, agentDetail, onO
       {!ready && <p className="cad-workspace__notice" role="status">{agentDetail || 'A IA está sendo preparada. Você já pode editar a geometria manualmente.'}</p>}
       {recoveryError && <p className="cad-workspace__notice" role="alert">{recoveryError}</p>}
       {!recovered && <p className="cad-workspace__notice" role="status">Recuperando seus projetos…</p>}
-      <div hidden={!recovered || editor !== 'program'}><CadProgramPanel spec={program} project={programProject} onChange={setProgram} onSaved={(saved) => { setProgramProject(saved); agent.clearCompletedGeneration() }}
+      {exportableDraft && <CadDraftPanel draft={exportableDraft} busy={busy} persistenceFailed={draftPersistenceFailed} />}
+      <div hidden={!recovered || editor !== 'program'}><CadProgramPanel spec={program} project={programProject} onChange={(spec) => { discardDraft(); setProgram(spec) }} onSaved={(saved) => { setProgramProject(saved); agent.clearCompletedGeneration(); discardDraft() }}
         onBusyChange={reportBusy}
-        onNew={() => { api.clearActiveCadProgram(); setProgramProject(null); setProgram(initialCadProgram); clearProgress() }}
+        onNew={() => { api.clearActiveCadProgram(); setProgramProject(null); setProgram(initialCadProgram); clearProgress(); discardDraft() }}
         planDesign={planDesign} onAssemblyGenerated={receiveAssembly} agentReady={ready} onOpenProviderSettings={onOpenProviderSettings}
         cadProgress={progress} cadProgressStatus={progressStatus} cadProgressUpdatedAt={updatedAt} onRequestChanged={clearProgress} cancelGeneration={cancel} /></div>
-      <div hidden={!recovered || editor !== 'assembly'}><CadAssemblyPanel spec={assembly} project={assemblyProject} onChange={setAssembly} onSaved={(saved) => { setAssemblyProject(saved); agent.clearCompletedGeneration() }}
+      <div hidden={!recovered || editor !== 'assembly'}><CadAssemblyPanel spec={assembly} project={assemblyProject} onChange={(spec) => {
+        setAssembly(spec)
+        if (draft?.spec.partId === spec.partId) {
+          const next = { ...draft, spec }; setDraft(next); setDraftPersistenceFailed(!storeCadDraft(next))
+        } else discardDraft()
+      }} onSaved={(saved) => { setAssemblyProject(saved); agent.clearCompletedGeneration(); discardDraft() }}
         onBusyChange={reportBusy}
-        onNew={() => { api.clearActiveCadAssembly(); setAssemblyProject(null); setAssembly(null); setAssumptions([]); clearProgress() }}
+        onNew={() => { api.clearActiveCadAssembly(); setAssemblyProject(null); setAssembly(null); setAssumptions([]); clearProgress(); discardDraft() }}
         plan={planAssembly} repair={repairAssembly} correctMechanics={correctMechanics} requireMechanics={requireMechanics}
         agentReady={ready} onOpenProviderSettings={onOpenProviderSettings} initialAssumptions={assumptions}
         cadProgress={progress} cadProgressStatus={progressStatus} cadProgressUpdatedAt={updatedAt} onRequestChanged={clearProgress} cancelGeneration={cancel} /></div>
@@ -117,7 +133,7 @@ export default function CadWorkspace({ provider, active, ready, agentDetail, onO
     <section className="cad-workspace__viewer" aria-label="Visualização CAD">
       <div className="cad-workspace__viewer-heading"><div><span className="workspace-eyebrow">GEOMETRIA CAD · MILÍMETROS</span>
         <h2>{currentSpec?.partId ?? 'Seu próximo projeto começa aqui'}</h2></div>
-        <span className="workspace-badge">{editor === 'assembly' ? `${assembly?.components.length ?? 0} componentes` : `${program.steps.length} operações`}</span>
+        <span className="workspace-badge">{currentSpec?.schemaVersion === '4.0' ? `${currentSpec.components.length} componentes` : `${currentSpec?.steps.length ?? 0} operações`}</span>
       </div>
       <div className="cad-workspace__canvas">
         <CadMeshView mesh={preview.mesh} />
@@ -125,8 +141,9 @@ export default function CadWorkspace({ provider, active, ready, agentDetail, onO
           <h2>Descreva. Construa. Exporte.</h2><p>O agente constrói cada componente, verifica os sólidos e prepara os arquivos STEP e STL.</p></div>}
       </div>
       {preview.error && <p className="cad-workspace__notice" role="alert">{preview.error}{preview.stale ? ' A prévia mantém a última geometria válida.' : ''}</p>}
+      {preview.mesh?.draftReport && <p className="cad-workspace__notice" role="status">Prévia do rascunho · montagem não aprovada.{preview.mesh.draftReport.partial ? ' Algumas etapas ou peças foram omitidas; consulte o relatório da exportação.' : ''}</p>}
       {preview.pending && <p className="cad-workspace__notice" role="status">Atualizando a geometria da prévia…</p>}
-      <footer className="cad-workspace__footer"><span>{currentProject ? `Revisão ${currentProject.revision} salva` : 'Rascunho · salve para exportar'}</span>
+      <footer className="cad-workspace__footer"><span>{dirty || draft ? 'Rascunho · geometria disponível para exportação' : currentProject ? `Revisão ${currentProject.revision} salva` : 'Rascunho'}</span>
         <span>{preview.mesh ? preview.mesh.boundsMm.map((value) => value.toFixed(1)).join(' × ') + ' mm' : 'STEP + STL'}</span>
       </footer>
     </section>

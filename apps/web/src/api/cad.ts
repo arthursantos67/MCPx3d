@@ -2,6 +2,7 @@ import { type CadProgramSpec, validateCadProgram } from "../../../../packages/do
 import { type CadAssemblySpec, validateCadAssembly } from "../../../../packages/domain/ts/src/cad-assembly.ts";
 import { ApiError, baseUrl, throwCadApiError, downloadBlob } from "./http.ts";
 import { readAssemblyIssue, type CadAssemblyCheckResult } from "../../../../packages/domain/ts/src/cad-assembly-diagnostics.ts";
+import { validateCadDraft, type CadDraftSnapshot, type CadDraftSpec } from '../../../../packages/domain/ts/src/cad-draft.ts'
 
 export interface CadInspection {
   readonly partId: string;
@@ -30,6 +31,27 @@ export interface CadProgramMesh {
   readonly triangles: readonly (readonly [number, number, number])[];
   readonly boundsMm: readonly [number, number, number];
   readonly components?: readonly { readonly id: string; readonly triangles: number; readonly volumeMm3: number }[];
+  readonly draftReport?: { readonly partial: boolean; readonly message: string; readonly components: readonly {
+    readonly id: string; readonly status: 'complete' | 'partial' | 'omitted'; readonly issue: string | null
+    readonly omittedStepIds: readonly string[]
+  }[] }
+}
+
+export async function meshCadDraft(spec: CadDraftSpec, signal?: AbortSignal): Promise<CadProgramMesh> {
+  const response = await fetch(`${baseUrl()}/api/cad/drafts/mesh`, { signal, method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ spec }) })
+  if (!response.ok) return throwCadApiError(response)
+  return await response.json() as CadProgramMesh
+}
+
+export async function downloadCadDraftBundle(draft: CadDraftSnapshot): Promise<void> {
+  validateCadDraft(draft)
+  const response = await fetch(`${baseUrl()}/api/cad/drafts/export`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(draft) })
+  if (!response.ok) return throwCadApiError(response)
+  downloadBlob(await response.blob(), `${draft.spec.partId}-rascunho.zip`)
+}
+
+export function downloadCadDraftJson(draft: CadDraftSnapshot): void {
+  downloadBlob(new Blob([JSON.stringify(draft.spec, null, 2)], { type: 'application/json' }), `${draft.spec.partId}-rascunho.json`)
 }
 
 const CAD_PROGRAM_KEY = "ai-web3d:cad-program";

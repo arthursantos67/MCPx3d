@@ -83,6 +83,15 @@ export type CadProgramOutcome =
   | { readonly kind: 'create'; readonly spec: CadProgramSpec; readonly assumptions: readonly string[] }
   | { readonly kind: 'clarify'; readonly question: string }
 
+export class CadProgramValidationError extends ProviderRequestError {
+  readonly spec: CadProgramSpec
+  constructor(message: string, spec: CadProgramSpec) {
+    super(message)
+    this.name = 'CadProgramValidationError'
+    this.spec = structuredClone(spec)
+  }
+}
+
 const axes = ['x', 'y', 'z'] as const
 type Axis = typeof axes[number]
 type SolidBounds = Record<Axis, { min: number; max: number }>
@@ -130,7 +139,7 @@ function normalizeGeneratedResponse(raw: unknown): unknown {
   const steps = spec.steps.map((candidate: unknown) => {
     if (typeof candidate !== 'object' || candidate === null || Array.isArray(candidate)) return candidate
     const step = candidate as Record<string, unknown>
-    const shape = String(step.shape)
+    const shape = String(step.shape).trim().toLowerCase()
     const dimensions = shapeFields[shape]
     const feature = shape in CAD_FEATURES ? CAD_FEATURES[shape as keyof typeof CAD_FEATURES] : undefined
     if (!dimensions || !feature) return candidate
@@ -141,8 +150,13 @@ function normalizeGeneratedResponse(raw: unknown): unknown {
           : field === 'points' && Array.isArray(value) ? value.map(normalizePoint)
           : allShapeFields.has(field) ? numeric(value)
           : value]))
-    if (step.shape === 'thread' && normalized.starts == null) normalized.starts = 1
-    if (step.shape === 'loft') {
+    normalized.shape = shape
+    if (typeof step.op === 'string') normalized.op = step.op.trim().toLowerCase()
+    for (const field of ['selector', 'holeType', 'profile', 'handedness']) {
+      if (typeof normalized[field] === 'string') normalized[field] = normalized[field].trim().toLowerCase()
+    }
+    if (shape === 'thread' && normalized.starts == null) normalized.starts = 1
+    if (shape === 'loft') {
       normalized.ruled ??= false
       if (Array.isArray(step.sections)) normalized.sections = step.sections.map((section: unknown) => {
         if (typeof section !== 'object' || section === null || Array.isArray(section)) return section
@@ -310,6 +324,9 @@ interface CadProgramGenerationOptions {
   readonly onGeneration?: () => void
   readonly assemblyComponent?: boolean
   readonly noQuestions?: boolean
+  readonly maxRepairAttempts?: number
+  readonly onDraft?: (spec: CadProgramSpec, issue?: string) => void
+  readonly localRepair?: (spec: CadProgramSpec, issue: string, inspect: (spec: CadProgramSpec) => Promise<string | null>) => Promise<{ spec: CadProgramSpec; issue: string | null; assumption: string } | null>
 }
 
 export async function generateCadProgram(
@@ -319,11 +336,12 @@ export async function generateCadProgram(
 ): Promise<CadProgramOutcome> {
   let store = programCheckpoints.get(provider)
   if (!store) { store = new Map(); programCheckpoints.set(provider, store) }
-  const key = JSON.stringify([request, previous, options?.maxOutputTokens, options?.assemblyComponent, options?.noQuestions])
+  const key = JSON.stringify([request, previous, options?.maxOutputTokens, options?.assemblyComponent, options?.noQuestions, options?.maxRepairAttempts])
   const resume = store.get(key)
   const remember = (checkpoint: ProgramCheckpoint) => {
     store!.set(key, structuredClone(checkpoint))
     if (store!.size > 8) store!.delete(store!.keys().next().value!)
+    options?.onDraft?.(checkpoint.current.spec)
   }
   const inspect = checkGeometry && provider.generationPolicy ? async (spec: CadProgramSpec) => {
     try { return await checkGeometry(spec) }
@@ -352,7 +370,7 @@ async function buildCadProgram(
   const maxOutputTokens = options?.maxOutputTokens ?? 9000
   const generate = (description: string, existing: CadProgramSpec | undefined, allowCutRemoval: boolean) => {
     options?.onGeneration?.()
-    return generateOnce(provider, description, existing, allowCutRemoval, maxOutputTokens, options?.assemblyComponent, options?.noQuestions)
+    return generateOnce(provider, description, existing, allowCutRemoval, maxOutputTokens, options?.assemblyComponent, options?.noQuestions, (options?.maxRepairAttempts ?? 0) > 0)
   }
   const previousIssue = !resume && previous && checkGeometry ? await checkGeometry(previous) : null
   const generationRequest = previousIssue
@@ -362,13 +380,14 @@ async function buildCadProgram(
   if (outcome.kind !== 'create' || !checkGeometry) return outcome
   let current: Extract<CadProgramOutcome, { kind: 'create' }> = outcome
   let attempts = resume?.attempts ?? 0
-  const limitedRepairs = provider.generationPolicy?.maxCadRepairAttempts
+  const limitedRepairs = options?.maxRepairAttempts ?? provider.generationPolicy?.maxCadRepairAttempts
+  if (limitedRepairs !== undefined && (!Number.isInteger(limitedRepairs) || limitedRepairs < 0 || limitedRepairs > 8)) throw new Error('Orçamento de reparos CAD inválido')
   const attemptLimit = limitedRepairs === undefined ? 8 : attempts + limitedRepairs
   let phase = resume?.phase ?? 'focused'
   const failedCandidates = resume?.failedCandidates ?? []
   const saveProgress = () => remember?.({ current, attempts, phase, failedCandidates })
   const rememberFailure = (spec: CadProgramSpec, issue: string | null) => {
-    if (issue && failedFinish(spec, issue) && !failedCandidates.some((entry) => JSON.stringify(entry.spec) === JSON.stringify(spec))) {
+    if (issue && (failedFinish(spec, issue) || options?.maxRepairAttempts !== undefined) && !failedCandidates.some((entry) => JSON.stringify(entry.spec) === JSON.stringify(spec))) {
       failedCandidates.push({ spec, issue })
       if (failedCandidates.length > 16) failedCandidates.shift()
       saveProgress()
@@ -383,10 +402,12 @@ async function buildCadProgram(
   }
   saveProgress()
   let issue = await checkGeometry(current.spec)
+  options?.onDraft?.(current.spec, issue ?? undefined)
   rememberFailure(current.spec, issue)
   const repairLocally = async () => {
     for (let remaining = current.spec.steps.length; issue && remaining > 0; remaining--) {
-      const moved = await repairFinishLocally(current.spec, request, issue, inspectFinishCandidate)
+      const moved = await options?.localRepair?.(current.spec, issue, inspectFinishCandidate)
+        ?? await repairFinishLocally(current.spec, request, issue, inspectFinishCandidate)
         ?? await repairNoOpPattern(current.spec, issue, checkGeometry)
         ?? await repairMissedThroughCut(current.spec, request, issue, checkGeometry)
         ?? await repairSeparatedUnion(current.spec, request, issue, checkGeometry)
@@ -446,21 +467,27 @@ async function buildCadProgram(
         : ''
       const finishGuidance = failedFinish(current.spec, issue)
         ? `The finish must remain in the program. circular/all selects small shoulder, bore and thread edges too; choose suitable directional edges in component coordinates or finish before threading when the intended material is already built. Reduce only inferred sizes. Do not repeat failed selector/size/order combinations:\n${finishRepairHistory(failedCandidates)}` : ''
-      const correction = `${request}\n\nThe CAD engine rejected the current program: ${issue}. ${baseGuidance} ${patternGuidance} ${cutGuidance} ${finishGuidance} Fix the failed step and any dependencies, preserving every requested feature, dimension and the part ID. A union must intersect existing material by positive volume. A cut must remove positive volume without splitting the remaining solid. If an unrequested earlier cut, opening or clearance prevents this, you may remove or revise that step instead of moving a requested feature away from its intended location. Return a complete corrected program.`
+      const historyGuidance = options?.maxRepairAttempts !== undefined ? `Previously rejected candidates; change the failing geometry rather than returning any of these unchanged:\n${failedCandidates.slice(-4).map(({ spec, issue }) => `${issue}\nFailed feature: ${JSON.stringify(spec.steps.find((step) => step.id === /^CAD step ([A-Za-z0-9_-]+)/.exec(issue)?.[1]) ?? spec.steps)}`).join('\n')}` : ''
+      const correction = `${request}\n\nThe CAD engine rejected the current program: ${issue}. ${baseGuidance} ${patternGuidance} ${cutGuidance} ${finishGuidance} ${historyGuidance} Fix the failed step and any dependencies, preserving every requested feature, dimension and the part ID. A union must intersect existing material by positive volume. A cut must remove positive volume without splitting the remaining solid. If an unrequested earlier cut, opening or clearance prevents this, you may remove or revise that step instead of moving a requested feature away from its intended location. Return a complete corrected program.`
       const revised = await generate(correction, current.spec, true).catch(ignoreInvalidCorrection)
       attempts++
       phase = 'focused'
       if (revised?.kind === 'create') {
+        if (options?.maxRepairAttempts !== undefined && failedCandidates.some((entry) => JSON.stringify(entry.spec) === JSON.stringify(revised.spec))) { saveProgress(); continue }
         current = revised
         saveProgress()
-        issue = failedFinish(current.spec, issue) ? await inspectFinishCandidate(current.spec) : await checkGeometry(current.spec)
+        issue = failedFinish(current.spec, issue) || options?.maxRepairAttempts !== undefined ? await inspectFinishCandidate(current.spec) : await checkGeometry(current.spec)
+        options?.onDraft?.(current.spec, issue ?? undefined)
       }
       saveProgress()
     }
     await repairLocally()
-    if (JSON.stringify(current.spec) === startingSpec) break
+    if (JSON.stringify(current.spec) === startingSpec && (options?.maxRepairAttempts === undefined || attempts >= attemptLimit)) break
   }
-  if (issue && limitedRepairs !== undefined) throw new ProviderRequestError(`A peça ainda não passou na validação após a tentativa de correção permitida. O rascunho foi conservado nesta aba. Retome o mesmo pedido para tentar apenas a correção pendente. Última falha: ${issue}`)
+  if (issue && limitedRepairs !== undefined) {
+    options?.onDraft?.(current.spec, issue)
+    throw new CadProgramValidationError(`A peça ainda não passou na validação após as ${limitedRepairs} correções permitidas nesta ação. O rascunho foi conservado nesta aba. Retome o mesmo pedido para tentar apenas a correção pendente. Última falha: ${issue}`, current.spec)
+  }
   if (issue) throw new Error(`A geração automática não conseguiu validar a peça. O rascunho anterior foi preservado. Última falha: ${issue}`)
   return current
 }
@@ -713,7 +740,7 @@ function vectorHintValid(value: unknown): value is { x: number; y: number; z: nu
   return ['x', 'y', 'z'].every((axis) => typeof vector[axis] === 'number' && Number.isFinite(vector[axis]))
 }
 
-async function generateOnce(provider: LLMProvider, request: string, previous?: CadProgramSpec, allowCutRemoval = false, maxOutputTokens = 9000, assemblyComponent = false, noQuestions = false): Promise<CadProgramOutcome> {
+async function generateOnce(provider: LLMProvider, request: string, previous?: CadProgramSpec, allowCutRemoval = false, maxOutputTokens = 9000, assemblyComponent = false, noQuestions = false, allowFormatRepair = false): Promise<CadProgramOutcome> {
   if (!request.trim()) throw new Error('Describe the CAD part first')
   const incremental = !!previous && !!provider.generationPolicy
   const outputSchema = incremental ? editGenerationSchema : generationSchema
@@ -756,7 +783,7 @@ async function generateOnce(provider: LLMProvider, request: string, previous?: C
     return parseOutcome(candidate, previous, request, allowCutRemoval)
   } catch (error) {
     if (error instanceof ProviderRequestError || (error instanceof DOMException && error.name === 'AbortError')) throw error
-    if (provider.generationPolicy?.retryInvalidStructuredOutput === false) {
+    if (provider.generationPolicy?.retryInvalidStructuredOutput === false && !allowFormatRepair) {
       throw new ProviderRequestError(`O cliente local devolveu um programa que não atende ao contrato CAD. Nenhuma nova chamada foi feita para corrigir o formato. Retome o mesmo pedido nesta aba. ${error instanceof Error ? error.message : 'Resposta inválida.'}`, { cause: error })
     }
     const issue = error instanceof Error ? error.message : 'Invalid CAD program response'

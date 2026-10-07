@@ -1,6 +1,6 @@
 import { type CadAssemblySpec, type CadMotion, validateCadAssembly } from '../../domain/ts/src/cad-assembly.ts'
 import type { CadProgramSpec } from '../../domain/ts/src/cad-program.ts'
-import { generateCadProgram } from './generate-cad-program.ts'
+import { generateCadProgram, CadProgramValidationError } from './generate-cad-program.ts'
 import { ProviderRequestError, type LLMProvider } from './provider.ts'
 import { assemblyIssueMessage, type CadAssemblyCheckResult } from '../../domain/ts/src/cad-assembly-diagnostics.ts'
 import { reducesInterference, repairAssemblyLocally } from './assembly-repair.ts'
@@ -10,7 +10,10 @@ import { motionClearanceStrategy } from './assembly-motion-clearance.ts'
 import { cadResponseMetadataSchema, isCadResponseMetadata } from './cad-response-metadata.ts'
 import { validateMechanicalReferences, type CadMechanics } from '../../domain/ts/src/cad-mechanics.ts'
 import { generateCadDecision } from './cad-autonomy.ts'
-import { mechanicalFitIssue } from './cad-mating.ts'
+import { mechanicalFitIssue, matingContext, repairMechanicalFitLocally } from './cad-mating.ts'
+import type { CadDraftListener } from '../../domain/ts/src/cad-draft.ts'
+import { requestedCadComponentCount } from './cad-component-count.ts'
+import { CadDraftGenerationError } from './cad-draft-generation.ts'
 
 const mechanicsSchema = { type: 'object', additionalProperties: false, required: ['grounded', 'connections'], properties: {
   grounded: { type: 'string' }, connections: { type: 'array', minItems: 1, maxItems: 24, items: {
@@ -103,6 +106,8 @@ interface AssemblyCheckpoint {
   readonly components: CadAssemblySpec['components'][number][]
   readonly assumptions: string[]
   readonly clarification?: { readonly componentId: string; readonly question: string }
+  readonly componentFailures?: Record<string, string>
+  readonly needsMechanicalPlan?: boolean
 }
 
 const checkpoints = new WeakMap<LLMProvider, Map<string, AssemblyCheckpoint>>()
@@ -141,6 +146,8 @@ export interface CadAssemblyProgress {
     'checking-assembly' | 'repairing-assembly' | 'complete'
   readonly components: readonly { readonly id: string; readonly action: 'keep' | 'build' }[]
   readonly completed: number
+  readonly completedComponentIds?: readonly string[]
+  readonly failedComponentIds?: readonly string[]
   readonly componentIndex?: number
   readonly validationAttempt?: number
   readonly resumed?: boolean
@@ -149,7 +156,7 @@ export interface CadAssemblyProgress {
 
 export type CadAssemblyProgressListener = (progress: CadAssemblyProgress) => void
 
-function parsePlan(raw: unknown, previous?: CadAssemblySpec, requireMechanics = false): AssemblyPlan {
+function parsePlan(raw: unknown, previous?: CadAssemblySpec, requireMechanics = false, expectedCount?: number, allowUnverifiedDrafts = false): AssemblyPlan {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('Plano de conjunto CAD inválido')
   const plan = raw as AssemblyPlan
   if (!isCadResponseMetadata(plan)) throw new Error('Metadados do conjunto CAD inválidos: question deve ser texto e assumptions uma lista de textos')
@@ -158,6 +165,7 @@ function parsePlan(raw: unknown, previous?: CadAssemblySpec, requireMechanics = 
     (previous && plan.partId !== previous.partId) ||
     !Array.isArray(plan.components) || plan.components.length < 2 || plan.components.length > 8 ||
     !Array.isArray(plan.assumptions)) throw new Error('Plano de conjunto CAD inválido')
+  if (expectedCount !== undefined && plan.components.length !== expectedCount) throw new Error(`O pedido exige exatamente ${expectedCount} corpos físicos modelados; o plano devolveu ${plan.components.length}. Corrija a decomposição antes de construir peças.`)
   const ids = new Set<string>()
   let fixed = 0
   for (const component of plan.components) {
@@ -181,8 +189,8 @@ function parsePlan(raw: unknown, previous?: CadAssemblySpec, requireMechanics = 
   }
   if (!fixed) throw new Error('O conjunto precisa de uma peça fixa')
   if (previous?.mechanics && !plan.mechanics) throw new Error('A edição não pode descartar os vínculos mecânicos existentes')
-  if (requireMechanics && !plan.mechanics) throw new Error('O plano precisa declarar mechanics: peça ancorada e vínculos de fixação, guias, mancais e transmissão. Uma lista de movimentos não comprova montagem funcional.')
-  if (requireMechanics && plan.components.some((component) => component.motion.kind === 'screw')) throw new Error('A verificação mecânica ainda não suporta movimento helicoidal de um corpo. Para um atuador, use fuso rotary estacionário e carro slider guiado; mecanismos que exigem screw precisam de esclarecimento.')
+  if (requireMechanics && !plan.mechanics && !allowUnverifiedDrafts) throw new Error('O plano precisa declarar mechanics: peça ancorada e vínculos de fixação, guias, mancais e transmissão. Uma lista de movimentos não comprova montagem funcional.')
+  if (requireMechanics && !allowUnverifiedDrafts && plan.components.some((component) => component.motion.kind === 'screw')) throw new Error('A verificação mecânica ainda não suporta movimento helicoidal de um corpo. Para um atuador, use fuso rotary estacionário e carro slider guiado; mecanismos que exigem screw precisam de esclarecimento.')
   const normalized = normalizeLinkedMotionGroups(plan)
   for (const component of normalized.components) {
     const movement = component.motion
@@ -350,6 +358,8 @@ async function repairAssemblyCollision(
   checkAssembly: (spec: CadAssemblySpec) => Promise<CadAssemblyCheckResult>,
   onActivity?: (activity: NonNullable<CadAssemblyProgress['activity']>) => void,
   noQuestions = false,
+  maxRepairAttempts?: number,
+  onDraft?: (components: CadAssemblySpec['components'], issue?: string, pendingComponentId?: string) => void,
 ): Promise<CadAssemblyOutcome | { kind: 'progress'; spec: CadAssemblySpec; issue: CadAssemblyCheckResult; assumptions: readonly string[] } | null> {
   const issue = assemblyIssueMessage(initialIssue)!
   const targetId = collisionTarget(spec, issue)
@@ -378,7 +388,8 @@ async function repairAssemblyCollision(
     'Preserve the external mounting geometry, component identity and one connected solid. Infer a sensible ordinary clearance when none was specified. Return the complete corrected CAD program.',
   ].join('\n\n')
   const outcome = await generateCadProgram(provider, correction, current, inspect, {
-    maxOutputTokens: 3500, onGeneration: () => onActivity?.('generating-correction'), noQuestions,
+    maxOutputTokens: 6500, onGeneration: () => onActivity?.('generating-correction'), noQuestions, maxRepairAttempts,
+    onDraft: (candidate, issue) => onDraft?.(replace(candidate).components, issue, targetId),
   })
   if (outcome.kind === 'clarify') return { kind: 'clarify', question: `${targetId}: ${outcome.question}` }
   const revised = replace(outcome.spec)
@@ -402,7 +413,7 @@ export async function generateCadAssembly(
   previous?: CadAssemblySpec,
   onProgress?: CadAssemblyProgressListener,
   repairAttempt = 0,
-  options?: { readonly repairOnly?: boolean; readonly requireMechanics?: boolean; readonly noQuestions?: boolean },
+  options?: { readonly repairOnly?: boolean; readonly requireMechanics?: boolean; readonly noQuestions?: boolean; readonly maxRepairAttempts?: number; readonly onDraft?: CadDraftListener; readonly allowUnverifiedDrafts?: boolean },
 ): Promise<CadAssemblyOutcome> {
   if (!request.trim()) throw new Error('Descreva o conjunto CAD')
   if (options?.requireMechanics && !checkAssembly) throw new Error('A criação mecânica exige verificação do conjunto no motor CAD')
@@ -423,7 +434,9 @@ export async function generateCadAssembly(
   const instructions = [
     'Plan a real mechanical CAD assembly in millimeters. A recognizable object needs no routine dimensions from the user: infer useful values and list assumptions.',
     'Decompose it into 2–8 physically separate, individually connected solid components. Never fuse parts that must move relative to each other.',
+    'Respect an explicitly requested component count exactly, counting modeled physical bodies rather than holes/features or unmodeled commercial hardware. The complete assembly has at most 128 construction steps, with at most 32 per component; use patterns and plan a practical feature budget across all bodies.',
     'Give each component a detailed local-geometry description, with dimensions, holes, clearances and its intended absolute position. Its construction steps will be generated separately; local coordinates should be centered near the component origin.',
+    'Choose one global assembly datum and a principal motion axis. Build anchoring/reference geometry before dependent parts. Component position is its local origin in the assembly, not a feature offset; state local feature coordinates separately. Derive fixed contact from opposing faces, journal/bore engagement from intersecting axial intervals and wall thickness from cavity radius plus axis offset. Before prescribing a dimension, check the entire travel envelope. Never independently invent mating dimensions for opposite sides of the same connection. Design simple connected stock and critical interfaces first, real threads next, selective cosmetic finishes last only where the kernel supports them.',
     'Define consistent mating envelopes across components. A housing around another body needs a real cavity or bore larger than the enclosed body. Stationary components may touch at interfaces but must not occupy the same solid volume; moving components need clearance throughout travel.',
     'Treat dimensions inferred by this plan as adjustable design choices, not user constraints. Compute matching global shaft/journal and bore intervals before prescribing local positions. Resolve inconsistencies in your own inferred layout without asking authorization; preserve dimensions explicitly required by the original user. Record fit decisions and assumptions.',
     options?.requireMechanics
@@ -443,15 +456,29 @@ export async function generateCadAssembly(
     ? `Current assembly: ${JSON.stringify(previous)}\n\nRequested change: ${request}`
     : request
   const planMaxTokens = options?.requireMechanics || previous?.mechanics ? 4500 : 3000
-  const key = JSON.stringify([userRequest, repairAttempt, options?.repairOnly ? 'repair-only' : 'plan', options?.requireMechanics ?? false, options?.noQuestions ?? false])
+  const key = JSON.stringify([userRequest, repairAttempt, options?.repairOnly ? 'repair-only' : 'plan', options?.requireMechanics ?? false,
+    options?.noQuestions ?? false, options?.allowUnverifiedDrafts ?? false, options?.maxRepairAttempts ?? null])
   const store = checkpointStore(provider)
-  const checkpoint = store.get(key)
+  let checkpoint = store.get(key)
   let plan: AssemblyPlan
   onProgress?.({ phase: options?.repairOnly ? 'checking-assembly' : 'planning',
     components: checkpoint?.plan.components ?? (options?.repairOnly ? previous!.components.map(({ id }) => ({ id, action: 'keep' as const })) : []),
     completed: checkpoint?.components.length ?? (options?.repairOnly ? previous!.components.length : 0),
     resumed: !!checkpoint, replanning: repairAttempt > 0 })
-  if (checkpoint) plan = checkpoint.plan
+  if (checkpoint?.needsMechanicalPlan) {
+    const available: CadAssemblySpec = { schemaVersion: '4.0', units: 'mm', partId: checkpoint.plan.partId,
+      components: checkpoint.components }
+    plan = parsePlan(await generateCadDecision(provider, [
+      { role: 'system', content: instructions }, { role: 'user', content: userRequest },
+      { role: 'user', content: `The available draft lacks the required mechanical connections. Complete the verified mechanics plan using these available bodies: ${JSON.stringify(available)}. Keep all unrelated geometry with action=keep; build only bodies whose geometry must change to make the assembly functional. Return the complete connected mechanics contract and preserve every component ID.` },
+    ], schema, { temperature: 0, maxTokens: planMaxTokens }, options?.noQuestions), available, true, requestedCadComponentCount(request))
+    const reusable = new Set(plan.components.filter((item) => item.action === 'keep').map((item) => item.id))
+    previous = available
+    checkpoint = { plan, components: available.components.filter((item) => reusable.has(item.id)),
+      assumptions: [...checkpoint.assumptions, ...plan.assumptions],
+      componentFailures: Object.fromEntries(Object.entries(checkpoint.componentFailures ?? {}).filter(([id]) => reusable.has(id))) }
+    store.set(key, checkpoint)
+  } else if (checkpoint) plan = checkpoint.plan
   else if (options?.repairOnly && previous) {
     plan = { decision: 'create', partId: previous.partId, question: '', assumptions: [], mechanics: previous.mechanics,
       components: previous.components.map((component) => ({ id: component.id, action: 'keep',
@@ -466,16 +493,16 @@ export async function generateCadAssembly(
       { role: 'system', content: instructions }, { role: 'user', content: userRequest },
     ], schema, { temperature: 0, maxTokens: planMaxTokens }, options?.noQuestions)
     try {
-      plan = parsePlan(rawPlan, previous, options?.requireMechanics)
+      plan = parsePlan(rawPlan, previous, options?.requireMechanics, requestedCadComponentCount(request), options?.allowUnverifiedDrafts)
     } catch (error) {
       const issue = error instanceof Error ? error.message : String(error)
-      if (provider.generationPolicy?.retryInvalidStructuredOutput === false) {
+      if (provider.generationPolicy?.retryInvalidStructuredOutput === false && !(options?.maxRepairAttempts && options.maxRepairAttempts > 0)) {
         throw new ProviderRequestError(`O cliente local devolveu um plano de conjunto inválido. Nenhuma retentativa automática foi feita. ${issue}`, { cause: error })
       }
       plan = parsePlan(await generateCadDecision(provider, [
         { role: 'system', content: instructions }, { role: 'user', content: userRequest },
         { role: 'user', content: `The component plan was invalid: ${issue}. Return the complete plan with valid IDs, one fixed body and 2–8 components.` },
-      ], schema, { temperature: 0, maxTokens: planMaxTokens }, options?.noQuestions), previous, options?.requireMechanics)
+      ], schema, { temperature: 0, maxTokens: planMaxTokens }, options?.noQuestions), previous, options?.requireMechanics, requestedCadComponentCount(request), options?.allowUnverifiedDrafts)
     }
   }
   if (plan.decision === 'clarify') return { kind: 'clarify', question: plan.question }
@@ -489,15 +516,28 @@ export async function generateCadAssembly(
   const components: CadAssemblySpec['components'][number][] = [...checkpoint?.components ??
     (options?.repairOnly ? previous!.components : [])]
   const assumptions = [...checkpoint?.assumptions ?? plan.assumptions]
+  const failures = new Map(Object.entries(checkpoint?.componentFailures ?? {}))
+  const publish = (available: readonly CadAssemblySpec['components'][number][], issue?: string, pendingComponentId?: string) => {
+    const existing = new Map(previous?.components.filter((item) => plan.components.some((planned) => planned.id === item.id)).map((item) => [item.id, item]))
+    for (const item of available) existing.set(item.id, item)
+    if (!existing.size) return
+    options?.onDraft?.({ request, issue, pendingComponentId, plannedComponentIds: plan.components.map((item) => item.id),
+      spec: { schemaVersion: '4.0', units: 'mm', partId: plan.partId,
+        components: plan.components.flatMap((item) => existing.has(item.id) ? [existing.get(item.id)!] : []),
+        ...(plan.mechanics ? { mechanics: plan.mechanics } : {}) } })
+  }
   const planned = plan.components.map(({ id, action }) => ({ id, action }))
   const emit = (phase: CadAssemblyProgress['phase'], extra: Partial<CadAssemblyProgress> = {}) =>
-    onProgress?.({ phase, components: planned, completed: components.length,
+    onProgress?.({ phase, components: planned, completed: components.length - failures.size,
+      completedComponentIds: components.filter((item) => !failures.has(item.id)).map((item) => item.id),
+      failedComponentIds: [...failures.keys()],
       resumed: !!checkpoint, replanning: repairAttempt > 0, ...extra })
   store.set(key, { plan, components: [...components], assumptions: [...assumptions],
+    componentFailures: Object.fromEntries(failures),
     ...(checkpoint?.clarification ? { clarification: checkpoint.clarification } : {}) })
   if (store.size > 4) store.delete(store.keys().next().value!)
-  for (const component of plan.components.slice(components.length)) {
-    const componentIndex = components.length
+  for (const component of plan.components.filter((item) => !components.some((available) => available.id === item.id) || failures.has(item.id))) {
+    const componentIndex = plan.components.findIndex((item) => item.id === component.id)
     const movement = component.motion
     const componentMotion: CadMotion | undefined = movement.kind === 'fixed' ? undefined : {
       kind: movement.kind, axis: movement.axis, minimum: movement.minimum, maximum: movement.maximum,
@@ -506,13 +546,15 @@ export async function generateCadAssembly(
       ...(movement.group && movement.factor !== undefined ? { factor: movement.factor } : {}),
     }
     emit('building', { componentIndex })
-    const prior = previous?.components.find((item) => item.id === component.id)
+    const prior = (failures.has(component.id) ? components.find((item) => item.id === component.id) : undefined) ?? previous?.components.find((item) => item.id === component.id)
     let steps = prior?.steps
-    if (component.action === 'build') {
-      const builtContext = components.map((item) => ({ id: item.id, position: item.position, motion: item.motion, steps: item.steps }))
+    if (component.action === 'build' || failures.has(component.id)) {
+      const validatedComponents = components.filter((item) => item.id !== component.id && !failures.has(item.id))
+      const builtContext = validatedComponents.map((item) => ({ id: item.id, position: item.position, motion: item.motion, steps: item.steps }))
       const joints = plan.mechanics?.connections.filter((joint) => joint.first === component.id || joint.second === component.id) ?? []
       const clarification = checkpoint?.clarification?.componentId === component.id ? checkpoint.clarification.question : undefined
-      const partRequest = `Build ONLY component ${component.id} of this mechanical assembly. Overall request: ${request}. Component construction: ${component.description}. Mechanical connections (preserve exact required feature IDs, mounting faces, journals, engagement and retention): ${JSON.stringify(joints)}. Complete component placement plan: ${JSON.stringify(plan.components)}. Its motion is ${JSON.stringify(component.motion)}; placement applies after motion about the local origin. The component will be placed at global position ${JSON.stringify(component.position)} after construction, so use local coordinates near origin. Previously validated components with complete features and motion: ${JSON.stringify(builtContext)}. Match their dimensions and add real clearance where bodies mate throughout travel; no two components may occupy the same solid volume. A flat on a rotating body rotates away: stationary obstructions require clearance for the entire rotating envelope. It must be ONE connected solid. Do not construct any other component. Include bores and clearances named in its description. Infer unspecified ordinary dimensions.${clarification ? ` Earlier component clarification: ${clarification}. Re-evaluate this question against the original user constraints. Resolve conflicts between inferred design choices by adjusting this component to the actual completed mating geometry; list the decision in assumptions. Keep a question only for a remaining conflict in explicit user requirements or unsupported mechanics.` : ''}`
+      const matingTargets = matingContext({ id: component.id, position: component.position, steps: [], motion: componentMotion }, validatedComponents, joints)
+      const partRequest = `Build ONLY component ${component.id} of this mechanical assembly. Overall request: ${request}. Component construction: ${component.description}. Mechanical connections (preserve exact required feature IDs, mounting faces, journals, engagement and retention): ${JSON.stringify(joints)}. Computed mating targets from validated components (centers are not hole entry points; convert center to entry with +axis*height/2): ${matingTargets}. Complete component placement plan: ${JSON.stringify(plan.components)}. Its motion is ${JSON.stringify(component.motion)}; placement applies after motion about the local origin. The component will be placed at global position ${JSON.stringify(component.position)} after construction, so use local coordinates near origin. Previously validated components with complete features and motion: ${JSON.stringify(builtContext)}. Match their dimensions and add real clearance where bodies mate throughout travel; no two components may occupy the same solid volume. A flat on a rotating body rotates away: stationary obstructions require clearance for the entire rotating envelope. It must be ONE connected solid. Do not construct any other component. Include bores and clearances named in its description. Infer unspecified ordinary dimensions.${clarification ? ` Earlier component clarification: ${clarification}. Re-evaluate this question against the original user constraints. Resolve conflicts between inferred design choices by adjusting this component to the actual completed mating geometry; list the decision in assumptions. Keep a question only for a remaining conflict in explicit user requirements or unsupported mechanics.` : ''}`
       let result: Awaited<ReturnType<typeof generateCadProgram>>
       let validationAttempt = 0
       const inspectComponent = async (candidate: CadProgramSpec): Promise<string | null> => {
@@ -522,27 +564,35 @@ export async function generateCadAssembly(
         const missing = requiredFeatures.filter((id) => !candidate.steps.some((step) => step.id === id))
         const issue = missing.length ? `Mechanical connection requires feature IDs: ${missing.join(', ')}. Preserve the plan's mating geometry and exact IDs.`
           : mechanicalFitIssue({ id: component.id, position: component.position, steps: candidate.steps,
-            ...(componentMotion ? { motion: componentMotion } : {}) }, components, joints) ?? await checkComponent(candidate)
+            ...(componentMotion ? { motion: componentMotion } : {}) }, validatedComponents, joints) ?? await checkComponent(candidate)
         if (issue) emit('repairing-component', { componentIndex, validationAttempt })
         return issue
       }
       try {
         result = await generateCadProgram(provider, partRequest, prior ? {
           schemaVersion: '3.0', units: 'mm', partId: component.id, steps: prior.steps,
-        } : undefined, inspectComponent, { maxOutputTokens: 3500, assemblyComponent: true, noQuestions: options?.noQuestions })
+        } : undefined, inspectComponent, { maxOutputTokens: 6500, assemblyComponent: true, noQuestions: options?.noQuestions,
+          maxRepairAttempts: options?.maxRepairAttempts,
+          localRepair: (candidate, issue, inspect) => issue.startsWith('Mechanical connection ')
+            ? repairMechanicalFitLocally({ id: component.id, position: component.position, steps: candidate.steps, motion: componentMotion }, validatedComponents, joints, request, inspect) : Promise.resolve(null),
+          onDraft: (candidate, issue) => publish([...components,
+            { id: component.id, position: component.position, steps: candidate.steps, motion: componentMotion }], issue, component.id),
+        })
+        failures.delete(component.id)
       } catch (error) {
         const detail = error instanceof Error ? error.message : String(error)
         if (error instanceof DOMException && error.name === 'AbortError') throw error
-        if (error instanceof ProviderRequestError) {
+        if (options?.allowUnverifiedDrafts && error instanceof CadProgramValidationError) {
+          failures.set(component.id, detail)
+          result = { kind: 'create', spec: error.spec, assumptions: ['Geometria pendente de correção; conservada apenas como rascunho.'] }
+        } else if (error instanceof ProviderRequestError) {
           throw new ProviderRequestError(`Componente ${component.id}: ${detail}`, { cause: error })
-        }
-        store.delete(key)
-        if (repairAttempt === 0 && /CAD step [A-Za-z0-9_-]+/.test(detail)) {
+        } else if (repairAttempt === 0 && /CAD step [A-Za-z0-9_-]+/.test(detail)) {
+          store.delete(key)
           return await generateCadAssembly(provider,
             `${request}\n\nA construção do componente ${component.id} falhou: ${detail}. Replaneje os corpos e a geometria de modo genérico. Corrija recursos repetidos que não acrescentam material, cortes que não atingem a peça e uniões desconectadas. Se um recurso for uma peça física independente, represente-o como outro componente e vincule seu movimento aos corpos correspondentes. Se ele for integral ao mesmo corpo, descreva uma conexão com material real e revise cortes anteriores que a impedem. Preserve todas as funções pedidas.`,
             checkComponent, checkAssembly, previous, onProgress, 1, options)
-        }
-        throw new Error(`Componente ${component.id}: ${detail}`)
+        } else { store.delete(key); throw new Error(`Componente ${component.id}: ${detail}`) }
       }
       if (result.kind === 'clarify') {
         store.set(key, { plan, components: [...components], assumptions: [...assumptions],
@@ -552,12 +602,28 @@ export async function generateCadAssembly(
       steps = result.spec.steps
       assumptions.push(...result.assumptions.map((item) => `${component.id}: ${item}`))
     }
-    components.push({ id: component.id, position: component.position, steps: steps!,
-      ...(componentMotion ? { motion: componentMotion } : {}) })
-    store.set(key, { plan, components: [...components], assumptions: [...assumptions] })
+    const completedComponent = { id: component.id, position: component.position, steps: steps!,
+      ...(componentMotion ? { motion: componentMotion } : {}) }
+    const existingIndex = components.findIndex((item) => item.id === component.id)
+    if (existingIndex < 0) components.push(completedComponent)
+    else components[existingIndex] = completedComponent
+    store.set(key, { plan, components: [...components], assumptions: [...assumptions], componentFailures: Object.fromEntries(failures) })
+    publish(components)
   }
   let spec: CadAssemblySpec = { schemaVersion: '4.0', units: 'mm', partId: plan.partId, components,
     ...(plan.mechanics ? { mechanics: plan.mechanics } : {}) }
+  publish(spec.components)
+  if (failures.size || (options?.requireMechanics && !spec.mechanics)) {
+    emit('checking-assembly')
+    if (options?.requireMechanics && !spec.mechanics) store.set(key, {
+      plan, components: [...components], assumptions: [...assumptions],
+      componentFailures: Object.fromEntries(failures), needsMechanicalPlan: true,
+    })
+    const issue = failures.size ? `Geometria disponível para exportação como rascunho. ${failures.size} componente(s) ainda precisam de correção: ${[...failures.keys()].join(', ')}. As demais peças foram conservadas; retome para reparar somente as pendentes.`
+      : 'Geometria construída, mas o plano não declarou vínculos mecânicos. O rascunho pode ser exportado; a montagem não recebeu aprovação funcional.'
+    publish(spec.components, issue)
+    throw new CadDraftGenerationError(issue, { request, spec, issue, plannedComponentIds: plan.components.map((item) => item.id) })
+  }
   let issue: CadAssemblyCheckResult = null
   try {
     validateCadAssembly(spec)
@@ -582,8 +648,8 @@ export async function generateCadAssembly(
       ], async (program) => { emit('repairing-assembly', { activity: 'checking-component' }); return await checkComponent(program) },
       async (candidate) => { emit('repairing-assembly', { activity: 'checking-assembly' }); return await checkAssembly(candidate) },
       (validationAttempt) => emit('repairing-assembly', { validationAttempt }), undefined,
-      (progress) => store.set(key, { plan, components: [...progress.spec.components],
-        assumptions: [...assumptions, ...new Set(progress.assumptions)] })).catch((error: unknown) => {
+      (progress) => { store.set(key, { plan, components: [...progress.spec.components],
+        assumptions: [...assumptions, ...new Set(progress.assumptions)] }); publish(progress.spec.components) }).catch((error: unknown) => {
         if (provider.generationPolicy && error instanceof ProviderRequestError) {
           const completed = store.get(key)?.components ?? spec.components
           throw new CadAssemblyPausedError(error.message, { ...spec, components: completed }, error)
@@ -592,6 +658,7 @@ export async function generateCadAssembly(
       })
       spec = repaired.spec
       issue = repaired.issue
+      publish(spec.components, issue ? assemblyIssueMessage(issue) ?? undefined : undefined)
       assumptions.push(...new Set(repaired.assumptions))
       store.set(key, { plan, components: [...spec.components], assumptions: [...assumptions] })
       if (!issue) {
@@ -602,10 +669,12 @@ export async function generateCadAssembly(
       if (repairAttempt === 0) {
         try {
           const corrected = await repairAssemblyCollision(provider, request, spec, issue, checkComponent,
-            checkAssembly, (activity) => emit('repairing-assembly', { activity }), options?.noQuestions)
+            checkAssembly, (activity) => emit('repairing-assembly', { activity }), options?.noQuestions,
+            options?.maxRepairAttempts, publish)
           if (corrected?.kind === 'progress') {
             spec = corrected.spec
             issue = corrected.issue
+            publish(spec.components, issue ? assemblyIssueMessage(issue) ?? undefined : undefined)
             assumptions.push(...corrected.assumptions)
             store.set(key, { plan, components: [...spec.components], assumptions: [...assumptions] })
             if (!issue) { store.delete(key); emit('complete'); return { kind: 'create', spec, assumptions } }

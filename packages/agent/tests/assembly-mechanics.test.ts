@@ -124,8 +124,8 @@ test('an undersized guide is corrected before accepting it, preserving both comp
   }, undefined, undefined, 0, { requireMechanics: true, noQuestions: true })
   assert.equal(result.kind, 'create')
   assert.deepEqual(checked, ['left', 'right', 'guide'])
-  assert.equal(provider.calls.length, 5)
-  assert.match(JSON.stringify(provider.calls[4].messages), /insufficient axial engagement 8.000 mm/)
+  assert.equal(provider.calls.length, 4)
+  if (result.kind === 'create') assert.match(result.assumptions.join(' '), /dimensionados matematicamente/)
 })
 
 test('quota during autonomous replanning exposes the completed draft and preserves its limit information', async () => {

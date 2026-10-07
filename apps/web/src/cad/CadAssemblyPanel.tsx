@@ -92,7 +92,7 @@ export default function CadAssemblyPanel({ spec, project, onChange, onSaved, onN
       setLastAction(null)
       setAssumptions([])
       setRequest('Corrija as interferências deste conjunto. Preserve os componentes e os recursos não afetados; reutilize a geometria existente.')
-      setMessage('Rascunho importado sem chamar a IA. Use Corrigir interferências para reutilizar as peças existentes. STEP e STL exigem validação e salvamento.')
+      setMessage('Rascunho importado sem chamar a IA. Use Corrigir interferências para reutilizar as peças existentes. Downloads de revisões aprovadas exigem validação e salvamento.')
     } catch (error) { setMessage(error instanceof Error ? error.message : 'Rascunho CAD inválido.') }
   }
   return <div className="cad-program">

@@ -1,6 +1,16 @@
 # Verificação da reorganização — 2026-10-02
 
-Executada localmente em Windows/PowerShell, Node 24, Python 3.12 e Chrome instalado. Nenhum commit ou publicação foi realizado. A configuração CI foi atualizada, mas não executada no GitHub nesta sessão.
+Executada localmente em Windows/PowerShell, Node 24, Python 3.12 e Chrome instalado. As seções mantêm os resultados de cada revisão. A configuração CI está versionada; os resultados abaixo são locais.
+
+## Confiabilidade e exportação de rascunhos — 2026-10-07
+
+**442 testes TypeScript passaram**: 58 web, 313 agente, 69 domínio e 2 golden. **337 testes da API passaram e dois foram ignorados** na suíte completa, em 516,65 s. Após acrescentar a restrição de 128 etapas totais no rascunho, os **oito testes nativos de exportação passaram** em 14,10 s; não são somados ao total da suíte completa. **32 testes de navegador passaram em 4,9 minutos**, usando API/CadQuery reais e IA programada. Typecheck, lint web, build, Ruff e mypy da API passaram; mypy verificou 43 arquivos.
+
+As regressões exportam sólidos independentes sobrepostos sem aprovar ou salvar a montagem, exportam o prefixo válido anterior a um chanfro impossível, mantêm o JSON com todas as etapas e registram omissões. Um conjunto parcial com uma peça exporta STEP/STL e informa as restantes. A base inteiramente inválida não produz arquivos geométricos artificiais. Movimento/posição são conservados na exportação; tamanho de artefatos e entradas inválidas continuam limitados. A geometria e o pedido são recuperados no navegador após reload para download sem IA.
+
+O agente confere a quantidade solicitada de componentes, amplia o orçamento explícito de reparos, conserva candidatos rejeitados e interrompe imediatamente em quota. Uma peça geometricamente rejeitada não impede construir as outras; no navegador, um conjunto de três corpos conserva os três rascunhos e a retomada solicita somente a peça pendente, sem reconstruir as outras. Um plano sem vínculos obrigatórios termina como rascunho; a retomada pode adicionar o contrato conservando os corpos disponíveis. A guia de 208 mm é corrigida deterministicamente para 216 mm antes da primeira inspeção nativa, sem chamada de IA adicional; o engate e a montagem final são verificados pelo motor.
+
+A API em 8001 foi reiniciada. Saúde e frontend responderam 200, e uma exportação real retornou ZIP de 4.648 bytes, `X-CAD-Validation: draft`, sem aprovação da montagem. Modelos reais não foram medidos nesta etapa. O checkpoint completo da IA continua limitado à memória da aba; operações do kernel não têm prazo/cancelamento garantido. Permanecem os dois avisos de depreciação da API e o aviso de tamanho do bundle WebLLM. Contratos e limites estão em [cad-drafts.md](cad-drafts.md).
 
 ## Reparo de chanfros/arredondamentos e retomada — 2026-10-06
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import math
+from collections.abc import Callable
 from importlib import import_module
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -135,15 +136,17 @@ def _profile_issue(points: list[Any]) -> str | None:
     return None
 
 
-def build_program_solid(spec: CadProgramSpec, cq: Any | None = None) -> Any:
+def build_program_solid(spec: CadProgramSpec, cq: Any | None = None, on_step: Callable[[int, Any], None] | None = None) -> Any:
     cq = cq or _engine()
     part = None
-    for step in spec.steps:
+    for index, step in enumerate(spec.steps):
         try:
             if isinstance(step, (FilletStep, ChamferStep, ShellStep)):
                 if part is None:
                     raise CadGeometryError(f"CAD step {step.id} needs an existing solid for finishing")
                 part = finish_part(part, step)
+                if on_step is not None:
+                    on_step(index, part)
                 continue
             if isinstance(step, (TubeStep, TorusStep, SlotStep, HoleStep, ThreadStep, LoftStep)):
                 feature = build_feature(step, cq)
@@ -221,6 +224,8 @@ def build_program_solid(spec: CadProgramSpec, cq: Any | None = None) -> Any:
                             f"current solid bounds: {_bounds(before_bounds)}; "
                             f"tool bounds: {_bounds(_one_solid(instance).BoundingBox())}{duplicate_hint}"
                         )
+            if on_step is not None:
+                on_step(index, part)
         except CadGeometryError:
             raise
         except Exception as exc:

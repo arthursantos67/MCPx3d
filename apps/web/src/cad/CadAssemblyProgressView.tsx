@@ -53,11 +53,14 @@ export default function CadAssemblyProgressView({ progress, status, updatedAt, c
     {total > 0 ? <>
       <progress max={steps} value={done} aria-label="Etapas CAD concluídas" />
       <p>{done} de {steps} etapas planejadas · {progress.completed} de {total} componentes concluídos · 1 validação final</p>
-      {!compact && <ol>{progress.components.map((component, index) =>
-        <li key={component.id} className={index < progress.completed ? 'cad-progress__done' : index === progress.componentIndex ? 'cad-progress__active' : ''}>
-          {index < progress.completed ? '✓' : index === progress.componentIndex && status === 'running' ? '●' : '○'} {component.id}
+      {!compact && <ol>{progress.components.map((component, index) => {
+        const complete = progress.completedComponentIds?.includes(component.id) ?? index < progress.completed
+        const failed = progress.failedComponentIds?.includes(component.id) ?? false
+        return <li key={component.id} className={complete ? 'cad-progress__done' : index === progress.componentIndex ? 'cad-progress__active' : ''}>
+          {complete ? '✓' : failed ? '!' : index === progress.componentIndex && status === 'running' ? '●' : '○'} {component.id}
+          {failed ? ' (pendente de correção)' : ''}
           {component.action === 'keep' ? ' (reutilizado)' : ''}
-        </li>)}
+        </li>})}
         <li className={status === 'complete' ? 'cad-progress__done' : progress.phase === 'checking-assembly' || progress.phase === 'repairing-assembly' ? 'cad-progress__active' : ''}>
           {status === 'complete' ? '✓' : progress.phase === 'checking-assembly' || progress.phase === 'repairing-assembly' ? '●' : '○'} Validação final do conjunto
         </li>

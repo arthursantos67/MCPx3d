@@ -182,6 +182,11 @@ def _check_interference(spec: CadAssemblySpec, cq: Any) -> list[Any]:
 def build_assembly_step(spec: CadAssemblySpec, max_bytes: int) -> CadArtifact:
     cq = _engine()
     solids = _check_interference(spec, cq)
+    return export_assembly_solids(solids, [component.id for component in spec.components], max_bytes)
+
+
+def export_assembly_solids(solids: list[Any], component_ids: list[str], max_bytes: int) -> CadArtifact:
+    cq = _engine()
     compound = cq.Compound.makeCompound(solids)
     try:
         with TemporaryDirectory(prefix="mcp-x3d-assembly-") as directory:
@@ -197,13 +202,13 @@ def build_assembly_step(spec: CadAssemblySpec, max_bytes: int) -> CadArtifact:
         raise CadGeometryError("CAD assembly STEP conversion failed") from exc
     if len(imported) != len(solids) or any(not solid.isValid() or solid.Volume() <= 0 for solid in imported):
         raise CadGeometryError("CAD assembly STEP lost or invalidated a component")
-    for component, original, restored in zip(spec.components, solids, imported, strict=True):
+    for component_id, original, restored in zip(component_ids, solids, imported, strict=True):
         original_box, restored_box = original.BoundingBox(), restored.BoundingBox()
         if not math.isclose(original.Volume(), restored.Volume(), rel_tol=1e-5, abs_tol=1e-4) or any(
             not math.isclose(getattr(original_box, axis), getattr(restored_box, axis), rel_tol=1e-5, abs_tol=1e-4)
             for axis in ("xmin", "xmax", "ymin", "ymax", "zmin", "zmax")
         ):
-            raise CadGeometryError(f"CAD assembly STEP differs from component {component.id}")
+            raise CadGeometryError(f"CAD assembly STEP differs from component {component_id}")
     original_volume = sum(solid.Volume() for solid in solids)
     imported_volume = sum(solid.Volume() for solid in imported)
     source_box, target_box = compound.BoundingBox(), cq.Compound.makeCompound(imported).BoundingBox()

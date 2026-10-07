@@ -92,7 +92,7 @@ for (const questionCount of [1, 3]) test(`component decisions stay internal, pre
   await page.getByRole('textbox', { name: 'Describe CAD part' }).fill('Crie uma base e suporte com fixação útil; escolha as dimensões')
   await page.getByRole('button', { name: 'Criar com IA', exact: true }).click()
   if (questionCount === 3) {
-    await expect(page.getByText(/O agente não conseguiu concluir uma decisão de projeto automaticamente/)).toBeVisible()
+    await expect(page.getByRole('status').filter({ hasText: /O agente não conseguiu concluir uma decisão de projeto automaticamente/ }).first()).toBeVisible()
     await expect(page.getByText('support: ' + question, { exact: true })).toHaveCount(0)
     expect(responses).toHaveLength(1)
     await page.getByRole('button', { name: 'Retomar geração', exact: true }).click()

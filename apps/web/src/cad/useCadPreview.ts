@@ -1,9 +1,8 @@
 import { useEffect, useState } from 'react'
-import type { CadProgramSpec } from '../../../../packages/domain/ts/src/cad-program.ts'
-import type { CadAssemblySpec } from '../../../../packages/domain/ts/src/cad-assembly.ts'
-import { meshCadAssembly, meshCadProgram, type CadProgramMesh } from '../api/cad.ts'
+import type { CadDraftSpec } from '../../../../packages/domain/ts/src/cad-draft.ts'
+import { meshCadAssembly, meshCadProgram, meshCadDraft, type CadProgramMesh } from '../api/cad.ts'
 
-export function useCadPreview(spec: CadProgramSpec | CadAssemblySpec | null, enabled: boolean) {
+export function useCadPreview(spec: CadDraftSpec | null, enabled: boolean, draftMode = false) {
   const [preview, setPreview] = useState<{ mesh: CadProgramMesh; source: string } | null>(null)
   const [failure, setFailure] = useState<{ source: string; message: string } | null>(null)
   const source = spec ? JSON.stringify(spec) : ''
@@ -11,8 +10,9 @@ export function useCadPreview(spec: CadProgramSpec | CadAssemblySpec | null, ena
     if (!enabled || !source) return
     const abort = new AbortController()
     const timer = window.setTimeout(() => {
-      const candidate = JSON.parse(source) as CadProgramSpec | CadAssemblySpec
-      const request = candidate.schemaVersion === '4.0' ? meshCadAssembly(candidate, abort.signal) : meshCadProgram(candidate, abort.signal)
+      const candidate = JSON.parse(source) as CadDraftSpec
+      const request = draftMode ? meshCadDraft(candidate, abort.signal)
+        : candidate.schemaVersion === '4.0' ? meshCadAssembly(candidate, abort.signal) : meshCadProgram(candidate, abort.signal)
       void request.then((mesh) => {
         if (!abort.signal.aborted) { setPreview({ mesh, source }); setFailure(null) }
       }).catch((error: unknown) => {
@@ -20,7 +20,7 @@ export function useCadPreview(spec: CadProgramSpec | CadAssemblySpec | null, ena
       })
     }, 400)
     return () => { window.clearTimeout(timer); abort.abort() }
-  }, [source, enabled])
+  }, [source, enabled, draftMode])
   return {
     mesh: source ? preview?.mesh ?? null : null,
     error: failure?.source === source ? failure.message : null,

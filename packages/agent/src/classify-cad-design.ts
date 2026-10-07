@@ -1,6 +1,7 @@
 import type { LLMProvider } from './provider.ts'
 import type { CadProgramOutcome } from './generate-cad-program.ts'
 import type { CadAssemblyOutcome } from './generate-cad-assembly.ts'
+import { requestedCadComponentCount } from './cad-component-count.ts'
 
 export type CadDesignOutcome =
   | { readonly mode: 'part'; readonly outcome: CadProgramOutcome }
@@ -35,7 +36,7 @@ export async function classifyCadDesign(provider: LLMProvider, request: string):
       !['part', 'assembly'].includes((response as Record<string, unknown>).kind as string)) {
     throw new Error('O agente não conseguiu escolher a representação CAD. Tente novamente.')
   }
-  const kind = (response as { kind: 'part' | 'assembly' }).kind
+  const kind = requestedCadComponentCount(request) ? 'assembly' : (response as { kind: 'part' | 'assembly' }).kind
   let store = decisions.get(provider)
   if (!store) { store = new Map(); decisions.set(provider, store) }
   if (store.size >= 20) store.delete(store.keys().next().value!)

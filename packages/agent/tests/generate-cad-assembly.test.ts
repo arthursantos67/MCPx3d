@@ -119,7 +119,7 @@ test('decomposes a generic mechanical request into independent bodies and rotary
   assert.deepEqual(checked, ['housing', 'rotor'])
   assert.equal(provider.calls.length, 3)
   assert.equal(provider.calls[0].options?.maxTokens, 3000)
-  assert.equal(provider.calls[1].options?.maxTokens, 3500)
+  assert.equal(provider.calls[1].options?.maxTokens, 6500)
   assert.match(provider.calls[0].messages[0].content, /2–8 physically separate/)
   assert.doesNotMatch(provider.calls[0].messages[0].content, /manual press/i)
   assert.deepEqual(progress.map((event) => [event.phase, event.completed]), [

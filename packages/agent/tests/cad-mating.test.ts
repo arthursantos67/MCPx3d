@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { mechanicalFitIssue } from '../src/cad-mating.ts'
+import { mechanicalFitIssue, matingContext, repairMechanicalFitLocally } from '../src/cad-mating.ts'
 import type { CadComponent } from '../../domain/ts/src/cad-assembly.ts'
 import type { CadMechanicalConnection } from '../../domain/ts/src/cad-mechanics.ts'
 
@@ -28,4 +28,40 @@ test('mating inspection checks global axes rather than accepting matching length
 test('mating inspection includes travel extrema before accepting a component', () => {
   const moving = { ...guide(216), motion: { kind: 'slider', axis: 'x', minimum: -4, maximum: 4, value: 0 } } as CadComponent
   assert.match(mechanicalFitIssue(moving, supports, [joints[1]])!, /at minimum: insufficient axial engagement/)
+})
+
+test('two supports determine the minimum inferred guide length without moving either support', async () => {
+  const original = structuredClone(supports)
+  let checks = 0
+  const result = await repairMechanicalFitLocally(guide(208), supports, joints, 'Monte uma guia com dois suportes', async (spec) => {
+    checks++
+    return mechanicalFitIssue({ ...guide(208), steps: spec.steps }, supports, joints)
+  })
+  assert.ok(result)
+  assert.deepEqual(supports, original)
+  assert.equal(result.spec.steps[0].shape === 'cylinder' && result.spec.steps[0].height, 216)
+  assert.equal(checks, 1)
+})
+
+test('fit repair accounts for travel and retains the centered local origin', async () => {
+  const moving: CadComponent = { ...guide(216), motion: { kind: 'slider', axis: 'x', minimum: -4, maximum: 4, value: 0 } }
+  const result = await repairMechanicalFitLocally(moving, supports, joints, 'Monte uma guia móvel', async (spec) => mechanicalFitIssue({ ...moving, steps: spec.steps }, supports, joints))
+  assert.ok(result)
+  assert.equal(result.spec.steps[0].shape === 'cylinder' && result.spec.steps[0].height, 224)
+  assert.deepEqual(result.spec.steps[0].position, zero)
+})
+
+test('global datum offsets are removed rather than duplicated in the receiving component', async () => {
+  const target: CadComponent = { ...guide(216), position: { ...zero, y: 20 } }
+  const targets = JSON.parse(matingContext(target, supports, joints))
+  assert.equal(targets[0].targetLocalCenterAtCurrentPose.y, -20)
+  const result = await repairMechanicalFitLocally(target, supports, joints, 'Alinhe a guia', async (spec) => mechanicalFitIssue({ ...target, steps: spec.steps }, supports, joints))
+  assert.ok(result)
+  assert.equal(result.spec.steps[0].position.y, -20)
+})
+
+test('local fit proposals cannot override explicit dimensions or pass without native verification', async () => {
+  assert.equal(await repairMechanicalFitLocally(guide(208), supports, joints, 'Guia de 208 mm', async () => null), null)
+  assert.equal(await repairMechanicalFitLocally({ ...guide(216), position: { ...zero, y: 1 } }, supports, joints, 'Y=1', async () => null), null)
+  assert.equal(await repairMechanicalFitLocally(guide(208), supports, joints, 'Monte uma guia', async () => 'CAD step shaft failed'), null)
 })

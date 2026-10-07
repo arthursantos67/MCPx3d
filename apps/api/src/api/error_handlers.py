@@ -40,6 +40,15 @@ from api.artifacts import (
     ArtifactTooLargeError,
     StaleArtifactRequestError,
 )
+from api.cad_adapter import (
+    CadArtifactTooLargeError,
+    CadEngineUnavailableError,
+    CadGeometryError,
+)
+from api.cad_assembly_adapter import (
+    CadAssemblyInterferenceError,
+    CadAssemblyMechanicalError,
+)
 from api.errors import error_response
 from api.limits import ComplexityLimitError
 from api.mcp_client import X3DMcpError
@@ -93,6 +102,27 @@ def register_error_handlers(app: FastAPI) -> None:
             str(detail),
             correlation_id=_correlation_id(request),
         )
+
+    @app.exception_handler(CadEngineUnavailableError)
+    async def _cad_unavailable(request: Request, exc: CadEngineUnavailableError) -> JSONResponse:
+        return error_response(503, "CAD_ENGINE_UNAVAILABLE", str(exc), correlation_id=_correlation_id(request))
+
+    @app.exception_handler(CadArtifactTooLargeError)
+    async def _cad_too_large(request: Request, exc: CadArtifactTooLargeError) -> JSONResponse:
+        return error_response(413, "COMPLEXITY_LIMIT", str(exc), correlation_id=_correlation_id(request))
+
+    @app.exception_handler(CadAssemblyInterferenceError)
+    async def _cad_interference(request: Request, exc: CadAssemblyInterferenceError) -> JSONResponse:
+        return error_response(422, "CAD_GEOMETRY_INVALID", str(exc), details=[exc.diagnostics.model_dump(mode="json")],
+                              correlation_id=_correlation_id(request))
+
+    @app.exception_handler(CadAssemblyMechanicalError)
+    async def _cad_mechanics(request: Request, exc: CadAssemblyMechanicalError) -> JSONResponse:
+        return error_response(422, "CAD_MECHANICS_INVALID", str(exc), details=[exc.diagnostics], correlation_id=_correlation_id(request))
+
+    @app.exception_handler(CadGeometryError)
+    async def _cad_geometry(request: Request, exc: CadGeometryError) -> JSONResponse:
+        return error_response(422, "CAD_GEOMETRY_INVALID", str(exc), correlation_id=_correlation_id(request))
 
     @app.exception_handler(ProjectNotFoundError)
     async def _project_not_found(request: Request, exc: ProjectNotFoundError) -> JSONResponse:

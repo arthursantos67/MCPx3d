@@ -26,6 +26,8 @@ Para assinaturas, instale o cliente oficial e execute `codex login` ou `claude a
 
 No CAD, descreva uma peça ou conjunto no **Projeto livre**. O agente escolhe um sólido ou planeja componentes independentes; **Conjunto composto** permite pedir uma montagem diretamente. A proposta aprovada é salva automaticamente e libera STEP/STL. Cada componente também pode ser exportado nos dois formatos. Ajustes manuais e movimentos pedem uma nova revisão antes do download.
 
+Se a geração falhar, **Baixar rascunho STEP/STL (ZIP)** exporta os sólidos disponíveis com a receita original e um relatório de etapas/peças omitidas. Rascunhos não recebem aprovação de montagem e ficam guardados no navegador para prévia/download após reload. [Recuperação CAD](docs/cad-drafts.md) explica os limites e a retomada.
+
 No X3D, descreva a cena, peça alterações ou aplique uma receita da biblioteca. Baixe X3D, HTML, ClassicVRML ou JSON do projeto. O JSON permite importar a cena depois de reiniciar a API. A prévia HTML utiliza X3DOM e precisa de internet para carregar esse visualizador.
 
 CAD e receitas usam SQLite em `apps/api/data`. Projetos X3D são temporários e expiram após uma hora de inatividade por padrão. A linguagem CAD possui limites explícitos: [formatos e capacidades](docs/cad-readiness.md).
