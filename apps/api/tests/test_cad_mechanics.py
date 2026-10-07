@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 from api.cad_assembly_adapter import (
     CadAssemblyMechanicalError,
     _check_interference,
+    _component_solid,
     _position_component,
     build_assembly_step,
 )
@@ -52,6 +53,84 @@ def test_real_bolted_contact_is_verified_and_exported():
     artifact = build_assembly_step(CadAssemblySpec.model_validate(mounting()), 1_000_000)
     assert artifact.solid_count == 2
     assert len(artifact.step) > 1000
+
+
+def patterned_receiver():
+    receiver = {"id": "receiver", "position": ZERO, "steps": [
+        {"id": "body", "op": "base", "shape": "box", "position": {**ZERO, "z": 5}, "rotation": ZERO,
+         "width": 30, "depth": 30, "height": 10},
+        {"id": "bores", "op": "cut", "shape": "hole", "position": {**ZERO, "x": -8, "z": 10}, "rotation": ZERO,
+         "height": 12, "diameter": 4.4, "holeType": "plain", "headDiameter": 0, "headDepth": 0,
+         "pattern": {"kind": "linear", "count": 2, "offset": {**ZERO, "x": 16}}},
+    ]}
+    shafts = [{"id": name, "position": {**ZERO, "x": x, "z": 5}, "steps": [
+        {"id": "shaft", "op": "base", "shape": "cylinder", "position": ZERO, "rotation": ZERO,
+         "height": 12, "diameter": 4},
+    ]} for name, x in (("left", -8), ("right", 8))]
+    return {"schemaVersion": "4.0", "units": "mm", "partId": "patterned_receiver", "components": [receiver, *shafts],
+            "mechanics": {"grounded": "receiver", "connections": [
+                {"id": name + "_fit", "kind": "fixed", "first": name, "second": "receiver",
+                 "firstFeature": "shaft", "secondFeature": "bores", "maxClearance": 0.3,
+                 "minEngagement": 10, "fastening": "bonded", "fastenerDiameter": 0} for name in ("left", "right")]}}
+
+
+def test_separate_shafts_can_reference_unique_coaxial_instances_of_a_receiving_pattern():
+    artifact = build_assembly_step(CadAssemblySpec.model_validate(patterned_receiver()), 1_000_000)
+    assert artifact.solid_count == 3
+
+
+@pytest.mark.parametrize("failure", ["missing_instance", "ambiguous_instances", "insufficient_engagement", "removed_wall"])
+def test_patterned_receivers_keep_alignment_engagement_and_material_checks(failure):
+    raw = patterned_receiver()
+    bore = raw["components"][0]["steps"][1]
+    if failure == "missing_instance":
+        raw["components"][1]["position"]["x"] = 0
+    elif failure == "ambiguous_instances":
+        bore["pattern"]["offset"] = {**ZERO, "z": -4}
+        bore["height"] = 6
+    elif failure == "insufficient_engagement":
+        raw["components"][1]["position"]["z"] = 10
+    else:
+        raw["components"][0]["steps"][0]["width"] = 20
+    spec = CadAssemblySpec.model_validate(raw)
+    cq = _engine()
+    solids = [_component_solid(component, cq) for component in spec.components]
+    issues = check_mechanics(spec, cq, [("current", list(spec.components), solids)])
+    assert issues
+    expected = {"missing_instance": "found 0", "ambiguous_instances": "found 2",
+                "insufficient_engagement": "insufficient engagement", "removed_wall": "lacks surrounding material"}
+    assert expected[failure] in issues[0]["message"]
+
+
+@pytest.mark.parametrize("hole_type", ["counterbore", "countersink"])
+def test_real_bolted_mount_accepts_exposed_head_recesses_with_material_around_their_profile(hole_type):
+    raw = mounting()
+    raw["components"][1]["steps"][1].update(holeType=hole_type, headDiameter=8, headDepth=4.3)
+    artifact = build_assembly_step(CadAssemblySpec.model_validate(raw), 1_000_000)
+    assert artifact.solid_count == 2
+
+
+@pytest.mark.parametrize("failure", ["no_seat", "open_wall", "filled_head", "outside_head"])
+def test_head_recesses_do_not_hide_missing_stock_or_a_removed_recess(failure):
+    raw = mounting()
+    head = raw["components"][1]["steps"][1]
+    head.update(holeType="counterbore", headDiameter=8, headDepth=4.3)
+    if failure == "no_seat":
+        head["headDepth"] = 20.5
+    elif failure == "open_wall":
+        head["headDiameter"] = 18
+    elif failure == "outside_head":
+        head["position"] = {**head["position"], "z": 25}
+        head["height"] = 30
+    else:
+        raw["components"][1]["steps"].extend([
+            {"id": "head_plug", "op": "union", "shape": "cylinder", "position": {**ZERO, "y": -8, "z": 18},
+             "rotation": ZERO, "height": 4, "diameter": 8.2},
+            {"id": "reopened_bore", "op": "cut", "shape": "cylinder", "position": {**ZERO, "y": -8, "z": 18},
+             "rotation": ZERO, "height": 5, "diameter": 4.4},
+        ])
+    with pytest.raises(CadAssemblyMechanicalError):
+        build_assembly_step(CadAssemblySpec.model_validate(raw), 1_000_000)
 
 
 @pytest.mark.parametrize("failure", ["floating", "misaligned", "fastener", "erased_bore", "blind_bore"])

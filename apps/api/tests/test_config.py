@@ -19,6 +19,9 @@ def test_settings_have_expected_defaults() -> None:
     assert settings.max_operations_per_plan == 100
     assert settings.max_prompt_characters == 8000
     assert settings.max_artifact_bytes == 10_000_000
+    assert settings.max_cad_stl_bytes == 64_000_000
+    assert settings.max_cad_draft_bundle_bytes == 128_000_000
+    assert settings.cad_kernel_threads == 2
     assert settings.cors_allow_origins == [
         "http://localhost:5173", "http://127.0.0.1:5173",
         "http://localhost:5174", "http://127.0.0.1:5174",
@@ -35,6 +38,10 @@ def test_settings_have_expected_defaults() -> None:
         ("max_operations_per_plan", 0),
         ("max_prompt_characters", 0),
         ("max_artifact_bytes", 0),
+        ("max_cad_stl_bytes", 0),
+        ("max_cad_draft_bundle_bytes", 0),
+        ("cad_kernel_threads", 0),
+        ("cad_kernel_threads", 9),
     ],
 )
 def test_settings_reject_non_positive_limits(field: str, value: int) -> None:

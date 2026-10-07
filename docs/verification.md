@@ -2,6 +2,18 @@
 
 Executada localmente em Windows/PowerShell, Node 24, Python 3.12 e Chrome instalado. As seções mantêm os resultados de cada revisão. A configuração CI está versionada; os resultados abaixo são locais.
 
+## Qualidade de geração, alojamentos e exportação — 2026-10-07
+
+**461 testes TypeScript passaram**: 64 web, 326 agente, 69 domínio e 2 golden. A API teve seus 32 arquivos de testes executados em processos separados para reduzir picos de memória: **364 casos passaram e dois foram ignorados**, contando a última execução completa de **40 testes mecânicos em 312,88 s** após corrigir alojamentos e padrões receptores. Não foi uma execução única ininterrupta do pytest. Typecheck, lint web, build, Ruff e mypy passaram; mypy verificou 45 arquivos da API. O domínio Python não mudou.
+
+No navegador, a execução completa teve **31 aprovações e duas falhas de infraestrutura** por falta de memória/encerramento do Chrome. Uma nova execução dos quatro casos de exportação, incluindo os dois afetados, passou em **29,9 s**. Assim, os 33 casos passaram entre execuções, sem alegar uma suíte completa ininterrupta. São testes com API/CadQuery reais e IA programada. A concorrência dos testes TypeScript foi limitada a dois workers; o motor nativo usa duas threads e requisições CAD entram em fila, sem impor um teto de RAM.
+
+A última conferência dos quatro casos de exportação e presets no navegador passou em **19,6 s**. Permanecem os avisos de depreciação do TestClient e de tamanho do bundle WebLLM. API 8001 e frontend 5173 foram reiniciados e responderam HTTP 200.
+
+As regressões verificam orçamento global, prazo em inspeção sem resposta, ausência de repetição de JSON equivalente, conservação de checkpoint/revisão de plano, paredes e entradas expostas, presets de cabeça e todos os sólidos no STL. O motor aceita rebaixos/escareados com vazio e material corretos, mas recusa cabeça preenchida, assento ausente, parede aberta e alojamento inteiramente fora do stock. Padrões lineares receptores precisam de uma única correspondência coaxial e conservam as provas de engate, folga e parede; instâncias ausentes ou ambíguas são rejeitadas.
+
+O conjunto salvo de oito sólidos que excedia o antigo limite de STL voltou a baixar pela rota real: **HTTP 200, 37.571.384 bytes**, sem mudar spec/revisão. O benchmark com Codex autenticado produziu uma placa com quatro alojamentos e um conjunto de três corpos mecanicamente validado. A execução difícil de oito corpos exigiu retomada e expôs dois falsos negativos no verificador; após corrigi-los, **o mesmo JSON completo passou em 121,3 s**, com `mechanicalStatus=verified`, oito sólidos e STEP reimportado, sem novas chamadas de IA ou mudanças geométricas. Detalhes, contagens, falhas e limites dessa amostra estão em [cad-generation-quality.md](cad-generation-quality.md); ela não estabelece uma taxa geral de sucesso de geração.
+
 ## Confiabilidade e exportação de rascunhos — 2026-10-07
 
 **442 testes TypeScript passaram**: 58 web, 313 agente, 69 domínio e 2 golden. **337 testes da API passaram e dois foram ignorados** na suíte completa, em 516,65 s. Após acrescentar a restrição de 128 etapas totais no rascunho, os **oito testes nativos de exportação passaram** em 14,10 s; não são somados ao total da suíte completa. **32 testes de navegador passaram em 4,9 minutos**, usando API/CadQuery reais e IA programada. Typecheck, lint web, build, Ruff e mypy da API passaram; mypy verificou 43 arquivos.

@@ -24,7 +24,7 @@ test('mechanical generation carries the contract and mating feature IDs into eve
   }, undefined, undefined, 0, { requireMechanics: true })
   assert.equal(outcome.kind, 'create')
   assert.equal(checks, 1)
-  assert.equal(provider.calls[0].options?.maxTokens, 4500)
+  assert.equal(provider.calls[0].options?.maxTokens, 9000)
   for (const call of provider.calls.slice(1)) {
     assert.match(call.messages[1].content, /Mechanical connections/)
     assert.match(call.messages[1].content, /Complete component placement plan/)

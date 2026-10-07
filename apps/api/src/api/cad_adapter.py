@@ -9,6 +9,8 @@ from typing import Any
 
 from domain.cad_part import CadPartSpec
 
+from api.cad_runtime import configure_cad_kernel
+
 
 class CadEngineUnavailableError(Exception):
     pass
@@ -130,6 +132,7 @@ def _verify_bosses(solid: Any, spec: CadPartSpec) -> None:
 def build_step(spec: CadPartSpec, max_bytes: int) -> CadArtifact:
     try:
         cq = import_module("cadquery")
+        configure_cad_kernel()
     except ImportError as exc:
         raise CadEngineUnavailableError("CAD engine unavailable. Run uv sync in apps/api and restart the API.") from exc
 

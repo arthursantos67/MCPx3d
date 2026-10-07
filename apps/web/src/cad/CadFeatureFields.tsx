@@ -1,9 +1,10 @@
 import { CAD_EDGE_SELECTORS, CAD_FEATURES, type CadEdgeSelector } from '../../../../packages/domain/ts/src/cad-features.ts'
 import type { CadLoftSection, CadProgramStep } from '../../../../packages/domain/ts/src/cad-program.ts'
+import { CAD_SOCKET_SCREWS, socketScrewRecess } from '../../../../packages/domain/ts/src/cad-fasteners.ts'
 
 const labels: Record<string, string> = { width: 'Largura', depth: 'Profundidade', height: 'Comprimento Z', diameter: 'Diâmetro',
   innerDiameter: 'Diâmetro interno', majorRadius: 'Raio central', minorRadius: 'Raio da seção', length: 'Comprimento total',
-  pitch: 'Passo', clearance: 'Folga radial', starts: 'Entradas', headDiameter: 'Diâmetro da cabeça', headDepth: 'Profundidade da cabeça',
+  pitch: 'Passo', clearance: 'Folga radial', starts: 'Entradas', headDiameter: 'Diâmetro do alojamento da cabeça', headDepth: 'Profundidade do alojamento da cabeça',
   radius: 'Raio', distance: 'Distância', thickness: 'Espessura' }
 const nonNumeric = new Set(['points', 'sections', 'ruled', 'profile', 'handedness', 'selector', 'holeType'])
 
@@ -25,11 +26,18 @@ export default function CadFeatureFields({ step, onChange }: { readonly step: Ca
       <label className="cad-program__field">Sentido <select value={step.handedness} onChange={(event) => onChange({ handedness: event.target.value as 'right' | 'left' })}>
         <option value="right">Direita</option><option value="left">Esquerda</option></select></label>
     </>}
-    {step.shape === 'hole' && <label className="cad-program__field">Entrada <select value={step.holeType} onChange={(event) => {
+    {step.shape === 'hole' && <><label className="cad-program__field">Alojamento da cabeça <select value={step.holeType} onChange={(event) => {
       const holeType = event.target.value as typeof step.holeType
       onChange({ holeType, headDiameter: holeType === 'plain' ? 0 : step.headDiameter || step.diameter * 1.8,
-        headDepth: holeType === 'plain' ? 0 : step.headDepth || step.height / 4 })
-    }}><option value="plain">Simples</option><option value="counterbore">Rebaixo cilíndrico</option><option value="countersink">Escareado</option></select></label>}
+        headDepth: holeType === 'plain' ? 0 : holeType === 'countersink' ? ((step.headDiameter || step.diameter * 1.8) - step.diameter) / 2 : step.headDepth || step.height / 4 })
+    }}><option value="plain">Sem alojamento</option><option value="counterbore">Rebaixo cilíndrico</option><option value="countersink">Escareado</option></select></label>
+      <label className="cad-program__field">Preset para cabeça cilíndrica <select value="" onChange={(event) => {
+        if (!event.target.value) return
+        const preset = socketScrewRecess(Number(event.target.value))
+        onChange({ ...preset, height: Math.max(step.height, preset.headDepth + 1) })
+      }}><option value="">Personalizado</option>{CAD_SOCKET_SCREWS.map((screw) => <option key={screw.nominal} value={screw.nominal}>M{screw.nominal} · cabeça cilíndrica</option>)}</select></label>
+      <small>O rebaixo é geometria real na face de entrada. Escolha o lado acessível à cabeça e conserve material abaixo do alojamento.</small>
+    </>}
     {(step.shape === 'fillet' || step.shape === 'chamfer' || step.shape === 'shell') && <label className="cad-program__field">Seleção <select value={step.selector}
       onChange={(event) => onChange({ selector: event.target.value as CadEdgeSelector } as Partial<CadProgramStep>)}>
       {Object.entries(CAD_EDGE_SELECTORS).filter(([key]) => step.shape !== 'shell' || ['top', 'bottom', 'positive_x', 'negative_x', 'positive_y', 'negative_y'].includes(key))

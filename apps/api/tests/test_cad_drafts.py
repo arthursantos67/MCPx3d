@@ -125,3 +125,24 @@ def test_draft_rejects_excessive_total_steps_before_kernel_work():
     response = TestClient(app).post("/api/cad/drafts/export", json={"spec": spec})
     assert response.status_code == 400
     assert "128 construction steps" in response.json()["message"]
+
+
+def test_draft_keeps_step_and_reports_stl_omissions_when_meshing_cannot_fit(tmp_path):
+    app.dependency_overrides[get_settings] = lambda: Settings(max_cad_stl_bytes=100)
+    try:
+        archive, report = exported({"spec": PROGRAM})
+        assert len(import_step(archive, "draft_plate-draft.step", tmp_path)) == 1
+        assert "draft_plate-draft.stl" not in archive.namelist()
+        assert "draft_plate-draft.stl" in report["stl"]["omitted"]
+        assert report["geometryValidation"] == "step_roundtrip_verified"
+    finally:
+        app.dependency_overrides.pop(get_settings)
+
+
+def test_draft_uses_a_separate_bundle_limit():
+    app.dependency_overrides[get_settings] = lambda: Settings(max_cad_draft_bundle_bytes=100)
+    try:
+        response = TestClient(app).post("/api/cad/drafts/export", json={"spec": PROGRAM})
+        assert response.status_code == 413
+    finally:
+        app.dependency_overrides.pop(get_settings)

@@ -225,10 +225,28 @@ def _bore_evidence(frame: Feature, solid: Any, joint: CadMechanicalConnection, m
     side = cross(frame.axis, AXES["z"] if abs(frame.axis[2]) < 0.9 else AXES["x"])
     side = scale(side, 1 / math.sqrt(dot(side, side)))
     other = cross(frame.axis, side)
-    for fraction in (0.001, 0.2, 0.5, 0.8, 0.999):
-        point = add(frame.center, scale(frame.axis, low + (high - low) * fraction - dot(frame.center, frame.axis)))
-        if material.inside(solid, point) or not all(material.inside(solid, add(point, scale(direction, frame.step.diameter / 2 + 0.2)))
-                                              for direction in (side, scale(side, -1), other, scale(other, -1))):
+    directions = (side, scale(side, -1), other, scale(other, -1))
+    stations = [low + (high - low) * fraction for fraction in (0.001, 0.2, 0.5, 0.8, 0.999)]
+    step = frame.step
+    if isinstance(step, HoleStep) and step.holeType != "plain":
+        seat = frame.high - step.headDepth
+        if seat <= low + 1e-5:
+            raise ValueError("screw-head recess leaves no supporting seat within the mounting stock")
+        if seat >= high - 1e-5:
+            raise ValueError("declared screw-head recess lies entirely outside the mounting stock")
+        if seat < high:
+            margin = min(.05, (seat - low) / 2, (high - seat) / 2)
+            stations.extend((seat - margin, seat + margin))
+    for station in stations:
+        point = add(frame.center, scale(frame.axis, station - dot(frame.center, frame.axis)))
+        radius = step.diameter / 2
+        if isinstance(step, HoleStep) and step.holeType != "plain":
+            depth = frame.high - station
+            if depth < step.headDepth:
+                radius = step.headDiameter / 2 if step.holeType == "counterbore" else (
+                    step.headDiameter / 2 - (step.headDiameter - step.diameter) / 2 * depth / step.headDepth)
+        if material.inside(solid, point) or any(material.inside(solid, add(point, scale(direction, radius - .05))) for direction in directions) or not all(
+                material.inside(solid, add(point, scale(direction, radius + .2))) for direction in directions):
             raise ValueError("declared mounting bore is blocked, removed or lacks surrounding material")
 
 
@@ -254,8 +272,16 @@ def _bolted(joint: CadMechanicalConnection, first: CadComponent, second: CadComp
 
 def _fit(joint: CadMechanicalConnection, first: CadComponent, second: CadComponent, a_solid: Any, b_solid: Any, material: MaterialChecks) -> Feature:
     a, b = feature(first, joint.firstFeature), feature(second, joint.secondFeature)
-    if a.step.pattern or b.step.pattern:
-        raise ValueError("use individual feature IDs for shaft/bore joints; patterned joints are not verified")
+    if a.step.pattern or (b.step.pattern and not isinstance(b.step.pattern, LinearPattern)):
+        raise ValueError("shaft patterns and circular receiving patterns need individual feature IDs")
+    if isinstance(b.step.pattern, LinearPattern):
+        candidates = [feature(second, joint.secondFeature, scale(coordinates(b.step.pattern.offset), index))
+                      for index in range(b.step.pattern.count)]
+        matches = [candidate for candidate in candidates if abs(dot(a.axis, candidate.axis)) >= 1 - 1e-6
+                   and line_distance(a.center, candidate.center, a.axis) <= 1e-5]
+        if len(matches) != 1:
+            raise ValueError(f"receiving linear pattern needs exactly one coaxial instance; found {len(matches)}; use an individual feature ID for ambiguous joints")
+        b = matches[0]
     if a.step.op not in ("base", "union") or b.step.op != "cut":
         raise ValueError("first feature must be a material shaft/thread and second feature a cut bore/thread")
     if abs(dot(a.axis, b.axis)) < 1 - 1e-6 or line_distance(a.center, b.center, a.axis) > 1e-5:

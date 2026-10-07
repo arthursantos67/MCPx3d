@@ -8,6 +8,7 @@ import type { AgentProvider } from "../../src/chat/ChatController.ts";
 import type { AgentStatus } from "../../src/chat/types.ts";
 import type { CadProgramSpec } from "../../../../packages/domain/ts/src/cad-program.ts";
 import type { CadAssemblySpec } from "../../../../packages/domain/ts/src/cad-assembly.ts";
+import { CadActionBudgetError } from '../../../../packages/agent/src/cad-action-budget.ts';
 
 function makeFakeProvider(
   responses: readonly MockResponse[],
@@ -240,5 +241,56 @@ test('a single-part clarification is resolved internally before caching the vali
   assert.equal(mock.calls.length, 2);
   await controller.planCadProgram('Crie uma placa');
   assert.equal(mock.calls.length, 2);
+});
+
+const budgetSpec: CadProgramSpec = { schemaVersion: '3.0', units: 'mm', partId: 'limited', steps: [{ id: 'body', op: 'base',
+  shape: 'box', position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 }, width: 20, depth: 20, height: 10 }] };
+const budgetResponse = { decision: 'create', question: '', assumptions: [], spec: budgetSpec };
+
+test('all correction strategies share an AI budget and preserve the rejected draft', async () => {
+  const { provider, mock } = makeFakeProvider([budgetResponse, budgetResponse]);
+  const drafts: unknown[] = [];
+  const controller = new CadAgentController(provider, { checkCadProgram: async () => 'CAD step body failed', checkCadAssembly: async () => null },
+    { aiCalls: 1, cadChecks: 4, durationMs: 1000 });
+  controller.setDraftListener((draft) => drafts.push(draft));
+  await assert.rejects(controller.planCadProgram('Make a block'), /atingiu 1 chamadas/);
+  assert.equal(mock.calls.length, 1);
+  assert.ok(drafts.length > 0);
+  assert.match((drafts.at(-1) as { issue: string }).issue, /orçamento limitado/);
+});
+
+test('distinct geometry checks cannot exceed the action limit even when the model improves its candidate', async () => {
+  const { provider, mock } = makeFakeProvider([budgetResponse, { decision: 'edit', partId: 'limited',
+    replaceSteps: [{ ...budgetSpec.steps[0], width: 30 }], insertSteps: [], removeStepIds: [], question: '', assumptions: [] }]);
+  Object.assign(provider, { generationPolicy: { retryInvalidStructuredOutput: false } });
+  let checks = 0;
+  const controller = new CadAgentController(provider, { checkCadProgram: async () => { checks++; return 'CAD step body failed' }, checkCadAssembly: async () => null },
+    { aiCalls: 4, cadChecks: 1, durationMs: 1000 });
+  await assert.rejects(controller.planCadProgram('Make a block'), /atingiu 1 verificações/);
+  assert.equal(checks, 1);
+  assert.equal(mock.calls.length, 2);
+});
+
+test('an action deadline releases an unresponsive checker and allows the next generation', async () => {
+  const { provider } = makeFakeProvider([budgetResponse, budgetResponse]);
+  let checks = 0;
+  const controller = new CadAgentController(provider, { checkCadProgram: async () => {
+    checks++;
+    return checks === 1 ? new Promise<string | null>(() => {}) : null;
+  }, checkCadAssembly: async () => null }, { aiCalls: 3, cadChecks: 3, durationMs: 40 });
+  await assert.rejects(controller.planCadProgram('Make a block'), CadActionBudgetError);
+  assert.equal((await controller.planCadProgram('Make a block')).kind, 'create');
+  assert.equal(checks, 2);
+});
+
+test('reordered JSON fields reuse a previously checked geometric candidate', async () => {
+  const reordered = { steps: budgetSpec.steps, partId: budgetSpec.partId, units: budgetSpec.units, schemaVersion: budgetSpec.schemaVersion };
+  const { provider, mock } = makeFakeProvider([budgetResponse, { ...budgetResponse, spec: reordered }]);
+  let checks = 0;
+  const controller = new CadAgentController(provider, { checkCadProgram: async () => { checks++; return null }, checkCadAssembly: async () => null });
+  await controller.planCadProgram('Make a block');
+  await controller.planCadProgram('Make the same block');
+  assert.equal(mock.calls.length, 2);
+  assert.equal(checks, 1);
 });
 

@@ -7,6 +7,9 @@ import { cadResponseMetadataSchema } from './cad-response-metadata.ts'
 import { applyCadProgramPatch, cadStepRemovalRequested } from './cad-program-patch.ts'
 import { generateCadDecision } from './cad-autonomy.ts'
 import { failedFinish, finishRepairHistory, repairFinishLocally, repairFinishWithProvider, type FailedCadCandidate } from './cad-finish-repair.ts'
+import { cadIdentity } from './cad-identity.ts'
+import { prepareCadDesign, cadStockDesignIssue, CAD_DESIGN_GUIDANCE } from './cad-design-preparation.ts'
+import { CAD_FASTENER_GUIDANCE } from '../../domain/ts/src/cad-fasteners.ts'
 
 const strictSpecSchema = Object.fromEntries(Object.entries(programSchema).filter(([key]) => !['$schema', '$id', 'title', '$defs'].includes(key)))
 const strictOutputSchema = {
@@ -325,6 +328,7 @@ interface CadProgramGenerationOptions {
   readonly assemblyComponent?: boolean
   readonly noQuestions?: boolean
   readonly maxRepairAttempts?: number
+  readonly prepareDesign?: boolean
   readonly onDraft?: (spec: CadProgramSpec, issue?: string) => void
   readonly localRepair?: (spec: CadProgramSpec, issue: string, inspect: (spec: CadProgramSpec) => Promise<string | null>) => Promise<{ spec: CadProgramSpec; issue: string | null; assumption: string } | null>
 }
@@ -336,15 +340,15 @@ export async function generateCadProgram(
 ): Promise<CadProgramOutcome> {
   let store = programCheckpoints.get(provider)
   if (!store) { store = new Map(); programCheckpoints.set(provider, store) }
-  const key = JSON.stringify([request, previous, options?.maxOutputTokens, options?.assemblyComponent, options?.noQuestions, options?.maxRepairAttempts])
+  const key = cadIdentity([request, previous, options?.maxOutputTokens, options?.assemblyComponent, options?.noQuestions, options?.maxRepairAttempts, options?.prepareDesign])
   const resume = store.get(key)
   const remember = (checkpoint: ProgramCheckpoint) => {
     store!.set(key, structuredClone(checkpoint))
     if (store!.size > 8) store!.delete(store!.keys().next().value!)
     options?.onDraft?.(checkpoint.current.spec)
   }
-  const inspect = checkGeometry && provider.generationPolicy ? async (spec: CadProgramSpec) => {
-    try { return await checkGeometry(spec) }
+  const inspect = checkGeometry && (provider.generationPolicy || options?.maxRepairAttempts !== undefined) ? async (spec: CadProgramSpec) => {
+    try { return options?.prepareDesign && cadStockDesignIssue(spec) || await checkGeometry(spec) }
     catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') throw error
       throw new ProviderRequestError(`A verificação CAD foi interrompida. O rascunho disponível foi conservado nesta aba; nenhuma correção com IA foi solicitada para essa falha. ${error instanceof Error ? error.message : 'Falha no motor CAD.'}`, { cause: error })
@@ -370,7 +374,11 @@ async function buildCadProgram(
   const maxOutputTokens = options?.maxOutputTokens ?? 9000
   const generate = (description: string, existing: CadProgramSpec | undefined, allowCutRemoval: boolean) => {
     options?.onGeneration?.()
-    return generateOnce(provider, description, existing, allowCutRemoval, maxOutputTokens, options?.assemblyComponent, options?.noQuestions, (options?.maxRepairAttempts ?? 0) > 0)
+    return generateOnce(provider, description, existing, allowCutRemoval, maxOutputTokens, options?.assemblyComponent, options?.noQuestions, (options?.maxRepairAttempts ?? 0) > 0).then((result) => {
+      if (result.kind !== 'create' || !options?.prepareDesign || previous) return result
+      const prepared = prepareCadDesign(result.spec, request)
+      return { ...result, spec: prepared.spec, assumptions: [...result.assumptions, ...prepared.assumptions] }
+    })
   }
   const previousIssue = !resume && previous && checkGeometry ? await checkGeometry(previous) : null
   const generationRequest = previousIssue
@@ -385,32 +393,33 @@ async function buildCadProgram(
   const attemptLimit = limitedRepairs === undefined ? 8 : attempts + limitedRepairs
   let phase = resume?.phase ?? 'focused'
   const failedCandidates = resume?.failedCandidates ?? []
+  let stagnantCorrections = 0
   const saveProgress = () => remember?.({ current, attempts, phase, failedCandidates })
   const rememberFailure = (spec: CadProgramSpec, issue: string | null) => {
-    if (issue && (failedFinish(spec, issue) || options?.maxRepairAttempts !== undefined) && !failedCandidates.some((entry) => JSON.stringify(entry.spec) === JSON.stringify(spec))) {
+    if (issue && (failedFinish(spec, issue) || options?.maxRepairAttempts !== undefined) && !failedCandidates.some((entry) => cadIdentity(entry.spec) === cadIdentity(spec))) {
       failedCandidates.push({ spec, issue })
       if (failedCandidates.length > 16) failedCandidates.shift()
       saveProgress()
     }
   }
   const inspectFinishCandidate = async (spec: CadProgramSpec) => {
-    const known = failedCandidates.find((entry) => JSON.stringify(entry.spec) === JSON.stringify(spec))
+    const known = failedCandidates.find((entry) => cadIdentity(entry.spec) === cadIdentity(spec))
     if (known) return known.issue
     const issue = await checkGeometry(spec)
     rememberFailure(spec, issue)
     return issue
   }
   saveProgress()
-  let issue = await checkGeometry(current.spec)
+  let issue = await inspectFinishCandidate(current.spec)
   options?.onDraft?.(current.spec, issue ?? undefined)
   rememberFailure(current.spec, issue)
   const repairLocally = async () => {
     for (let remaining = current.spec.steps.length; issue && remaining > 0; remaining--) {
       const moved = await options?.localRepair?.(current.spec, issue, inspectFinishCandidate)
         ?? await repairFinishLocally(current.spec, request, issue, inspectFinishCandidate)
-        ?? await repairNoOpPattern(current.spec, issue, checkGeometry)
-        ?? await repairMissedThroughCut(current.spec, request, issue, checkGeometry)
-        ?? await repairSeparatedUnion(current.spec, request, issue, checkGeometry)
+        ?? await repairNoOpPattern(current.spec, issue, inspectFinishCandidate)
+        ?? await repairMissedThroughCut(current.spec, request, issue, inspectFinishCandidate)
+        ?? await repairSeparatedUnion(current.spec, request, issue, inspectFinishCandidate)
       if (!moved) break
       current = { ...current, spec: moved.spec, assumptions: [...current.assumptions, moved.assumption] }
       issue = moved.issue
@@ -434,11 +443,14 @@ async function buildCadProgram(
         attempts++
         phase = 'full'
         if (repairedFinish) {
+          stagnantCorrections = 0
           current = { ...current, spec: repairedFinish.spec, assumptions: [...current.assumptions, repairedFinish.assumption] }
           saveProgress()
           issue = await inspectFinishCandidate(current.spec)
           if (!issue) return current
         }
+        if (!repairedFinish) stagnantCorrections++
+        if (options?.maxRepairAttempts !== undefined && stagnantCorrections >= 2) break
         saveProgress()
         continue
       }
@@ -473,20 +485,25 @@ async function buildCadProgram(
       attempts++
       phase = 'focused'
       if (revised?.kind === 'create') {
-        if (options?.maxRepairAttempts !== undefined && failedCandidates.some((entry) => JSON.stringify(entry.spec) === JSON.stringify(revised.spec))) { saveProgress(); continue }
+        if (options?.maxRepairAttempts !== undefined && failedCandidates.some((entry) => cadIdentity(entry.spec) === cadIdentity(revised.spec))) {
+          stagnantCorrections++; saveProgress(); if (stagnantCorrections >= 2) break; continue
+        }
+        stagnantCorrections = 0
         current = revised
         saveProgress()
         issue = failedFinish(current.spec, issue) || options?.maxRepairAttempts !== undefined ? await inspectFinishCandidate(current.spec) : await checkGeometry(current.spec)
         options?.onDraft?.(current.spec, issue ?? undefined)
       }
+      if (!revised) stagnantCorrections++
       saveProgress()
     }
     await repairLocally()
+    if (options?.maxRepairAttempts !== undefined && stagnantCorrections >= 2) break
     if (JSON.stringify(current.spec) === startingSpec && (options?.maxRepairAttempts === undefined || attempts >= attemptLimit)) break
   }
   if (issue && limitedRepairs !== undefined) {
     options?.onDraft?.(current.spec, issue)
-    throw new CadProgramValidationError(`A peça ainda não passou na validação após as ${limitedRepairs} correções permitidas nesta ação. O rascunho foi conservado nesta aba. Retome o mesmo pedido para tentar apenas a correção pendente. Última falha: ${issue}`, current.spec)
+    throw new CadProgramValidationError(`A peça ainda não passou na validação após as ${limitedRepairs} correções permitidas nesta ação.${stagnantCorrections >= 2 ? ' A IA repetiu candidatos rejeitados; o ciclo foi interrompido por falta de progresso.' : ''} O rascunho foi conservado nesta aba. Retome o mesmo pedido para tentar apenas a correção pendente. Última falha: ${issue}`, current.spec)
   }
   if (issue) throw new Error(`A geração automática não conseguiu validar a peça. O rascunho anterior foi preservado. Última falha: ${issue}`)
   return current
@@ -747,6 +764,8 @@ async function generateOnce(provider: LLMProvider, request: string, previous?: C
   const parse = (raw: unknown) => parseOutcome(incremental ? applyCadProgramPatch(raw, previous!) : raw,
     previous, request, allowCutRemoval, incremental ? !allowCutRemoval && cadStepRemovalRequested(request) : undefined)
   const instructions = [
+    CAD_DESIGN_GUIDANCE,
+    CAD_FASTENER_GUIDANCE,
     'You are a mechanical CAD construction planner. Return a single connected manufacturable solid in millimeters.',
     'Build it from ordered primitives and CAD features. The first step uses base; later primitives use union or cut and finishes use modify.',
     CAD_FEATURE_GUIDANCE,

@@ -78,7 +78,7 @@ test('resuming a repeated failed finish sends the previous failure and does not 
   const result = await generateCadProgram(provider, 'Fuso com chanfro de 1 mm', undefined, inspect, { noQuestions: true })
   assert.equal(result.kind, 'create')
   assert.equal(provider.calls.length, 3)
-  assert.deepEqual(checked, ['circular', 'circular', 'positive_x'])
+  assert.deepEqual(checked, ['circular', 'positive_x'])
   assert.match(provider.calls[2].messages[1].content, /Do not repeat failed selector\/size\/order combinations/)
   assert.match(provider.calls[2].messages[1].content, /"selector":"circular"/)
 })
@@ -107,7 +107,7 @@ test('failed local candidates are not rechecked after cancellation, and the real
   await assert.rejects(generateCadProgram(provider, 'Fuso com volante e chanfros', undefined, inspect), { name: 'AbortError' })
   const result = await generateCadProgram(provider, 'Fuso com volante e chanfros', undefined, inspect)
   assert.equal(result.kind, 'create')
-  assert.deepEqual(sizes, [1, 0.5, 0.25, 1, 0.25])
+  assert.deepEqual(sizes, [1, 0.5, 0.25, 0.25])
   assert.equal(provider.calls.length, 1)
 })
 

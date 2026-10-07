@@ -16,7 +16,7 @@ from api.cad_adapter import CadArtifactTooLargeError, CadGeometryError
 from api.cad_assembly_adapter import _position_component, export_assembly_solids
 from api.cad_mesh import preview_tessellation
 from api.cad_program_adapter import _engine, build_program_solid
-from api.cad_stl import stl_from_saved_step
+from api.cad_stl import stl_artifact_from_saved_step
 
 Identifier = Annotated[str, Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")]
 
@@ -124,24 +124,42 @@ def draft_mesh(request: CadDraftRequest, bodies: list[DraftBody]) -> dict[str, A
             "boundsMm": [box.xlen, box.ylen, box.zlen], "draftReport": draft_report(request, bodies)}
 
 
-def draft_bundle(request: CadDraftRequest, bodies: list[DraftBody], max_bytes: int) -> bytes:
+def draft_bundle(request: CadDraftRequest, bodies: list[DraftBody], max_bytes: int,
+                 max_stl_bytes: int | None = None, max_bundle_bytes: int | None = None) -> bytes:
+    max_stl_bytes = max_stl_bytes or max_bytes
+    max_bundle_bytes = max_bundle_bytes or max_bytes
     valid = [body for body in bodies if body.solid is not None]
     artifact = export_assembly_solids([body.solid for body in valid], [body.id for body in valid], max_bytes)
+    report = draft_report(request, bodies, exported=True)
+    report["stl"] = {"assembly": None, "components": {}, "omitted": {}}
     files = {f"{request.spec.partId}-draft.step": artifact.step,
-             f"{request.spec.partId}-draft.stl": stl_from_saved_step(artifact.step, max_bytes),
-             "original-draft.json": request.spec.model_dump_json(indent=2, exclude_unset=True).encode(),
-             "report.json": json.dumps(draft_report(request, bodies, exported=True), ensure_ascii=False, indent=2).encode()}
+             "original-draft.json": request.spec.model_dump_json(indent=2, exclude_unset=True).encode()}
+
+    def add_stl(name: str, step: bytes, component_id: str | None = None) -> None:
+        try:
+            mesh = stl_artifact_from_saved_step(step, max_stl_bytes)
+        except CadArtifactTooLargeError as exc:
+            report["stl"]["omitted"][name] = str(exc)
+            return
+        files[name] = mesh.data
+        if component_id is None:
+            report["stl"]["assembly"] = mesh.report()
+        else:
+            report["stl"]["components"][component_id] = mesh.report()
+
+    add_stl(f"{request.spec.partId}-draft.stl", artifact.step)
     if len(valid) > 1:
         for body in valid:
             component = export_assembly_solids([body.solid], [body.id], max_bytes)
             files[f"components/{body.id}.step"] = component.step
-            files[f"components/{body.id}.stl"] = stl_from_saved_step(component.step, max_bytes)
-    if sum(len(data) for data in files.values()) > max_bytes * 3:
+            add_stl(f"components/{body.id}.stl", component.step, body.id)
+    files["report.json"] = json.dumps(report, ensure_ascii=False, indent=2).encode()
+    if sum(len(data) for data in files.values()) > max_bundle_bytes * 3:
         raise CadArtifactTooLargeError("Draft bundle exceeds the total uncompressed size limit")
     output = io.BytesIO()
     with ZipFile(output, "w", ZIP_DEFLATED) as archive:
         for name, data in files.items():
             archive.writestr(name, data)
-    if output.tell() > max_bytes:
+    if output.tell() > max_bundle_bytes:
         raise CadArtifactTooLargeError("Draft ZIP exceeds the configured artifact size limit")
     return output.getvalue()

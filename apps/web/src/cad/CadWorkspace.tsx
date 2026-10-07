@@ -15,6 +15,7 @@ import { useCadPreview } from './useCadPreview.ts'
 import './CadWorkspace.css'
 import { ProviderRequestError } from '../../../../packages/agent/src/provider.ts'
 import type { CadDraftSnapshot } from '../../../../packages/domain/ts/src/cad-draft.ts'
+import type { CadActionStats } from '../../../../packages/agent/src/cad-action-budget.ts'
 import { readCadDraft, storeCadDraft, clearCadDraft } from './cadDraftStorage.ts'
 import CadDraftPanel from './CadDraftPanel.tsx'
 
@@ -43,6 +44,7 @@ export default function CadWorkspace({ provider, active, ready, agentDetail, onO
   const [busy, setBusy] = useState(false)
   const [draft, setDraft] = useState<CadDraftSnapshot | null>(readCadDraft)
   const [draftPersistenceFailed, setDraftPersistenceFailed] = useState(false)
+  const [generationStats, setGenerationStats] = useState<CadActionStats | null>(null)
   const [requireMechanics, setRequireMechanics] = useState(() => localStorage.getItem('modeler:cad-mechanics') !== 'concept')
   const currentProject = editor === 'program' ? programProject : assemblyProject
   const currentSpec = draft?.spec ?? (editor === 'program' ? program : assembly)
@@ -56,6 +58,7 @@ export default function CadWorkspace({ provider, active, ready, agentDetail, onO
   useEffect(() => () => agent.cancelGeneration(), [agent])
   useEffect(() => { agent.setProvider(provider) }, [agent, provider])
   useEffect(() => { agent.setDraftListener((snapshot) => { setDraft(snapshot); setDraftPersistenceFailed(!storeCadDraft(snapshot)) }) }, [agent])
+  useEffect(() => { agent.setStatsListener(setGenerationStats) }, [agent])
   useEffect(() => { localStorage.setItem('modeler:cad-editor', editor) }, [editor])
   useEffect(() => {
     if (!active || recovered) return
@@ -113,6 +116,7 @@ export default function CadWorkspace({ provider, active, ready, agentDetail, onO
       {recoveryError && <p className="cad-workspace__notice" role="alert">{recoveryError}</p>}
       {!recovered && <p className="cad-workspace__notice" role="status">Recuperando seus projetos…</p>}
       {exportableDraft && <CadDraftPanel draft={exportableDraft} busy={busy} persistenceFailed={draftPersistenceFailed} />}
+      {generationStats && <small>{generationStats.aiCalls}/{generationStats.aiCallLimit} chamadas de IA · {generationStats.cadChecks}/{generationStats.cadCheckLimit} verificações geométricas nesta ação</small>}
       <div hidden={!recovered || editor !== 'program'}><CadProgramPanel spec={program} project={programProject} onChange={(spec) => { discardDraft(); setProgram(spec) }} onSaved={(saved) => { setProgramProject(saved); agent.clearCompletedGeneration(); discardDraft() }}
         onBusyChange={reportBusy}
         onNew={() => { api.clearActiveCadProgram(); setProgramProject(null); setProgram(initialCadProgram); clearProgress(); discardDraft() }}

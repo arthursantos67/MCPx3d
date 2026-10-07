@@ -31,7 +31,8 @@ def preview_draft(request: CadDraftRequest) -> dict[str, Any]:
 
 @router.post("/export")
 def export_draft(request: CadDraftRequest, settings: Annotated[Settings, Depends(get_settings)]) -> Response:
-    data = draft_bundle(request, available_geometry(request), settings.max_artifact_bytes)
+    data = draft_bundle(request, available_geometry(request), settings.max_artifact_bytes,
+                        settings.max_cad_stl_bytes, settings.max_cad_draft_bundle_bytes)
     return Response(data, media_type="application/zip", headers={
         "Content-Disposition": f'attachment; filename="{request.spec.partId}-draft.zip"',
         "X-CAD-Validation": "draft", "Cache-Control": "no-store"})

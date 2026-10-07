@@ -1,6 +1,7 @@
 import type { CadAssemblySpec } from '../../domain/ts/src/cad-assembly.ts'
 import type { CadProgramSpec } from '../../domain/ts/src/cad-program.ts'
 import { assemblyIssueMessage, type CadAssemblyCheckResult, type CadAssemblyIssue, type CadCollision } from '../../domain/ts/src/cad-assembly-diagnostics.ts'
+import { cadIdentity } from './cad-identity.ts'
 
 type Check = (spec: CadAssemblySpec) => Promise<CadAssemblyCheckResult>
 type PartCheck = (spec: CadProgramSpec) => Promise<string | null>
@@ -53,13 +54,21 @@ export async function repairAssemblyLocally(
   let issue: CadAssemblyCheckResult = initialIssue
   let validations = 0
   const assumptions: string[] = []
-  const seen = new Set([JSON.stringify(initial)])
+  const seen = new Set([cadIdentity(initial)])
+  const partResults = new Map<string, Promise<string | null>>()
   const spend = () => {
     if (validations >= limits.validations) throw new RepairBudgetExhausted()
     validations++
     onAttempt?.(validations)
   }
-  const inspectPart: PartCheck = async (part) => { spend(); return await checkPart(part) }
+  const inspectPart: PartCheck = async (part) => {
+    const identity = cadIdentity(part)
+    if (!partResults.has(identity)) {
+      spend(); const pending = checkPart(part); partResults.set(identity, pending)
+      void pending.catch(() => partResults.delete(identity))
+    }
+    return await partResults.get(identity)!
+  }
   for (let step = 0; issue && step < limits.steps; step++) {
     const messages = typeof issue === 'string' ? [issue] : [...new Set([...issue.collisions, ...issue.mechanicalIssues ?? []].map((item) => item.message))]
     let accepted = false
@@ -69,7 +78,7 @@ export async function repairAssemblyLocally(
         let candidateIssue: CadAssemblyCheckResult = issue
         let verifiedCandidate: string | null = null
         const assessCandidate = async (candidate: CadAssemblySpec): Promise<string | null> => {
-          const serialized = JSON.stringify(candidate)
+          const serialized = cadIdentity(candidate)
           if (seen.has(serialized)) return 'Candidato já avaliado sem progresso.'
           spend()
           seen.add(serialized)
@@ -85,7 +94,7 @@ export async function repairAssemblyLocally(
           if (error instanceof RepairBudgetExhausted) return { spec, issue, assumptions }
           throw error
         }
-        if (!candidate || JSON.stringify(candidate) !== verifiedCandidate) continue
+        if (!candidate || cadIdentity(candidate) !== verifiedCandidate) continue
         spec = candidate
         issue = candidateIssue
         assumptions.push(strategy.assumption)

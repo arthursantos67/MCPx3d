@@ -31,13 +31,13 @@ test('an explicit autonomous budget continues after an unchanged rejection and r
   assert.ok(drafts.length >= 3)
 })
 
-test('a stubborn provider exhausts a bounded budget without accepting geometry or rebuilding rejected candidates', async () => {
+test('two unchanged corrections stop a stubborn provider before its maximum budget', async () => {
   const provider = native([create, edit(40), edit(40), edit(40)])
   let checks = 0
   await assert.rejects(generateCadProgram(provider, 'Crie um suporte', undefined,
     async () => { checks++; return 'CAD step body (base) produces an invalid or empty solid' },
     { maxRepairAttempts: 3, noQuestions: true }), /3 correções permitidas/)
-  assert.equal(provider.calls.length, 4)
+  assert.equal(provider.calls.length, 3)
   assert.equal(checks, 1)
 })
 

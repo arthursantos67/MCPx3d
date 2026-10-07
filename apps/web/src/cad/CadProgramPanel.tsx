@@ -42,7 +42,7 @@ export default function CadProgramPanel({ spec, project, onChange, onSaved, onNe
   const addStep = (shape: CadProgramStep['shape'], op: 'union' | 'cut') => {
     let suffix = spec.steps.length + 1
     while (spec.steps.some((step) => step.id === `${shape}_${suffix}`)) suffix++
-    const next = createCadFeature(shape, `${shape}_${suffix}`, op)
+    const next = createCadFeature(shape, `${shape}_${suffix}`, op, spec.steps)
     onChange({ ...spec, steps: [...spec.steps, next] })
   }
   const generate = async () => {

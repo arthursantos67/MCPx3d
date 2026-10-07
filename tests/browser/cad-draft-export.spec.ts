@@ -9,6 +9,31 @@ test.beforeEach(async ({ page }) => {
   await page.route('**/api/ai/local/status/codex', (route) => route.fulfill({ json: { installed: true, authenticated: true, message: 'ready' } }))
 })
 
+test('the hole editor places a real screw-head seat on the outer face and applies socket-head presets', async ({ page }) => {
+  const spec = { schemaVersion: '3.0', units: 'mm', partId: 'preset_plate', steps: [{ id: 'body', op: 'base', shape: 'box',
+    position: zero, rotation: zero, width: 80, depth: 50, height: 12 }] }
+  const responses = [{ kind: 'part', reason: 'One mounting plate' }, { decision: 'create', spec, question: '', assumptions: [] }]
+  await page.route('**/api/ai/local/generate', async (route) => {
+    expect(responses.length).toBeGreaterThan(0)
+    await route.fulfill({ json: { content: JSON.stringify(responses.shift()), finishReason: 'stop' } })
+  })
+  await page.goto('/')
+  await expect(page.getByText('IA pronta', { exact: true })).toBeVisible()
+  await page.getByRole('textbox', { name: 'Describe CAD part' }).fill('Crie uma placa')
+  await page.getByRole('button', { name: 'Criar com IA', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Baixar STEP', exact: true })).toBeEnabled()
+  await page.getByText('Editar construção · 1 operações', { exact: true }).click()
+  await page.getByRole('combobox', { name: 'Nova forma', exact: true }).selectOption('hole')
+  await page.getByRole('button', { name: 'Cortar', exact: true }).click()
+  await expect(page.getByRole('spinbutton', { name: 'Posição z (mm)', exact: true }).last()).toHaveValue('6')
+  await page.getByRole('combobox', { name: 'Preset para cabeça cilíndrica', exact: true }).selectOption('6')
+  await expect(page.getByRole('spinbutton', { name: 'Diâmetro do alojamento da cabeça (mm)', exact: true })).toHaveValue('11')
+  await expect(page.getByRole('spinbutton', { name: 'Profundidade do alojamento da cabeça (mm)', exact: true })).toHaveValue('6.3')
+  await page.getByRole('button', { name: 'Salvar revisão', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Baixar STEP', exact: true })).toBeEnabled()
+  expect(responses).toHaveLength(0)
+})
+
 test('a rejected finish still offers STEP/STL and conserves the source after reloading', async ({ page }) => {
   const body = { id: 'body', op: 'base', shape: 'box', position: zero, rotation: zero, width: 20, depth: 20, height: 10 }
   const finish = { id: 'finish', op: 'modify', shape: 'chamfer', position: zero, rotation: zero, selector: 'all', distance: 100 }
@@ -68,6 +93,7 @@ test('the CAD engine accepts an undersized guide after local fit correction with
   const responses = [
     { kind: 'assembly', reason: 'Guia com dois suportes' },
     { decision: 'create', partId: 'guide_auto_fit', question: '', assumptions: [], mechanics, components: plan },
+    { decision: 'create', partId: 'guide_auto_fit', question: '', assumptions: [], mechanics, components: plan },
     ...bodies.map((body) => ({ decision: 'create', question: '', assumptions: [], spec: { schemaVersion: '3.0', units: 'mm', partId: body.id, steps: body.steps } })),
   ]
   let calls = 0
@@ -79,7 +105,7 @@ test('the CAD engine accepts an undersized guide after local fit correction with
     calls++
     const response = responses.shift()
     expect(response).toBeTruthy()
-    if (calls === 5) expect(route.request().postDataJSON().messages[1].content).toContain('Computed mating targets')
+    if (calls === 6) expect(route.request().postDataJSON().messages[1].content).toContain('Computed mating targets')
     await route.fulfill({ json: { content: JSON.stringify(response), finishReason: 'stop' } })
   })
   await page.goto('/')
@@ -87,7 +113,7 @@ test('the CAD engine accepts an undersized guide after local fit correction with
   await page.getByRole('textbox', { name: 'Describe CAD part' }).fill('Monte uma guia com dois suportes e vínculos físicos verificados')
   await page.getByRole('button', { name: 'Criar com IA', exact: true }).click()
   await expect(page.getByRole('button', { name: 'Baixar STEP do conjunto', exact: true })).toBeEnabled()
-  expect(calls).toBe(5)
+  expect(calls).toBe(6)
   expect(lengths).toEqual([216])
   await expect(page.getByText(/Vínculos mecânicos verificados nas poses/).first()).toBeVisible()
   await expect(page.getByRole('button', { name: 'Baixar rascunho STEP/STL (ZIP)', exact: true })).toHaveCount(0)
@@ -105,6 +131,7 @@ test('a failed component preserves the complete draft and resumes without rebuil
     replaceSteps: [{ ...finish, selector, distance }], insertSteps: [], removeStepIds: [], question: '', assumptions: [] })
   const responses = [
     { kind: 'assembly', reason: 'Três peças' },
+    { decision: 'create', partId: 'continued_draft', components, mechanics: null, question: '', assumptions: [] },
     { decision: 'create', partId: 'continued_draft', components, mechanics: null, question: '', assumptions: [] },
     creation('pending', [body, finish]),
     { selector: 'top', size: 100, beforeStepId: '' }, patch('positive_x', 100),
@@ -127,7 +154,7 @@ test('a failed component preserves the complete draft and resumes without rebuil
   await page.getByRole('textbox', { name: 'Describe CAD part' }).fill('Monte três peças separadas')
   await page.getByRole('button', { name: 'Criar com IA', exact: true }).click()
   await expect(page.getByRole('status').filter({ hasText: /Geometria disponível.*1 componente/ }).first()).toBeVisible()
-  expect(calls).toBe(8)
+  expect(calls).toBe(9)
   const sourcePending = page.waitForEvent('download')
   await page.getByRole('button', { name: 'Baixar geometria original (JSON)', exact: true }).click()
   const source = JSON.parse(readFileSync((await (await sourcePending).path())!, 'utf8'))
@@ -137,7 +164,7 @@ test('a failed component preserves the complete draft and resumes without rebuil
   expect(statSync((await (await bundlePending).path())!).size).toBeGreaterThan(100)
   await page.getByRole('button', { name: 'Retomar geração', exact: true }).click()
   await expect(page.getByRole('button', { name: 'Baixar STEP do conjunto', exact: true })).toBeEnabled()
-  expect(calls).toBe(9)
+  expect(calls).toBe(10)
   expect(inspections.filter((id) => id === 'ready')).toHaveLength(1)
   expect(inspections.filter((id) => id === 'also_ready')).toHaveLength(1)
   await expect(page.getByRole('button', { name: 'Baixar rascunho STEP/STL (ZIP)', exact: true })).toHaveCount(0)

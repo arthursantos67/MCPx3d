@@ -13,6 +13,12 @@ const program = (id: string, shape: 'box' | 'cylinder') => ({
 })
 
 async function configureProvider(page: Page, responses: unknown[]) {
+  for (let index = 0; index < responses.length; index++) {
+    const response = responses[index] as { decision?: string; components?: unknown[] }
+    if (response.decision === 'create' && (response.components?.length ?? 0) >= 3) {
+      responses.splice(index + 1, 0, structuredClone(response)); index++
+    }
+  }
   await page.addInitScript(() => {
     if (window !== window.top) return
     localStorage.setItem('ai-web3d-modeler.provider-config.v1', JSON.stringify({
@@ -293,6 +299,7 @@ test('eight-body CAD resumes after repeated quota and a model change without reb
   const responses = [
     { kind: 'assembly', reason: 'eight independent bodies' },
     { decision: 'create', partId: 'quota_resume_8', question: '', assumptions: [], components },
+    { decision: 'create', partId: 'quota_resume_8', question: '', assumptions: [], components },
     ...components.slice(0, 5).map((component) => program(component.id, 'box')),
     quota, quota,
     ...components.slice(5).map((component) => program(component.id, 'box')),
@@ -323,7 +330,7 @@ test('eight-body CAD resumes after repeated quota and a model change without reb
   await expect(page.getByRole('status').filter({ hasText: /quota.*esgotada/ }).first()).toBeVisible()
   await page.getByRole('button', { name: 'Retomar geração', exact: true }).click()
   await expect(progress.getByText('Geração pausada', { exact: true })).toBeVisible()
-  expect(modelCalls).toHaveLength(9)
+  expect(modelCalls).toHaveLength(10)
   await page.getByRole('button', { name: 'Trocar modelo ou provedor', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: 'Configurações da IA' })
   await dialog.getByRole('textbox', { name: 'Modelo', exact: true }).fill('replacement-model')
@@ -337,7 +344,7 @@ test('eight-body CAD resumes after repeated quota and a model change without reb
   await expect(page.getByRole('button', { name: 'Baixar STEP do conjunto' })).toBeVisible()
   expect(navigations).toBe(0)
   expect(responses).toHaveLength(0)
-  expect(modelCalls.slice(9)).toEqual(Array(3).fill('replacement-model'))
+  expect(modelCalls.slice(10)).toEqual(Array(3).fill('replacement-model'))
   expect(checkedParts).toEqual(components.map((component) => component.id))
   expect((await download(page, 'Baixar STEP do conjunto')).data.toString()).toContain('ISO-10303-21')
   const stl = (await download(page, 'Baixar STL do conjunto')).data

@@ -24,6 +24,7 @@ function phaseText(progress: CadAssemblyProgress, status: CadProgressStatus): st
   if (progress.phase === 'classifying') return 'Identificando se o pedido precisa de um conjunto...'
   if (progress.phase === 'planning') return progress.replanning ? 'Replanejando o conjunto após uma falha geométrica...' :
     progress.resumed ? 'Retomando o plano salvo nesta aba...' : 'Planejando os componentes...'
+  if (progress.phase === 'reviewing-plan') return 'Revisando dimensões, encaixes, paredes e acesso aos parafusos antes de construir...'
   if (progress.phase === 'checking-assembly') return 'Validando interferências e movimento do conjunto...'
   if (progress.phase === 'repairing-assembly') return progress.validationAttempt
     ? `Testando folga do conjunto (tentativa ${progress.validationAttempt})...`

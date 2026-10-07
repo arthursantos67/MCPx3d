@@ -11,6 +11,8 @@ Após gerar uma receita estruturada, a interface conserva o rascunho, inclusive 
 - `original-draft.json`, com a receita completa, incluindo operações que falharam;
 - `report.json`, com pedido, falha de origem, peças planejadas ausentes, etapas executadas e omitidas.
 
+STL tem limite independente de 64 MB e quatro tentativas angulares limitadas, com deflexão linear configurada de 0,1 mm absoluta. `report.stl` registra bytes, triângulos e tolerâncias. Se uma malha não couber, nome/diagnóstico ficam em `report.stl.omitted`; o STEP correspondente continua no pacote. ZIP admite até 128 MB; STEP conserva o limite de 10 MB.
+
 Cada sólido incluído precisa ser válido e ter volume positivo. O STEP é reimportado e conferido por sólidos, volumes e limites; STL é derivado desse STEP. Corpos sobrepostos permanecem independentes. Não se fundem componentes para esconder interferências. O relatório declara `status=draft` e `assemblyValidation=not_run`, mesmo quando todos os corpos foram construídos.
 
 Se o chanfro falhar após construir o eixo/volante, exporta-se o sólido anterior ao chanfro, sem executar as operações posteriores desse componente. Essas omissões são explícitas no relatório. Se nem a base puder formar um sólido, aquele corpo é omitido; os demais continuam disponíveis. Se não houver sólido algum, a rota retorna `CAD_DRAFT_EMPTY` e o JSON continua baixável. Não se cria um STEP/STL artificial de geometria inválida.
@@ -27,6 +29,9 @@ O pedido explícito de 2–8 peças prevalece sobre a classificação incorreta 
 
 ## Orçamentos e retomada
 
+A criação/edição inteira compartilha 20 chamadas de IA, 48 inspeções distintas e 20 minutos. Correção de montagem compartilha 5 chamadas, 16 inspeções e 4 minutos; seu coordenador local permite seis propostas/16 validações. Dois candidatos repetidos interrompem a correção antes do orçamento máximo. JSON com campos reordenados é o mesmo candidato. O prazo libera a interface e cancela requisição/provedor; não garante encerramento do kernel. Resultados são reutilizados em cache limitado na aba, mas salvar revalida na API.
+
+Planos de três ou mais peças recebem uma revisão adicional antes da construção, dentro do orçamento global. Quota conserva a revisão pendente para retomada. Instruções priorizam material funcional e interfaces antes de acabamentos; presets e cálculos de cabeça/parede estão em [cad-generation-quality.md](cad-generation-quality.md).
 A interface permite até três correções geométricas por programa em uma ação, além dos reparos determinísticos limitados. O histórico de candidatos rejeitados evita testar novamente a mesma geometria e acompanha a próxima correção. Uma falha de contrato permite uma resposta corrigida e, se ainda faltarem campos dimensionais conhecidos, um preenchimento focado. JSON truncado, quota, cancelamento e indisponibilidade do provedor interrompem imediatamente. O SDK sem orçamento explícito conserva a política anterior do provedor.
 
 Quando somente a validação geométrica de um componente esgota o orçamento, sua receita fica pendente e a criação continua nos próximos corpos. Esse comportamento é optativo no SDK por `allowUnverifiedDrafts` e ativo na criação pela interface. A retomada na mesma aba reutiliza o plano e as peças concluídas e corrige as pendentes. Se o plano não declarou vínculos obrigatórios, a retomada solicita um plano mecânico para os corpos disponíveis, preservando os IDs e permitindo reutilizá-los. Uma peça pendente não é usada como referência já validada. O progresso distingue corpos concluídos e pendentes por ID, inclusive quando a primeira peça falha.
@@ -35,4 +40,4 @@ Geometria disponível, pedido e diagnóstico são guardados no navegador e recup
 
 ## Limites restantes
 
-O motor não representa todos os mecanismos e seleções arbitrárias de faces/arestas. Operações nativas ainda não têm cancelamento garantido nem prazo por processo. Interferências e vínculos são amostrados, não comprovados continuamente. As regressões usam CadQuery/STEP reais e modelos programados; qualidade e latência de modelos reais precisam de medição separada. Esses limites estão registrados em [ISSUES.md](../ISSUES.md).
+O motor não representa todos os mecanismos e seleções arbitrárias de faces/arestas. Operações nativas ainda não têm cancelamento garantido nem prazo por processo. Interferências e vínculos são amostrados, não comprovados continuamente. As regressões usam CadQuery/STEP reais e modelos programados; as medições separadas com modelo real estão em [cad-generation-quality.md](cad-generation-quality.md). Essa amostra não estabelece uma taxa geral de sucesso. Esses limites estão registrados em [ISSUES.md](../ISSUES.md).

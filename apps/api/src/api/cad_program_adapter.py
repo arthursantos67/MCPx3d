@@ -37,13 +37,16 @@ from api.cad_adapter import (
 )
 from api.cad_features import build_feature, finish_part
 from api.cad_mesh import preview_tessellation
+from api.cad_runtime import configure_cad_kernel
 
 _logger = logging.getLogger(__name__)
 
 
 def _engine() -> Any:
     try:
-        return import_module("cadquery")
+        engine = import_module("cadquery")
+        configure_cad_kernel()
+        return engine
     except ImportError as exc:
         raise CadEngineUnavailableError("CAD engine unavailable. Run uv sync in apps/api and restart the API.") from exc
 

@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from api.cad_work import CadWorkMiddleware
 from api.config import get_settings
 from api.error_handlers import register_error_handlers
 from api.routes.artifacts import router as artifacts_router
@@ -19,6 +20,7 @@ from api.routes.recipes import router as recipes_router
 settings = get_settings()
 
 app = FastAPI(title="AI Web3D Modeler API")
+app.add_middleware(CadWorkMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
