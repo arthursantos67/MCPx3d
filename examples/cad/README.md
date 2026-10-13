@@ -4,6 +4,8 @@ Os arquivos STEP contêm sólidos B-rep; STL contém malha em milímetros. Os do
 
 ## Conjunto composto
 
+- [threaded_blind_mount.json](threaded_blind_mount.json): suporte com passagens/rebaixos e base com duas roscas cegas M4×0,7, vínculo `threaded`, engate útil e face inferior fechada. Importar/Verificar montagem valida antes de salvar. Fixadores são requisitos declarados, sem sólidos ou dimensionamento de resistência.
+
 - [functional_linear_stage.json](functional_linear_stage.json) e [STEP](functional_linear_stage.step): atuador de oito corpos com Tr12×3 real, duas guias, mancais, volante removível, retenção axial e 12 vínculos mecânicos verificados. `generate_functional_sample.py` verifica o conjunto e reimporta STEP antes de escrever o arquivo. Os fixadores e adesivos declarados precisam ser instalados; o exemplo não dimensiona carga ou fabricação. Consulte [o perfil, a sequência proposta e os requisitos de montagem](../../docs/mechanical-assemblies.md).
 
 - [manual_press.json](manual_press.json): prensa simplificada com estrutura, fuso/haste e prato, três corpos independentes e movimento vinculado.
@@ -23,6 +25,12 @@ Na interface, use **Projeto livre** para um pedido novo ou **Conjunto composto**
 ## Peça com programa livre
 
 ### Recursos mecânicos e roscas
+
+- [pipe_bend.json](pipe_bend.json): curva tubular com arco real, diâmetros e raio da linha central explícitos.
+- [helical_spring.json](helical_spring.json): mola de arame circular com hélice real e sentido declarado; extremidades abertas.
+- [sweep.json](sweep.json): seção tubular varrida em trajetória 3D segmentada. Os pontos são coordenadas locais do recurso.
+
+Os três programas 3.0 podem ser inspecionados pela rota `/api/cad/programs/inspect`; os recursos também estão disponíveis no agente e no editor. [Escopo, fidelidade STEP e limites](../../docs/project-improvements-2026-10-08.md).
 
 - [mechanical_mount.json](mechanical_mount.json): suporte com arredondamento, chanfro, loft, rasgo, dois furos rebaixados e rosca interna M12 × 1,75.
 - [mechanical_mount.step](mechanical_mount.step) e [mechanical_mount.stl](mechanical_mount.stl): um sólido, limites de 100 × 70 × 29 mm, 113.970 triângulos no STL; prévia com 18.236 triângulos.

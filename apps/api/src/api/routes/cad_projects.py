@@ -16,6 +16,7 @@ from api.cad_adapter import (
     CadGeometryError,
 )
 from api.cad_mutation import CadMutationError, apply_cad_plan
+from api.cad_process import run_cad_process
 from api.cad_projects import (
     CadProjectNotFoundError,
     CadProjectStore,
@@ -23,12 +24,6 @@ from api.cad_projects import (
     CadRevisionNotFoundError,
 )
 from api.cad_service import build_cad_artifact
-from api.cad_stl import (
-    component_from_saved_step,
-    step_from_shape,
-    stl_artifact_from_saved_step,
-    stl_artifact_from_shape,
-)
 from api.config import Settings, get_settings
 from api.errors import api_error
 from api.projects import RevisionConflictError
@@ -199,7 +194,7 @@ def download_cad_revision_stl(
     except (CadProjectNotFoundError, CadRevisionNotFoundError) as exc:
         raise _not_found(exc) from exc
     try:
-        stl = stl_artifact_from_saved_step(record.artifact.step, settings.max_cad_stl_bytes)
+        stl = run_cad_process("saved_stl", {"maxStlBytes": settings.max_cad_stl_bytes}, settings, record.artifact.step)
     except CadEngineUnavailableError as exc:
         raise api_error(503, "CAD_ENGINE_UNAVAILABLE", str(exc)) from exc
     except CadArtifactTooLargeError as exc:
@@ -207,7 +202,7 @@ def download_cad_revision_stl(
     except CadGeometryError as exc:
         raise api_error(422, "CAD_GEOMETRY_INVALID", str(exc)) from exc
     return Response(content=stl.data, media_type="model/stl",
-                    headers={**stl.headers(), "Content-Disposition": f'attachment; filename="{record.spec.partId}-r{revision}.stl"'})
+                    headers={**stl.metadata["headers"], "Content-Disposition": f'attachment; filename="{record.spec.partId}-r{revision}.stl"'})
 
 
 @router.get("/{project_id}/revisions/{revision}/components/{component_id}/{format}")
@@ -229,9 +224,9 @@ def download_cad_component(
     if index is None:
         raise api_error(404, "CAD_COMPONENT_NOT_FOUND", "CAD component was not found")
     try:
-        solid = component_from_saved_step(record.artifact.step, index)
-        mesh = stl_artifact_from_shape(solid, settings.max_cad_stl_bytes) if format == "stl" else None
-        content = mesh.data if mesh else step_from_shape(solid, settings.max_artifact_bytes)
+        result = run_cad_process("component_export", {"index": index, "format": format,
+            "maxBytes": settings.max_artifact_bytes, "maxStlBytes": settings.max_cad_stl_bytes}, settings, record.artifact.step)
+        content = result.data
     except CadEngineUnavailableError as exc:
         raise api_error(503, "CAD_ENGINE_UNAVAILABLE", str(exc)) from exc
     except CadArtifactTooLargeError as exc:
@@ -239,4 +234,4 @@ def download_cad_component(
     except CadGeometryError as exc:
         raise api_error(422, "CAD_GEOMETRY_INVALID", str(exc)) from exc
     return Response(content=content, media_type="model/stl" if format == "stl" else "application/step",
-                    headers={**(mesh.headers() if mesh else {}), "Content-Disposition": f'attachment; filename="{record.spec.partId}-{component_id}-r{revision}.{format}"'})
+                    headers={**result.metadata.get("headers", {}), "Content-Disposition": f'attachment; filename="{record.spec.partId}-{component_id}-r{revision}.{format}"'})

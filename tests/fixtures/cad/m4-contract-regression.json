@@ -1,0 +1,143 @@
+{
+  "schemaVersion": "4.0",
+  "units": "mm",
+  "partId": "conjunto_base_placa",
+  "components": [
+    {
+      "id": "base",
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "steps": [
+        {
+          "id": "base_estoque",
+          "op": "base",
+          "shape": "box",
+          "position": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "rotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "width": 40,
+          "depth": 40,
+          "height": 12
+        },
+        {
+          "id": "base_roscas_m4",
+          "op": "cut",
+          "shape": "thread",
+          "position": {
+            "x": -8,
+            "y": 0,
+            "z": 1
+          },
+          "rotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "height": 10,
+          "diameter": 4,
+          "pitch": 0.7,
+          "clearance": 0.1,
+          "starts": 1,
+          "profile": "metric",
+          "handedness": "right",
+          "termination": "blind",
+          "minBottomThickness": 2,
+          "pattern": {
+            "kind": "linear",
+            "count": 2,
+            "offset": {
+              "x": 16,
+              "y": 0,
+              "z": 0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "placa",
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 10
+      },
+      "steps": [
+        {
+          "id": "placa_estoque",
+          "op": "base",
+          "shape": "box",
+          "position": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "rotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "width": 30,
+          "depth": 30,
+          "height": 8
+        },
+        {
+          "id": "placa_passantes_m4",
+          "op": "cut",
+          "shape": "hole",
+          "position": {
+            "x": -8,
+            "y": 0,
+            "z": 4
+          },
+          "rotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "height": 9,
+          "diameter": 4.5,
+          "holeType": "counterbore",
+          "headDiameter": 8,
+          "headDepth": 4.3,
+          "termination": "through",
+          "pattern": {
+            "kind": "linear",
+            "count": 2,
+            "offset": {
+              "x": 16,
+              "y": 0,
+              "z": 0
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "mechanics": {
+    "grounded": "base",
+    "connections": [
+      {
+        "id": "fixacao_placa_base",
+        "kind": "fixed",
+        "first": "placa",
+        "second": "base",
+        "firstFeature": "placa_passantes_m4",
+        "secondFeature": "base_roscas_m4",
+        "maxClearance": 0.1,
+        "minEngagement": 6,
+        "fastening": "threaded",
+        "fastenerDiameter": 4
+      }
+    ]
+  }
+}

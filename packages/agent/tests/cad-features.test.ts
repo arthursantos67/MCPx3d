@@ -26,6 +26,29 @@ test('a geometric repair cannot replace a threaded cut with a smooth bore', asyn
   await assert.rejects(generateCadProgram(provider, 'Repair placement while preserving the requested thread', spec), /real thread/)
 })
 
+for (const shape of ['spur_gear', 'rack', 'helical_spring', 'pipe_bend', 'sweep']) test(`a ${shape} cannot be silently replaced with a plain cylinder`, async () => {
+  const spec = features.find((item) => item.partId === shape)! as CadProgramSpec
+  const smooth = { ...spec, steps: [{ id: spec.steps[0].id, op: 'base', shape: 'cylinder',
+    position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 }, diameter: 20, height: 20 }] }
+  const provider = new MockLLMProvider([response(smooth), response(smooth)])
+  await assert.rejects(generateCadProgram(provider, 'Ajuste o comprimento, sem substituir o recurso funcional', spec), /functional feature/)
+})
+
+test('negative removal instructions protect existing steps for full-program providers too', async () => {
+  const spec = features.find((item) => item.partId === 'counterbore')! as CadProgramSpec
+  const removed = { ...spec, steps: [spec.steps[0]] }
+  await assert.rejects(generateCadProgram(new MockLLMProvider([response(removed), response(removed)]),
+    'Não remova o furo. Ajuste a placa.', spec), /unexpectedly removed/)
+})
+
+test('an explicit feature replacement remains available', async () => {
+  const spec = features.find((item) => item.partId === 'spur_gear')! as CadProgramSpec
+  const smooth = { ...spec, steps: [{ id: spec.steps[0].id, op: 'base', shape: 'cylinder',
+    position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 }, diameter: 20, height: 20 }] }
+  const outcome = await generateCadProgram(new MockLLMProvider([response(smooth)]), 'Troque a engrenagem por um cilindro liso', spec)
+  assert.equal(outcome.kind, 'create')
+})
+
 test('missing thread enum is repaired as an enum field while preserving dimensions', async () => {
   const spec = structuredClone(features.find((item) => item.partId === 'thread_metric_left')!)
   const incomplete = { ...spec, steps: spec.steps.map((step) => {

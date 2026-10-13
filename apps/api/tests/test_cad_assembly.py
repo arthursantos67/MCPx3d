@@ -139,14 +139,14 @@ def test_motion_validation_builds_each_component_once(monkeypatch) -> None:
 def test_inspection_and_save_reuse_the_same_validated_step(tmp_path, monkeypatch) -> None:
     from api import cad_service
 
-    original = cad_service.build_assembly_step
+    original = cad_service.run_cad_process
     calls = []
 
-    def tracked(spec, limit):
-        calls.append(spec.partId)
-        return original(spec, limit)
+    def tracked(operation, payload, settings):
+        calls.append(payload["spec"]["partId"])
+        return original(operation, payload, settings)
 
-    monkeypatch.setattr(cad_service, "build_assembly_step", tracked)
+    monkeypatch.setattr(cad_service, "run_cad_process", tracked)
     app.dependency_overrides[get_cad_project_store] = lambda: CadProjectStore(tmp_path / "cache-test.sqlite3")
     client = TestClient(app)
     assert client.post("/api/cad/assemblies/inspect", json=PRESS).status_code == 200

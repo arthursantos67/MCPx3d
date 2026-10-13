@@ -9,6 +9,7 @@ from domain.cad_assembly import CadAssemblySpec, CadComponent, CadMechanicalConn
 from domain.cad_diagnostics import CadCollisionPose
 from domain.cad_program import (
     CadStep,
+    CircularPattern,
     CylinderStep,
     HoleStep,
     LinearPattern,
@@ -74,21 +75,32 @@ class Feature:
     axis: Point
     low: float
     high: float
+    basis: Point
 
 
-def feature(component: CadComponent, step_id: str, offset: Point = ZERO) -> Feature:
+def feature(component: CadComponent, step_id: str, offset: Point = ZERO, index: int = 0) -> Feature:
     step: CadStep = next(step for step in component.steps if step.id == step_id)
     if not isinstance(step, (CylinderStep, HoleStep, ThreadStep)):
         raise TypeError("use a cylindrical shaft, bore or thread feature")
     axis = AXES["z"]
+    basis = AXES["x"]
     for key in ("x", "y", "z"):
         axis = rotate(axis, AXES[key], getattr(step.rotation, key))
+        basis = rotate(basis, AXES[key], getattr(step.rotation, key))
     center = add(coordinates(step.position), offset)
     if isinstance(step, HoleStep):
         center = add(center, scale(axis, -step.height / 2))
+    pattern = step.pattern
+    if isinstance(pattern, LinearPattern):
+        center = add(center, scale(coordinates(pattern.offset), index))
+    elif isinstance(pattern, CircularPattern):
+        origin, direction = coordinates(pattern.center), AXES[pattern.axis]
+        angle = index * pattern.sweepAngle / (pattern.count if pattern.sweepAngle == 360 else pattern.count - 1)
+        center = add(origin, rotate(add(center, scale(origin, -1)), direction, angle))
+        axis, basis = rotate(axis, direction, angle), rotate(basis, direction, angle)
     center, axis = world(component, center), world(component, axis, vector=True)
     coordinate = dot(center, axis)
-    return Feature(step, center, axis, coordinate - step.height / 2, coordinate + step.height / 2)
+    return Feature(step, center, axis, coordinate - step.height / 2, coordinate + step.height / 2, world(component, basis, vector=True))
 
 
 def _feature_basis(component: CadComponent, step: CadStep, vector: Point) -> Point:
@@ -107,7 +119,7 @@ def _thread_evidence(frame: Feature, component: CadComponent, solid: Any, statio
     assert isinstance(step, ThreadStep)
     axial = station - dot(frame.center, frame.axis)
     phase = (1 if step.handedness == "right" else -1) * 360 * axial / (step.pitch * step.starts)
-    basis = _feature_basis(component, step, AXES["x"])
+    basis = frame.basis
     crest = rotate(basis, frame.axis, phase)
     valley = rotate(basis, frame.axis, phase + 180 / step.starts)
     center = add(frame.center, scale(frame.axis, axial))
@@ -214,13 +226,37 @@ def _captured(first: CadComponent, second: CadComponent, a: Any, b: Any, clearan
             raise ValueError("captured fastening lacks antirotation; a loose round cavity does not hold a nut")
 
 
-def _bore_evidence(frame: Feature, solid: Any, joint: CadMechanicalConnection, material: MaterialChecks) -> None:
+def _stock_interval(frame: Feature, solid: Any) -> tuple[float, float]:
+    cq = import_module("cadquery")
     box = solid.BoundingBox()
     projections = [dot((x, y, z), frame.axis) for x in (box.xmin, box.xmax) for y in (box.ymin, box.ymax) for z in (box.zmin, box.zmax)]
-    low, high = max(frame.low, min(projections)), min(frame.high, max(projections))
-    if frame.low > min(projections) + 1e-5 or frame.high < max(projections) - 1e-5:
+    step = frame.step
+    radius = max(step.diameter, step.headDiameter if isinstance(step, HoleStep) else 0) / 2 + .2
+    if isinstance(step, ThreadStep):
+        radius += step.clearance
+    other = cross(frame.axis, frame.basis)
+    starts, ends = [], []
+    for direction in (frame.basis, scale(frame.basis, -1), other, scale(other, -1)):
+        center = add(frame.center, scale(direction, radius))
+        a = add(center, scale(frame.axis, min(projections) - dot(center, frame.axis) - 1))
+        b = add(center, scale(frame.axis, max(projections) - dot(center, frame.axis) + 1))
+        section = cq.Edge.makeLine(cq.Vector(*a), cq.Vector(*b)).intersect(solid)
+        if not section.isValid():
+            raise CadGeometryError("Mounting stock section returned invalid geometry")
+        stations = [dot(coordinates(point), frame.axis) for edge in section.Edges() for point in (edge.startPoint(), edge.endPoint())]
+        if not stations or not all(math.isfinite(value) for value in stations):
+            raise ValueError("mounting bore/thread lacks surrounding material")
+        starts.append(min(stations))
+        ends.append(max(stations))
+    return min(starts), max(ends)
+
+
+def _bore_evidence(frame: Feature, solid: Any, joint: CadMechanicalConnection, material: MaterialChecks, min_engagement: float | None = None) -> None:
+    stock_low, stock_high = _stock_interval(frame, solid)
+    low, high = max(frame.low, stock_low), min(frame.high, stock_high)
+    if frame.low > stock_low + 1e-5 or frame.high < stock_high - 1e-5:
         raise ValueError("bolted mounting requires through bores reaching both mounting faces; blind bores are not verified")
-    if high - low < joint.minEngagement - 1e-5:
+    if high - low < (joint.minEngagement if min_engagement is None else min_engagement) - 1e-5:
         raise ValueError("mounting bore has insufficient material thickness for declared engagement")
     side = cross(frame.axis, AXES["z"] if abs(frame.axis[2]) < 0.9 else AXES["x"])
     side = scale(side, 1 / math.sqrt(dot(side, side)))
@@ -255,32 +291,72 @@ def _bolted(joint: CadMechanicalConnection, first: CadComponent, second: CadComp
     b_step = next(step for step in second.steps if step.id == joint.secondFeature)
     patterns = [step.pattern for step in (a_step, b_step)]
     counts = [pattern.count if pattern else 1 for pattern in patterns]
-    if counts[0] != counts[1] or counts[0] < 2 or any(pattern and pattern.kind != "linear" for pattern in patterns):
-        raise ValueError("bolted mounting needs at least two matching holes in a linear pattern")
+    if counts[0] != counts[1] or counts[0] < 2:
+        raise ValueError("bolted/threaded mounting needs at least two matching holes in a pattern")
+    receivers = [feature(second, joint.secondFeature, index=index) for index in range(counts[1])]
+    matched: set[int] = set()
+    clearance_steps: tuple[CylinderStep | HoleStep, ...]
     for index in range(counts[0]):
-        offsets = [scale(coordinates(pattern.offset), index) if isinstance(pattern, LinearPattern) else ZERO for pattern in patterns]
-        a, b = feature(first, joint.firstFeature, offsets[0]), feature(second, joint.secondFeature, offsets[1])
-        if a.step.op != "cut" or b.step.op != "cut" or isinstance(a.step, ThreadStep) or isinstance(b.step, ThreadStep):
-            raise ValueError("bolted mounting currently requires matching clearance bores; threaded fastenings are not verified")
-        if abs(dot(a.axis, b.axis)) < 1 - 1e-6 or line_distance(a.center, b.center, a.axis) > 1e-5:
-            raise ValueError("mounting holes are not coaxial in assembly coordinates")
-        if any(not 0 <= (step.diameter - joint.fastenerDiameter) / 2 <= joint.maxClearance + 1e-6 for step in (a.step, b.step)):
+        a = feature(first, joint.firstFeature, index=index)
+        candidates = [(number, receiver) for number, receiver in enumerate(receivers)
+                      if abs(dot(a.axis, receiver.axis)) >= 1 - 1e-6 and line_distance(a.center, receiver.center, a.axis) <= 1e-5]
+        if len(candidates) != 1 or candidates[0][0] in matched:
+            raise ValueError("mounting holes are not uniquely coaxial in assembly coordinates")
+        number, b = candidates[0]
+        matched.add(number)
+        if a.step.op != "cut" or b.step.op != "cut" or isinstance(a.step, ThreadStep):
+            raise ValueError("first mounting feature must be a clearance bore and both features must be cuts")
+        if joint.fastening == "threaded":
+            if not isinstance(b.step, ThreadStep) or b.step.profile != "metric" or b.step.starts != 1 or abs(b.step.diameter - joint.fastenerDiameter) > 1e-6:
+                raise ValueError("threaded mounting needs a single-start internal metric thread matching the declared screw diameter")
+            _mounting_thread_evidence(b, second, second_solid, joint, material)
+            entrance = add(b.center, scale(b.axis, b.high - dot(b.center, b.axis) + .05))
+            directions = (a.basis, scale(a.basis, -1), cross(a.axis, a.basis), scale(cross(a.axis, a.basis), -1))
+            if not all(material.inside(first_solid, add(entrance, scale(direction, a.step.diameter / 2 + .2))) for direction in directions):
+                raise ValueError("mounting thread entrance must open toward the contacting clamped part, with a continuous screw insertion path")
+            clearance_steps = (a.step,)
+        else:
+            if isinstance(b.step, ThreadStep):
+                raise ValueError("bolted mounting uses clearance bores; choose threaded fastening for a tapped receiver")
+            clearance_steps = (a.step, b.step)
+            _bore_evidence(b, second_solid, joint, material)
+        if any(not 0 <= (step.diameter - joint.fastenerDiameter) / 2 <= joint.maxClearance + 1e-6 for step in clearance_steps):
             raise ValueError("mounting hole clearance does not match the declared fastener diameter")
-        _bore_evidence(a, first_solid, joint, material)
-        _bore_evidence(b, second_solid, joint, material)
+        _bore_evidence(a, first_solid, joint, material, .1 if joint.fastening == "threaded" else None)
+
+
+def _mounting_thread_evidence(frame: Feature, component: CadComponent, solid: Any, joint: CadMechanicalConnection, material: MaterialChecks) -> None:
+    step = frame.step
+    assert isinstance(step, ThreadStep)
+    if step.termination == "unspecified":
+        raise ValueError("threaded mounting must explicitly declare blind or through termination")
+    if step.clearance > joint.maxClearance + 1e-6:
+        raise ValueError("mounting thread clearance exceeds the declared maximum")
+    stock_low, stock_high = _stock_interval(frame, solid)
+    low, high = max(frame.low, stock_low), min(frame.high, stock_high)
+    usable_low = low + (step.pitch if step.termination == "blind" else 0)
+    if high - usable_low < joint.minEngagement - 1e-5:
+        raise ValueError("mounting thread has insufficient usable engagement after bottom runout allowance")
+    directions = (frame.basis, scale(frame.basis, -1), cross(frame.axis, frame.basis), scale(cross(frame.axis, frame.basis), -1))
+    for fraction in (.1, .5, .9):
+        station = usable_low + (high - usable_low) * fraction
+        point = add(frame.center, scale(frame.axis, station - dot(frame.center, frame.axis)))
+        _thread_evidence(frame, component, solid, station, material)
+        if not all(material.inside(solid, add(point, scale(direction, step.diameter / 2 + step.clearance + .2))) for direction in directions):
+            raise ValueError("mounting thread lacks surrounding material")
 
 
 def _fit(joint: CadMechanicalConnection, first: CadComponent, second: CadComponent, a_solid: Any, b_solid: Any, material: MaterialChecks) -> Feature:
     a, b = feature(first, joint.firstFeature), feature(second, joint.secondFeature)
-    if a.step.pattern or (b.step.pattern and not isinstance(b.step.pattern, LinearPattern)):
-        raise ValueError("shaft patterns and circular receiving patterns need individual feature IDs")
-    if isinstance(b.step.pattern, LinearPattern):
-        candidates = [feature(second, joint.secondFeature, scale(coordinates(b.step.pattern.offset), index))
+    if a.step.pattern:
+        raise ValueError("shaft patterns need individual feature IDs")
+    if b.step.pattern:
+        candidates = [feature(second, joint.secondFeature, index=index)
                       for index in range(b.step.pattern.count)]
         matches = [candidate for candidate in candidates if abs(dot(a.axis, candidate.axis)) >= 1 - 1e-6
                    and line_distance(a.center, candidate.center, a.axis) <= 1e-5]
         if len(matches) != 1:
-            raise ValueError(f"receiving linear pattern needs exactly one coaxial instance; found {len(matches)}; use an individual feature ID for ambiguous joints")
+            raise ValueError(f"receiving pattern needs exactly one coaxial instance; found {len(matches)}; use an individual feature ID for ambiguous joints")
         b = matches[0]
     if a.step.op not in ("base", "union") or b.step.op != "cut":
         raise ValueError("first feature must be a material shaft/thread and second feature a cut bore/thread")
@@ -360,7 +436,7 @@ def check_mechanics(spec: CadAssemblySpec, cq: Any, poses: list[tuple[CadCollisi
                         area = _contact_area(a, b)
                         if area < 1:
                             raise ValueError(f"mounting surfaces have no shared planar contact area (found {area:.3f} mm²); parts are floating or separated")
-                        if joint.fastening == "bolted":
+                        if joint.fastening in ("bolted", "threaded"):
                             _bolted(joint, first, second, a, b, material)
                 else:
                     frame = _fit(joint, first, second, a, b, material)

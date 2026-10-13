@@ -1,7 +1,10 @@
 import asyncio
+from threading import Event
 
 from starlette.responses import JSONResponse
-from starlette.types import ASGIApp, Receive, Scope, Send
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
+
+from api.cad_cancellation import cad_cancellation
 
 
 class CadWorkMiddleware:
@@ -20,13 +23,48 @@ class CadWorkMiddleware:
             self.loop, self.gate = loop, asyncio.Semaphore(1)
         gate = self.gate
         assert gate is not None
+        cancelled = Event()
+        disconnected = asyncio.Event()
+        messages: asyncio.Queue[Message] = asyncio.Queue(maxsize=1)
+
+        async def relay_receive() -> None:
+            # A single reader owns the ASGI channel; body and streaming-response
+            # consumers keep receiving the original messages in order.
+            while True:
+                message = await receive()
+                if message["type"] == "http.disconnect":
+                    cancelled.set()
+                    disconnected.set()
+                await messages.put(message)
+                if message["type"] == "http.disconnect":
+                    return
+
+        relay = asyncio.create_task(relay_receive())
+        acquire = asyncio.create_task(gate.acquire())
+        disconnect = asyncio.create_task(disconnected.wait())
+        acquired = False
+        token = cad_cancellation.set(cancelled)
         try:
-            await asyncio.wait_for(gate.acquire(), self.queue_timeout)
-        except TimeoutError:
-            await JSONResponse({"code": "CAD_ENGINE_BUSY", "message": "O motor CAD está ocupado. O rascunho foi conservado; aguarde a operação atual antes de retomar.", "details": []},
-                               status_code=503)(scope, receive, send)
-            return
-        try:
-            await self.app(scope, receive, send)
+            done, _ = await asyncio.wait({acquire, disconnect}, timeout=self.queue_timeout,
+                                         return_when=asyncio.FIRST_COMPLETED)
+            acquired = acquire in done
+            if disconnected.is_set():
+                return
+            if not acquired:
+                await JSONResponse({"code": "CAD_ENGINE_BUSY", "message": "O motor CAD está ocupado. O rascunho foi conservado; aguarde a operação atual antes de retomar.", "details": []},
+                                   status_code=503)(scope, messages.get, send)
+                return
+            await self.app(scope, messages.get, send)
+        except asyncio.CancelledError:
+            cancelled.set()
+            raise
         finally:
-            gate.release()
+            # Cancel pending acquisition before checking its result: it can
+            # have won the semaphore while a disconnect/timeout was handled.
+            for task in (relay, acquire, disconnect):
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(relay, acquire, disconnect, return_exceptions=True)
+            if acquired or (not acquire.cancelled() and acquire.exception() is None and acquire.result()):
+                gate.release()
+            cad_cancellation.reset(token)

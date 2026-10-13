@@ -1,0 +1,509 @@
+{
+  "date": "2026-10-08",
+  "provider": "local-codex",
+  "model": "client-default",
+  "environment": {
+    "os": "Windows",
+    "kernelThreads": 1,
+    "workerMemoryMb": 1536
+  },
+  "initialEvaluation": {
+    "timestamps": [
+      "2026-10-08T20:21:59.782Z",
+      "2026-10-08T20:26:07.432Z"
+    ],
+    "cases": [
+      {
+        "id": "blind-four-hole-plate",
+        "caseId": "blind-four-hole-plate",
+        "trial": 1,
+        "status": "validated",
+        "stats": {
+          "aiCalls": 1,
+          "cadChecks": 1,
+          "aiCallLimit": 20,
+          "cadCheckLimit": 48
+        },
+        "durationMs": 20839,
+        "draftZipBytes": 23974,
+        "requirementIssues": [],
+        "inspection": {
+          "partId": "placa_80x50x12_quatro_furos_cegos",
+          "solidCount": 1,
+          "volumeMm3": 47528.76110196154,
+          "boundsMm": [
+            80,
+            50,
+            12
+          ],
+          "stepBytes": 30855
+        }
+      },
+      {
+        "id": "involute-24-tooth-gear",
+        "caseId": "involute-24-tooth-gear",
+        "trial": 1,
+        "status": "validated",
+        "stats": {
+          "aiCalls": 1,
+          "cadChecks": 1,
+          "aiCallLimit": 20,
+          "cadCheckLimit": 48
+        },
+        "durationMs": 17804,
+        "draftZipBytes": 846977,
+        "requirementIssues": [],
+        "inspection": {
+          "partId": "engrenagem_involuta_24_dentes",
+          "solidCount": 1,
+          "volumeMm3": 13715.602637276079,
+          "boundsMm": [
+            52.0000002,
+            52.0000002,
+            8.0000002
+          ],
+          "stepBytes": 1300707
+        }
+      },
+      {
+        "id": "side-blind-counterbore",
+        "caseId": "side-blind-counterbore",
+        "trial": 1,
+        "status": "validated",
+        "stats": {
+          "aiCalls": 1,
+          "cadChecks": 1,
+          "aiCallLimit": 20,
+          "cadCheckLimit": 48
+        },
+        "durationMs": 16655,
+        "draftZipBytes": 16556,
+        "requirementIssues": [],
+        "inspection": {
+          "partId": "bloco_furo_cego_face_mais_x",
+          "solidCount": 1,
+          "volumeMm3": 26465.143850726352,
+          "boundsMm": [
+            30,
+            30,
+            30
+          ],
+          "stepBytes": 23697
+        }
+      },
+      {
+        "id": "tube-wall",
+        "caseId": "tube-wall",
+        "trial": 1,
+        "status": "validated",
+        "stats": {
+          "aiCalls": 1,
+          "cadChecks": 1,
+          "aiCallLimit": 20,
+          "cadCheckLimit": 48
+        },
+        "durationMs": 11715,
+        "draftZipBytes": 11815,
+        "requirementIssues": [],
+        "inspection": {
+          "partId": "tubo_30_24_60",
+          "solidCount": 1,
+          "volumeMm3": 15268.140296446734,
+          "boundsMm": [
+            30,
+            30,
+            60
+          ],
+          "stepBytes": 9602
+        }
+      },
+      {
+        "id": "hollow-pipe-bend",
+        "caseId": "hollow-pipe-bend",
+        "trial": 1,
+        "status": "validated",
+        "stats": {
+          "aiCalls": 1,
+          "cadChecks": 1,
+          "aiCallLimit": 20,
+          "cadCheckLimit": 48
+        },
+        "durationMs": 14066,
+        "draftZipBytes": 231300,
+        "requirementIssues": [],
+        "inspection": {
+          "partId": "curva_tubo_90",
+          "solidCount": 1,
+          "volumeMm3": 2368.705056261577,
+          "boundsMm": [
+            30,
+            30,
+            12.000000100000001
+          ],
+          "stepBytes": 11864
+        }
+      },
+      {
+        "id": "left-hand-spring",
+        "caseId": "left-hand-spring",
+        "trial": 1,
+        "status": "validated",
+        "stats": {
+          "aiCalls": 1,
+          "cadChecks": 1,
+          "aiCallLimit": 20,
+          "cadCheckLimit": 48
+        },
+        "durationMs": 14324,
+        "draftZipBytes": 2681318,
+        "requirementIssues": [],
+        "inspection": {
+          "partId": "mola_helicoidal_esquerda",
+          "solidCount": 1,
+          "volumeMm3": 445.5362135030742,
+          "boundsMm": [
+            22.000002485539227,
+            22.000002485540765,
+            13.243697544300229
+          ],
+          "stepBytes": 38181
+        }
+      },
+      {
+        "id": "hollow-3d-sweep",
+        "caseId": "hollow-3d-sweep",
+        "trial": 1,
+        "status": "validated",
+        "stats": {
+          "aiCalls": 1,
+          "cadChecks": 1,
+          "aiCallLimit": 20,
+          "cadCheckLimit": 48
+        },
+        "durationMs": 15127,
+        "draftZipBytes": 34579,
+        "requirementIssues": [],
+        "inspection": {
+          "partId": "tubo_trajetoria_segmentada",
+          "solidCount": 1,
+          "volumeMm3": 628.3185307170249,
+          "boundsMm": [
+            23,
+            6,
+            23
+          ],
+          "stepBytes": 30611
+        }
+      },
+      {
+        "id": "local-edge-chamfer",
+        "caseId": "local-edge-chamfer",
+        "trial": 1,
+        "status": "validated",
+        "stats": {
+          "aiCalls": 1,
+          "cadChecks": 1,
+          "aiCallLimit": 20,
+          "cadCheckLimit": 48
+        },
+        "durationMs": 14497,
+        "draftZipBytes": 5841,
+        "requirementIssues": [],
+        "inspection": {
+          "partId": "bloco_chanfro_local",
+          "solidCount": 1,
+          "volumeMm3": 14394,
+          "boundsMm": [
+            40,
+            30,
+            12
+          ],
+          "stepBytes": 18993
+        }
+      },
+      {
+        "id": "through-socket-head-plate",
+        "caseId": "through-socket-head-plate",
+        "trial": 1,
+        "status": "validated",
+        "stats": {
+          "aiCalls": 1,
+          "cadChecks": 1,
+          "aiCallLimit": 20,
+          "cadCheckLimit": 48
+        },
+        "durationMs": 21378,
+        "draftZipBytes": 44723,
+        "requirementIssues": [],
+        "inspection": {
+          "partId": "placa_80x50x10_m5_allen",
+          "solidCount": 1,
+          "volumeMm3": 38050.64175844756,
+          "boundsMm": [
+            80,
+            50,
+            10
+          ],
+          "stepBytes": 45571
+        }
+      },
+      {
+        "id": "blind-threaded-base-mount",
+        "caseId": "blind-threaded-base-mount",
+        "trial": 1,
+        "status": "failed",
+        "stats": {
+          "aiCalls": 4,
+          "cadChecks": 3,
+          "aiCallLimit": 20,
+          "cadCheckLimit": 48
+        },
+        "durationMs": 169750,
+        "draftZipBytes": 8548957,
+        "requirementIssues": [],
+        "error": "O cliente local entregou uma resposta fora do formato JSON esperado. Nenhuma retentativa automática foi feita; retome o mesmo pedido nesta aba para reutilizar o progresso."
+      },
+      {
+        "id": "straight-rack",
+        "caseId": "straight-rack",
+        "trial": 1,
+        "status": "validated",
+        "stats": {
+          "aiCalls": 1,
+          "cadChecks": 1,
+          "aiCallLimit": 20,
+          "cadCheckLimit": 48
+        },
+        "durationMs": 13044,
+        "draftZipBytes": 35853,
+        "requirementIssues": [],
+        "inspection": {
+          "partId": "cremalheira_reta_12_dentes",
+          "solidCount": 1,
+          "volumeMm3": 6264.625417359517,
+          "boundsMm": [
+            75.398223686148,
+            10.500000000000213,
+            10
+          ],
+          "stepBytes": 192694
+        }
+      },
+      {
+        "id": "hex-threaded-nut",
+        "caseId": "hex-threaded-nut",
+        "trial": 1,
+        "status": "validated",
+        "stats": {
+          "aiCalls": 1,
+          "cadChecks": 1,
+          "aiCallLimit": 20,
+          "cadCheckLimit": 48
+        },
+        "durationMs": 25559,
+        "draftZipBytes": 1002473,
+        "requirementIssues": [],
+        "inspection": {
+          "partId": "porca_sextavada_M8x1_25",
+          "solidCount": 1,
+          "volumeMm3": 824.7390362504282,
+          "boundsMm": [
+            15.011107198933704,
+            13.000000200000006,
+            8.00000020000003
+          ],
+          "stepBytes": 482640
+        }
+      },
+      {
+        "id": "shaft-keyway",
+        "caseId": "shaft-keyway",
+        "trial": 1,
+        "status": "validated",
+        "stats": {
+          "aiCalls": 1,
+          "cadChecks": 1,
+          "aiCallLimit": 20,
+          "cadCheckLimit": 48
+        },
+        "durationMs": 17898,
+        "draftZipBytes": 23274,
+        "requirementIssues": [],
+        "inspection": {
+          "partId": "eixo_liso_com_rasgo_de_chaveta",
+          "solidCount": 1,
+          "volumeMm3": 24752.577432375816,
+          "boundsMm": [
+            20.0000002,
+            20.0000002,
+            80.0000002
+          ],
+          "stepBytes": 35009
+        }
+      },
+      {
+        "id": "rounded-slot",
+        "caseId": "rounded-slot",
+        "trial": 1,
+        "status": "validated",
+        "stats": {
+          "aiCalls": 1,
+          "cadChecks": 1,
+          "aiCallLimit": 20,
+          "cadCheckLimit": 48
+        },
+        "durationMs": 13727,
+        "draftZipBytes": 12253,
+        "requirementIssues": [],
+        "inspection": {
+          "partId": "placa_com_rasgo_passante",
+          "solidCount": 1,
+          "volumeMm3": 18677.256661176907,
+          "boundsMm": [
+            70,
+            30,
+            10
+          ],
+          "stepBytes": 32041
+        }
+      },
+      {
+        "id": "three-body-stationary-support",
+        "caseId": "three-body-stationary-support",
+        "trial": 1,
+        "status": "validated",
+        "stats": {
+          "aiCalls": 5,
+          "cadChecks": 4,
+          "aiCallLimit": 20,
+          "cadCheckLimit": 48
+        },
+        "durationMs": 142023,
+        "draftZipBytes": 47233,
+        "requirementIssues": [],
+        "inspection": {
+          "partId": "conjunto_eixo_fixo",
+          "solidCount": 3,
+          "volumeMm3": 14645.748515837135,
+          "boundsMm": [
+            20,
+            20,
+            76
+          ],
+          "stepBytes": 45802,
+          "mechanicalStatus": "verified"
+        }
+      },
+      {
+        "id": "hollow-loft-adapter",
+        "caseId": "hollow-loft-adapter",
+        "trial": 1,
+        "status": "validated",
+        "stats": {
+          "aiCalls": 1,
+          "cadChecks": 1,
+          "aiCallLimit": 20,
+          "cadCheckLimit": 48
+        },
+        "durationMs": 21834,
+        "draftZipBytes": 39553,
+        "requirementIssues": [],
+        "inspection": {
+          "partId": "adaptador_conico_30_20",
+          "solidCount": 1,
+          "volumeMm3": 4335.397861952468,
+          "boundsMm": [
+            30.0000002,
+            30.0000002,
+            30.000000200000002
+          ],
+          "stepBytes": 9736
+        }
+      }
+    ],
+    "summary": {
+      "planned": 16,
+      "attempted": 16,
+      "unattempted": 0,
+      "geometricSuccesses": 15,
+      "exportSuccesses": 15,
+      "successes": 15,
+      "observedSuccessRate": 0.9375,
+      "target": 0.99,
+      "confidence": 0.95,
+      "confidenceMethod": "one-sided exact Clopper-Pearson lower bound",
+      "lowerBound": 0.7360426027114317,
+      "sampleSupportsTarget": false,
+      "medianDurationMs": 16655,
+      "p95DurationMs": 169750,
+      "aiCalls": 23,
+      "cadChecks": 21,
+      "scope": "Native validity, declared recipe/measured requirements and attempted export for these prompts/model/action budgets; not general engineering correctness. Repeated cases may be correlated."
+    }
+  },
+  "postFixEvaluation": {
+    "cases": [
+      {
+        "id": "blind-threaded-base-mount",
+        "caseId": "blind-threaded-base-mount",
+        "trial": 1,
+        "status": "failed",
+        "stats": {
+          "aiCalls": 2,
+          "cadChecks": 0,
+          "aiCallLimit": 20,
+          "cadCheckLimit": 48
+        },
+        "durationMs": 77318,
+        "draftZipBytes": 0,
+        "requirementIssues": [],
+        "error": "Componente base: O serviço do modelo está temporariamente indisponível."
+      }
+    ],
+    "summary": {
+      "planned": 1,
+      "attempted": 1,
+      "unattempted": 0,
+      "geometricSuccesses": 0,
+      "exportSuccesses": 0,
+      "successes": 0,
+      "observedSuccessRate": 0,
+      "target": 0.99,
+      "confidence": 0.95,
+      "confidenceMethod": "one-sided exact Clopper-Pearson lower bound",
+      "lowerBound": 0,
+      "sampleSupportsTarget": false,
+      "medianDurationMs": 77318,
+      "p95DurationMs": 77318,
+      "aiCalls": 2,
+      "cadChecks": 0,
+      "scope": "Native validity, declared recipe/measured requirements and attempted export for these prompts/model/action budgets; not general engineering correctness. Repeated cases may be correlated."
+    },
+    "note": "Provider unavailable before generating the base; not evidence of generation success."
+  },
+  "deterministicRegression": {
+    "caseId": "blind-threaded-base-mount",
+    "change": {
+      "field": "mechanics.connections[0].maxClearance",
+      "before": 0.1,
+      "after": 0.25,
+      "geometryChanged": false
+    },
+    "inspection": {
+      "status": 200,
+      "result": {
+        "partId": "conjunto_base_placa",
+        "solidCount": 2,
+        "volumeMm3": 25627.289341334752,
+        "boundsMm": [
+          40.0000002,
+          40.0000002,
+          20
+        ],
+        "stepBytes": 1588958,
+        "mechanicalStatus": "verified"
+      }
+    },
+    "note": "Same saved candidate inspected after metadata reconciliation, without another model call. Does not replace the initial failed trial."
+  }
+}

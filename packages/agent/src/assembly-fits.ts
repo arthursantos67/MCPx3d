@@ -63,7 +63,7 @@ export const cylindricalFitStrategy: AssemblyRepairStrategy = {
         (step.shape === 'cylinder' || step.shape === 'hole' || step.shape === 'thread') &&
         Math.abs(dot(direction(step.rotation), axis)) > 1 - 1e-6 &&
         lineDistance(step.position, center, axis) <= Math.max(1, shaft.diameter / 4))
-      if (nearby.some((step) => step.shape === 'thread')) continue
+      if (nearby.some((step) => step.shape === 'thread' || step.shape === 'hole' && step.termination === 'blind')) continue
       const bore = nearby.find((step) => step.shape === 'cylinder')
       const contained = collision.overlapVolumeMm3 / collision.componentVolumesMm3[sourceIndex] >= 0.8
       if (!nearby.length && !contained && shaft.height < 3 * shaft.diameter) continue

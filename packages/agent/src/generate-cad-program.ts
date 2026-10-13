@@ -10,6 +10,7 @@ import { failedFinish, finishRepairHistory, repairFinishLocally, repairFinishWit
 import { cadIdentity } from './cad-identity.ts'
 import { prepareCadDesign, cadStockDesignIssue, CAD_DESIGN_GUIDANCE } from './cad-design-preparation.ts'
 import { CAD_FASTENER_GUIDANCE } from '../../domain/ts/src/cad-fasteners.ts'
+import { explicitCadProgramIssue } from './cad-explicit-requirements.ts'
 
 const strictSpecSchema = Object.fromEntries(Object.entries(programSchema).filter(([key]) => !['$schema', '$id', 'title', '$defs'].includes(key)))
 const strictOutputSchema = {
@@ -51,13 +52,20 @@ const stepHint = {
     shape: { enum: Object.keys(CAD_FEATURES) },
     position: vectorHint, rotation: vectorHint,
     width: { type: 'number' }, depth: { type: 'number' }, height: { type: 'number' },
+    sides: { type: 'integer' }, acrossFlats: { type: 'number' }, module: { type: 'number' }, teeth: { type: 'integer' },
+    pressureAngle: { type: 'number' }, backlash: { type: 'number' }, baseThickness: { type: 'number' },
     diameter: { type: 'number' }, bottomDiameter: { type: 'number' }, topDiameter: { type: 'number' },
     innerDiameter: { type: 'number' }, majorRadius: { type: 'number' }, minorRadius: { type: 'number' },
+    meanDiameter: { type: 'number' }, wireDiameter: { type: 'number' }, turns: { type: 'number' },
+    bendRadius: { type: 'number' }, bendAngle: { type: 'number' },
+    path: { type: 'array', items: vectorHint },
     length: { type: 'number' }, pitch: { type: 'number' }, clearance: { type: 'number' }, starts: { type: 'integer' },
     profile: { enum: ['metric', 'trapezoidal'] }, handedness: { enum: ['right', 'left'] },
     holeType: { enum: ['plain', 'counterbore', 'countersink'] }, headDiameter: { type: 'number' }, headDepth: { type: 'number' },
+    termination: { enum: ['unspecified', 'blind', 'through'] }, minBottomThickness: { type: 'number' },
     selector: { enum: ['all', 'parallel_x', 'parallel_y', 'parallel_z', 'circular', 'top', 'bottom', 'positive_x', 'negative_x', 'positive_y', 'negative_y'] },
     radius: { type: 'number' }, distance: { type: 'number' }, thickness: { type: 'number' }, ruled: { type: 'boolean' },
+    selectionBox: { type: 'object', additionalProperties: false, required: ['min', 'max'], properties: { min: vectorHint, max: vectorHint } },
     sections: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['kind', 'z'], properties: {
       kind: { enum: ['circle', 'rectangle'] }, z: { type: 'number' }, diameter: { type: 'number' }, width: { type: 'number' }, depth: { type: 'number' },
     } } },
@@ -100,6 +108,8 @@ type Axis = typeof axes[number]
 type SolidBounds = Record<Axis, { min: number; max: number }>
 
 const shapeFields: Readonly<Record<string, readonly string[]>> = Object.fromEntries(Object.entries(CAD_FEATURES).map(([shape, feature]) => [shape, feature.fields]))
+const requiredShapeFields: Readonly<Record<string, readonly string[]>> = Object.fromEntries(Object.entries(CAD_FEATURES).map(([shape, feature]) => [shape,
+  (defs[feature.schema].required as readonly string[]).filter((field) => (feature.fields as readonly string[]).includes(field))]))
 const allShapeFields = new Set(Object.values(shapeFields).flat())
 const patternFields = { circular: ['count', 'axis', 'center', 'sweepAngle'], linear: ['count', 'offset'] } as const
 
@@ -155,10 +165,12 @@ function normalizeGeneratedResponse(raw: unknown): unknown {
           : value]))
     normalized.shape = shape
     if (typeof step.op === 'string') normalized.op = step.op.trim().toLowerCase()
-    for (const field of ['selector', 'holeType', 'profile', 'handedness']) {
+    if (shape === 'sweep' && Array.isArray(step.path)) normalized.path = step.path.map(normalizeVector)
+    for (const field of ['selector', 'holeType', 'profile', 'handedness', 'termination']) {
       if (typeof normalized[field] === 'string') normalized[field] = normalized[field].trim().toLowerCase()
     }
     if (shape === 'thread' && normalized.starts == null) normalized.starts = 1
+    if (normalized.selectionBox == null) delete normalized.selectionBox
     if (shape === 'loft') {
       normalized.ruled ??= false
       if (Array.isArray(step.sections)) normalized.sections = step.sections.map((section: unknown) => {
@@ -209,7 +221,7 @@ function validationIssue(candidate: unknown): string {
         const step = rawStep as Record<string, unknown>
         const dimensions = shapeFields[String(step.shape)]
         if (!dimensions) return `etapa ${index + 1} tem uma forma não suportada`
-        for (const key of ['id', 'op', 'shape', 'position', 'rotation', ...dimensions]) {
+        for (const key of ['id', 'op', 'shape', 'position', 'rotation', ...requiredShapeFields[String(step.shape)]]) {
           if (step[key] === undefined || step[key] === null) return `etapa ${index + 1} (${step.shape}) precisa de ${key}`
         }
         const pattern = step.pattern as Record<string, unknown> | undefined
@@ -240,7 +252,7 @@ function missingDimensions(raw: unknown): { response: Record<string, unknown>; g
     if (typeof candidate !== 'object' || candidate === null || Array.isArray(candidate)) return []
     const step = candidate as Record<string, unknown>
     const shape = String(step.shape)
-    return (shapeFields[shape] ?? [])
+    return (requiredShapeFields[shape] ?? [])
       .filter((field) => step[field] === undefined || step[field] === null)
       .map((field) => ({ stepIndex, stepId: String(step.id ?? `step_${stepIndex + 1}`), shape, field, key: `step${stepIndex + 1}_${field}` }))
   })
@@ -264,7 +276,7 @@ async function repairMissingDimensions(
   const filled = await provider.generateStructured<unknown>([
     { role: 'system', content: `Supply only the missing feature fields of a mechanical CAD program. Dimensions are millimeters. Use explicit values from the original request when present; otherwise choose values proportional to the surrounding steps. Preserve enum and array types. A cut must extend beyond the material it removes and a union must overlap the solid. A points value is a closed outline: x,y for polygon_prism, and nonnegative radius x with axial height y for revolve_profile. ${CAD_FEATURE_GUIDANCE} Return one JSON object with every requested key.` },
     { role: 'user', content: `Original request: ${request}\nCurrent program: ${JSON.stringify(spec)}\nMissing dimensions:\n${wanted}` },
-  ], schema, { ...options, maxTokens: 256 + gaps.reduce((total, gap) => total + (gap.field === 'points' || gap.field === 'sections' ? 512 : 24), 0) })
+  ], schema, { ...options, maxTokens: 256 + gaps.reduce((total, gap) => total + (['points', 'sections', 'path'].includes(gap.field) ? 512 : 24), 0) })
   if (typeof filled !== 'object' || filled === null || Array.isArray(filled)) return null
   const values = filled as Record<string, unknown>
   const steps = (spec.steps as Record<string, unknown>[]).map((step) => ({ ...step }))
@@ -290,12 +302,32 @@ function parseOutcome(raw: unknown, previous: CadProgramSpec | undefined, reques
   if (previous) {
     const returned = new Set(result.spec.steps.map((step) => step.id))
     const removed = previous.steps.filter((step) => !returned.has(step.id))
-    const explicitRemoval = explicitRemovalOverride ?? (!allowCutRemoval && /\b(remov|exclu|apag|delet|substitu|replace|remove|delete|rebuild|refa[çc])/.test(request.toLowerCase()))
+    const explicitRemoval = explicitRemovalOverride ?? (!allowCutRemoval && cadStepRemovalRequested(request))
     if (removed.length && !explicitRemoval && !(allowCutRemoval && removed.every((step) => step.op === 'cut'))) {
       throw new Error('The CAD edit unexpectedly removed an existing step')
     }
     if (!explicitRemoval && previous.steps.some((step) => step.shape === 'thread' &&
       result.spec!.steps.find((updated) => updated.id === step.id)?.shape !== 'thread')) throw new Error('The CAD repair cannot replace a real thread with a smooth primitive or remove it')
+    const functionalShapes = new Set(['spur_gear', 'rack', 'helical_spring', 'pipe_bend', 'sweep'])
+    if (!explicitRemoval) for (const step of previous.steps) {
+      const updated = result.spec.steps.find((candidate) => candidate.id === step.id)
+      if (functionalShapes.has(step.shape) && updated?.shape !== step.shape) {
+        throw new Error(`The CAD repair cannot replace or remove functional feature ${step.id} (${step.shape})`)
+      }
+      if (allowCutRemoval && (step.shape === 'hole' || step.shape === 'thread') && step.op === 'cut') {
+        if ((step.termination ?? 'unspecified') !== 'unspecified' &&
+          (!updated || (updated.shape !== 'hole' && updated.shape !== 'thread') || updated.termination !== step.termination)) {
+          throw new Error(`The CAD repair must preserve ${step.termination} termination of ${step.id}`)
+        }
+        if (step.termination === 'blind' && updated && (updated.shape === 'hole' || updated.shape === 'thread') &&
+          (updated.minBottomThickness ?? 1) < (step.minBottomThickness ?? 1)) {
+          throw new Error(`The CAD repair cannot reduce the minimum blind floor of ${step.id}`)
+        }
+        if (step.shape === 'hole' && step.holeType !== 'plain' && (updated?.shape !== 'hole' || updated.holeType !== step.holeType)) {
+          throw new Error(`The CAD repair must preserve the ${step.holeType} head seat of ${step.id}`)
+        }
+      }
+    }
   }
   return { kind: 'create', spec: result.spec, assumptions: result.assumptions }
 }
@@ -347,13 +379,15 @@ export async function generateCadProgram(
     if (store!.size > 8) store!.delete(store!.keys().next().value!)
     options?.onDraft?.(checkpoint.current.spec)
   }
-  const inspect = checkGeometry && (provider.generationPolicy || options?.maxRepairAttempts !== undefined) ? async (spec: CadProgramSpec) => {
-    try { return options?.prepareDesign && cadStockDesignIssue(spec) || await checkGeometry(spec) }
+  const checkRequirements = checkGeometry ? async (spec: CadProgramSpec) =>
+    (!options?.assemblyComponent && explicitCadProgramIssue(spec, request)) || await checkGeometry(spec) : undefined
+  const inspect = checkRequirements && (provider.generationPolicy || options?.maxRepairAttempts !== undefined) ? async (spec: CadProgramSpec) => {
+    try { return options?.prepareDesign && cadStockDesignIssue(spec) || await checkRequirements(spec) }
     catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') throw error
       throw new ProviderRequestError(`A verificação CAD foi interrompida. O rascunho disponível foi conservado nesta aba; nenhuma correção com IA foi solicitada para essa falha. ${error instanceof Error ? error.message : 'Falha no motor CAD.'}`, { cause: error })
     }
-  } : checkGeometry
+  } : checkRequirements
   try {
     const result = await buildCadProgram(provider, request, previous, inspect, options, resume, remember)
     store.delete(key)

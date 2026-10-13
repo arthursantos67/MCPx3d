@@ -572,5 +572,179 @@
         "starts": 4
       }
     ]
+  },
+  {
+    "schemaVersion": "3.0",
+    "units": "mm",
+    "partId": "regular_prism",
+    "steps": [
+      {
+        "id": "body",
+        "op": "base",
+        "shape": "regular_prism",
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "sides": 6,
+        "acrossFlats": 13,
+        "height": 6
+      }
+    ]
+  },
+  {
+    "schemaVersion": "3.0",
+    "units": "mm",
+    "partId": "spur_gear",
+    "steps": [
+      {
+        "id": "body",
+        "op": "base",
+        "shape": "spur_gear",
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "module": 2,
+        "teeth": 24,
+        "pressureAngle": 20,
+        "backlash": 0.1,
+        "height": 8
+      }
+    ]
+  },
+  {
+    "schemaVersion": "3.0",
+    "units": "mm",
+    "partId": "rack",
+    "steps": [
+      {
+        "id": "body",
+        "op": "base",
+        "shape": "rack",
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "module": 2,
+        "teeth": 6,
+        "pressureAngle": 20,
+        "backlash": 0.1,
+        "height": 8,
+        "baseThickness": 4
+      }
+    ]
+  },
+  {
+    "schemaVersion": "3.0",
+    "units": "mm",
+    "partId": "pipe_bend",
+    "steps": [
+      {
+        "id": "body",
+        "op": "base",
+        "shape": "pipe_bend",
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "diameter": 12,
+        "innerDiameter": 8,
+        "bendRadius": 24,
+        "bendAngle": 90
+      }
+    ]
+  },
+  {
+    "schemaVersion": "3.0",
+    "units": "mm",
+    "partId": "helical_spring",
+    "steps": [
+      {
+        "id": "body",
+        "op": "base",
+        "shape": "helical_spring",
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "meanDiameter": 20,
+        "wireDiameter": 2,
+        "pitch": 5,
+        "turns": 2.25,
+        "handedness": "left"
+      }
+    ]
+  },
+  {
+    "schemaVersion": "3.0",
+    "units": "mm",
+    "partId": "sweep",
+    "steps": [
+      {
+        "id": "body",
+        "op": "base",
+        "shape": "sweep",
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "diameter": 6,
+        "innerDiameter": 4,
+        "path": [
+          {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          {
+            "x": 0,
+            "y": 0,
+            "z": 20
+          },
+          {
+            "x": 20,
+            "y": 0,
+            "z": 20
+          }
+        ]
+      }
+    ]
   }
 ]

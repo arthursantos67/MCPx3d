@@ -2,17 +2,23 @@
 
 As alterações tratam três falhas observáveis: muitas estratégias de correção somando seus limites locais, STL bloqueado por um limite compartilhado de 10 MB e alojamentos de cabeça que podem ficar enterrados ou atravessar todo o bloco. Também reduzem trabalho nativo concorrente, que provocou falta de memória durante a verificação neste computador.
 
+## Atualização de 2026-10-08
+
+A [continuação desta revisão](project-improvements-2026-10-08.md) acrescenta curvas/molas/sweeps, seleção local de acabamentos, cancelamento por desconexão, bloqueio compartilhado e uma rodada real ampliada da IA. Os resultados abaixo conservam o contexto histórico de cada rodada.
+
+A [nova auditoria](audit-2026-10-08.md) corrige profundidade forçada de furos, verifica fundos cegos, acrescenta fixação em base roscada, padrões circulares e três primitivas mecânicas. Os resultados de modelo real abaixo são históricos; não houve novas chamadas reais nesta revisão.
+
 ## Planejamento e correções
 
 Conjuntos com três ou mais corpos recebem uma revisão antes da construção. O modelo confere eixos locais/globais, engate nas extremidades, paredes, apoios e acesso às cabeças. IDs, quantidade de componentes e modo de verificação são conservados. A revisão pendente é um checkpoint: quota não exige repetir o plano inicial.
 
 Pedidos de fuso/atuador recebem um exemplo numérico adaptável do [atuador verificado](../examples/cad/functional_linear_stage.json). Ele explica núcleo abaixo da raiz da rosca, munhões separados, guia contra giro, offsets locais e volante removível com retenção axial. O modelo continua escolhendo a decomposição; copiar/adaptar o exemplo não aprova o novo conjunto.
 
-Criação/edição compartilha até 20 chamadas de IA, 48 verificações distintas e 20 minutos. Correção de montagem compartilha 5 chamadas, 16 verificações e 4 minutos. Dois candidatos repetidos encerram uma correção por falta de progresso. Campos JSON reordenados não geram um candidato novo. Os caches geométricos têm 64 entradas por tipo, na instância da aba; salvamento revalida na API. O prazo libera a interface e cancela a requisição/provedor, mas não mata necessariamente um cálculo nativo já iniciado.
+Criação/edição compartilha até 20 chamadas de IA, 48 verificações distintas e 20 minutos. Correção de montagem compartilha 5 chamadas, 16 verificações e 4 minutos. Dois candidatos repetidos encerram uma correção por falta de progresso. Campos JSON reordenados não geram um candidato novo. Os caches geométricos têm 64 entradas por tipo, na instância da aba; salvamento revalida na API. O prazo do cliente libera a interface e cancela a requisição/provedor; o backend impõe um prazo independente de 240 s ao worker. Desde a continuação de 2026-10-08, desconexão HTTP também sinaliza cancelamento do processo nativo e cancela pedidos ainda na fila.
 
-Prévia, inspeção e exportação CAD entram numa fila por processo/event loop da API, com espera de até 60 s. Uma fila ocupada responde `CAD_ENGINE_BUSY`, sem pedir correção paga. OpenCascade usa duas threads por padrão (`CAD_KERNEL_THREADS`, 1–8). Isso reduz simultaneidade e picos de memória; não impõe um teto de RAM nem substitui isolamento de processo.
+Prévia, inspeção e exportação CAD entram numa fila por processo/event loop da API, com espera de até 60 s. Uma fila ocupada responde `CAD_ENGINE_BUSY`, sem pedir correção paga. OpenCascade usa duas threads por padrão (`CAD_KERNEL_THREADS`, 1–8). Agora operações nativas usam processos descartáveis com teto padrão de 2.048 MB e prazo de 240 s (`CAD_WORKER_MEMORY_MB`, `CAD_WORKER_TIMEOUT_SECONDS`). Falha de recursos/prazo conserva o candidato sem reparo pago.
 
-O mesmo benchmark encontrou outra rejeição indevida: duas guias individuais referenciavam furos corretos de um padrão linear, mas o motor rejeitava qualquer padrão receptor. Agora cada eixo precisa corresponder a exatamente uma instância coaxial; a instância escolhida recebe todas as provas existentes de engate, folga e material. Padrões ausentes/ambíguos, eixos positivos repetidos e padrões circulares receptores não são aceitos. O reparo antecipado do agente continua limitado a recursos simples; a decisão sobre os padrões ocorre na verificação nativa final.
+O mesmo benchmark encontrou outra rejeição indevida: duas guias individuais referenciavam furos corretos de um padrão linear, mas o motor rejeitava qualquer padrão receptor. Agora cada eixo precisa corresponder a exatamente uma instância coaxial; a instância escolhida recebe todas as provas existentes de engate, folga e material. Padrões circulares receptores também são aceitos desde 2026-10-08. Padrões ausentes/ambíguos e eixos positivos repetidos não são aceitos. O reparo antecipado do agente continua limitado a recursos simples; a decisão sobre os padrões ocorre na verificação nativa final.
 
 ## Cabeças de parafusos e material
 

@@ -1,0 +1,38 @@
+{
+  "schemaVersion": "4.0",
+  "units": "mm",
+  "partId": "threaded_blind_mount",
+  "components": [
+    {
+      "id": "base", "position": { "x": 0, "y": 0, "z": 0 },
+      "steps": [
+        { "id": "stock", "op": "base", "shape": "box", "width": 40, "depth": 40, "height": 12,
+          "position": { "x": 0, "y": 0, "z": 6 }, "rotation": { "x": 0, "y": 0, "z": 0 } },
+        { "id": "tapped_mount", "op": "cut", "shape": "thread", "diameter": 4, "pitch": 0.7, "height": 8.5,
+          "profile": "metric", "handedness": "right", "clearance": 0.1, "starts": 1,
+          "termination": "blind", "minBottomThickness": 2,
+          "position": { "x": -8, "y": 0, "z": 8.25 }, "rotation": { "x": 0, "y": 0, "z": 0 },
+          "pattern": { "kind": "linear", "count": 2, "offset": { "x": 16, "y": 0, "z": 0 } } }
+      ]
+    },
+    {
+      "id": "clamp", "position": { "x": 0, "y": 0, "z": 12 },
+      "steps": [
+        { "id": "stock", "op": "base", "shape": "box", "width": 30, "depth": 30, "height": 8,
+          "position": { "x": 0, "y": 0, "z": 4 }, "rotation": { "x": 0, "y": 0, "z": 0 } },
+        { "id": "clearance_mount", "op": "cut", "shape": "hole", "diameter": 4.5, "height": 8.5,
+          "holeType": "counterbore", "headDiameter": 8, "headDepth": 4.3, "termination": "through",
+          "position": { "x": -8, "y": 0, "z": 8 }, "rotation": { "x": 0, "y": 0, "z": 0 },
+          "pattern": { "kind": "linear", "count": 2, "offset": { "x": 16, "y": 0, "z": 0 } } }
+      ]
+    }
+  ],
+  "mechanics": {
+    "grounded": "base",
+    "connections": [
+      { "id": "mount", "kind": "fixed", "first": "clamp", "second": "base",
+        "firstFeature": "clearance_mount", "secondFeature": "tapped_mount", "maxClearance": 0.3,
+        "minEngagement": 6, "fastening": "threaded", "fastenerDiameter": 4 }
+    ]
+  }
+}

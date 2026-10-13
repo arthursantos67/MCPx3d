@@ -5,15 +5,9 @@ from typing import Annotated
 from domain.cad_program import CadProgramSpec
 from fastapi import APIRouter, Depends
 
-from api.cad_adapter import (
-    CadArtifactTooLargeError,
-    CadEngineUnavailableError,
-    CadGeometryError,
-)
-from api.cad_program_adapter import build_program_mesh
+from api.cad_process import run_cad_process
 from api.cad_service import build_cad_artifact
 from api.config import Settings, get_settings
-from api.errors import api_error
 from api.routes.cad import CadInspection
 
 router = APIRouter(prefix="/api/cad/programs", tags=["cad"])
@@ -28,11 +22,4 @@ def inspect_program(spec: CadProgramSpec, settings: Annotated[Settings, Depends(
 
 @router.post("/mesh")
 def mesh_program(spec: CadProgramSpec) -> dict[str, object]:
-    try:
-        return build_program_mesh(spec)
-    except CadEngineUnavailableError as exc:
-        raise api_error(503, "CAD_ENGINE_UNAVAILABLE", str(exc)) from exc
-    except CadArtifactTooLargeError as exc:
-        raise api_error(413, "COMPLEXITY_LIMIT", str(exc)) from exc
-    except CadGeometryError as exc:
-        raise api_error(422, "CAD_GEOMETRY_INVALID", str(exc)) from exc
+    return run_cad_process("program_mesh", {"spec": spec.model_dump(mode="json", exclude_none=True)}).metadata

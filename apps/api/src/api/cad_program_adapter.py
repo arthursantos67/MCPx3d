@@ -12,18 +12,22 @@ from domain.cad_program import (
     BoxStep,
     CadProgramSpec,
     ChamferStep,
-    CircularPattern,
     ConeStep,
     CylinderStep,
     FilletStep,
+    HelicalSpringStep,
     HoleStep,
-    LinearPattern,
     LoftStep,
+    PipeBendStep,
     PolygonStep,
+    RackStep,
+    RegularPrismStep,
     RevolveStep,
     ShellStep,
     SlotStep,
     SphereStep,
+    SpurGearStep,
+    SweepStep,
     ThreadStep,
     TorusStep,
     TubeStep,
@@ -36,7 +40,10 @@ from api.cad_adapter import (
     CadGeometryError,
 )
 from api.cad_features import build_feature, finish_part
+from api.cad_holes import check_hole_terminations
 from api.cad_mesh import preview_tessellation
+from api.cad_program_adapter_helpers import pattern_instances as _instances
+from api.cad_program_adapter_helpers import place_feature
 from api.cad_runtime import configure_cad_kernel
 
 _logger = logging.getLogger(__name__)
@@ -64,24 +71,6 @@ def _one_solid(workplane: Any, context: str | None = None) -> Any:
             f"CAD {context} leaves {len(solids)} separate solids; every union must overlap the part and no cut may split it"
         )
     raise CadGeometryError(f"CAD {context} produces an invalid or empty solid")
-
-
-def _instances(feature: Any, pattern: CircularPattern | LinearPattern | None) -> list[Any]:
-    if pattern is None:
-        return [feature]
-    instances = [feature]
-    if isinstance(pattern, CircularPattern):
-        center = pattern.center
-        direction = {"x": (1, 0, 0), "y": (0, 1, 0), "z": (0, 0, 1)}[pattern.axis]
-        start = (center.x, center.y, center.z)
-        end = tuple(start[index] + direction[index] for index in range(3))
-        increment = pattern.sweepAngle / (pattern.count if pattern.sweepAngle == 360 else pattern.count - 1)
-        for index in range(1, pattern.count):
-            instances.append(feature.rotate(start, end, increment * index))
-    else:
-        for index in range(1, pattern.count):
-            instances.append(feature.translate((pattern.offset.x * index, pattern.offset.y * index, pattern.offset.z * index)))
-    return instances
 
 
 def _bounds(box: Any) -> str:
@@ -151,7 +140,7 @@ def build_program_solid(spec: CadProgramSpec, cq: Any | None = None, on_step: Ca
                 if on_step is not None:
                     on_step(index, part)
                 continue
-            if isinstance(step, (TubeStep, TorusStep, SlotStep, HoleStep, ThreadStep, LoftStep)):
+            if isinstance(step, (TubeStep, TorusStep, SlotStep, HoleStep, ThreadStep, LoftStep, RegularPrismStep, SpurGearStep, RackStep, PipeBendStep, HelicalSpringStep, SweepStep)):
                 feature = build_feature(step, cq)
             elif isinstance(step, BoxStep):
                 feature = cq.Workplane("XY").box(step.width, step.depth, step.height)
@@ -171,10 +160,7 @@ def build_program_solid(spec: CadProgramSpec, cq: Any | None = None, on_step: Ca
                 feature = cq.Workplane("XZ").polyline([(point.x, point.y) for point in step.points]).close().revolve(360, (0, 0), (0, 1))
             else:
                 raise CadGeometryError(f"Unsupported CAD shape in step {step.id}")
-            for angle, axis in ((step.rotation.x, (1, 0, 0)), (step.rotation.y, (0, 1, 0)), (step.rotation.z, (0, 0, 1))):
-                if angle:
-                    feature = feature.rotate((0, 0, 0), axis, angle)
-            feature = feature.translate((step.position.x, step.position.y, step.position.z))
+            feature = place_feature(feature, step)
             if part is None:
                 part = feature
                 _one_solid(part, f"step {step.id} ({step.op})")
@@ -229,10 +215,11 @@ def build_program_solid(spec: CadProgramSpec, cq: Any | None = None, on_step: Ca
                         )
             if on_step is not None:
                 on_step(index, part)
-        except CadGeometryError:
+        except (CadGeometryError, MemoryError):
             raise
         except Exception as exc:
             raise CadGeometryError(f"CAD step {step.id} failed: {exc}") from exc
+    check_hole_terminations(spec, _one_solid(part), cq)
     return part
 
 
@@ -257,7 +244,11 @@ def build_program_step(spec: CadProgramSpec, max_bytes: int) -> CadArtifact:
         not math.isclose(getattr(a, key), getattr(b, key), rel_tol=1e-5, abs_tol=1e-4)
         for key in ("xmin", "xmax", "ymin", "ymax", "zmin", "zmax")
     ):
-        raise CadGeometryError("STEP geometry differs from the CAD program")
+        raise CadGeometryError(
+            f"STEP geometry differs from the CAD program; volume {original.Volume():.9g} -> {imported.Volume():.9g} mm3; "
+            f"original bounds: {tuple(getattr(a, key) for key in ('xmin', 'xmax', 'ymin', 'ymax', 'zmin', 'zmax'))}; "
+            f"imported bounds: {tuple(getattr(b, key) for key in ('xmin', 'xmax', 'ymin', 'ymax', 'zmin', 'zmax'))}"
+        )
     return CadArtifact(step=step, volume_mm3=imported.Volume(), bounds_mm=(b.xlen, b.ylen, b.zlen))
 
 

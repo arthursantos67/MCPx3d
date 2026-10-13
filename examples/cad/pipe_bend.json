@@ -1,0 +1,26 @@
+{
+  "schemaVersion": "3.0",
+  "units": "mm",
+  "partId": "pipe_bend",
+  "steps": [
+    {
+      "id": "body",
+      "op": "base",
+      "shape": "pipe_bend",
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "diameter": 12,
+      "innerDiameter": 8,
+      "bendRadius": 24,
+      "bendAngle": 90
+    }
+  ]
+}

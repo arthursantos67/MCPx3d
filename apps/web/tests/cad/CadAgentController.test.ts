@@ -110,6 +110,25 @@ test("CAD design routes a moving mechanism to a checked assembly", async () => {
   ]);
 });
 
+for (const code of ['CAD_ENGINE_RESOURCE_LIMIT', 'CAD_ENGINE_TIMEOUT']) test(`CAD ${code} preserves its candidate and resumes without a paid repair`, async () => {
+  const program: CadProgramSpec = { schemaVersion: '3.0', units: 'mm', partId: 'block', steps: [
+    { id: 'body', op: 'base', shape: 'box', position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 }, width: 40, depth: 20, height: 10 }] }
+  const { provider, mock } = makeFakeProvider([{ decision: 'create', spec: program, question: '', assumptions: [] }])
+  let failed = true, candidate: unknown
+  const controller = new CadAgentController(provider, {
+    checkCadProgram: async () => { if (failed) throw new ApiError(code.endsWith('TIMEOUT') ? 504 : 503, { code, message: 'native worker stopped' }); return null },
+    checkCadAssembly: async () => null,
+  })
+  controller.setDraftListener((draft) => { candidate = draft.spec })
+  await assert.rejects(controller.planCadProgram('Crie um bloco'), /native worker stopped/)
+  assert.deepEqual(candidate, program)
+  assert.equal(mock.calls.length, 1)
+  failed = false
+  const result = await controller.planCadProgram('Crie um bloco')
+  assert.equal(result.kind, 'create')
+  assert.equal(mock.calls.length, 1)
+})
+
 test('completed native geometry can retry saving without another inference, while external generation remains fresh', async () => {
   const spec = {
     schemaVersion: '3.0', units: 'mm', partId: 'support', steps: [{

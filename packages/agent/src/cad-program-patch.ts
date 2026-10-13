@@ -4,7 +4,7 @@ const record = (value: unknown): value is Record<string, unknown> => typeof valu
 
 export function cadStepRemovalRequested(request: string): boolean {
   return request.split(/[\n.!?;]/).some((clause) => {
-    const removal = /\b(?:remov|exclu|apag|delet|substitu|replace|remove|delete|rebuild|refa[çc])/i.exec(clause)
+    const removal = /\b(?:remov|exclu|apag|delet|substitu|troc|troqu|replace|remove|delete|rebuild|refa[çc])/i.exec(clause)
     return removal !== null && !/\b(?:n[aã]o|sem|not|never|without|don['’]t)\b/i.test(clause.slice(0, removal.index))
   })
 }

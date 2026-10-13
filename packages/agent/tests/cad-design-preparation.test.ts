@@ -58,6 +58,19 @@ test('planar patterns expose every head entrance without changing the pattern', 
   assert.equal(cadStockDesignIssue(prepared.spec), null)
 })
 
+test('exposing a head recess preserves explicit blind depth and floor requirements', () => {
+  const base = spec.steps[0]
+  const hole = spec.steps[2]
+  assert.ok(hole.shape === 'hole')
+  const blind: CadProgramSpec = { ...spec, steps: [base, { ...hole, height: 8, termination: 'blind', minBottomThickness: 2 }] }
+  const result = prepareCadDesign(blind, 'Placa com furos cegos de profundidade escolhida pelo agente')
+  const prepared = result.spec.steps[1]
+  assert.ok(prepared.shape === 'hole')
+  assert.equal(prepared.height, 8)
+  assert.equal(prepared.termination, 'blind')
+  assert.equal(prepared.minBottomThickness, 2)
+})
+
 test('a buried entrance and a recess without a supporting seat are design errors even in a connected solid', () => {
   assert.match(cadStockDesignIssue(spec)!, /entrance is buried/)
   assert.ok(spec.steps[0].shape === 'box')

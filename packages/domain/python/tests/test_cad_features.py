@@ -39,6 +39,25 @@ def test_impossible_feature_parameters_are_rejected(part_id, field, value) -> No
         CadProgramSpec.model_validate(raw)
 
 
+@pytest.mark.parametrize("part_id,field,value", [("spur_gear", "teeth", 17), ("spur_gear", "teeth", 24.5),
+    ("spur_gear", "pressureAngle", 14.5), ("spur_gear", "backlash", .5), ("rack", "baseThickness", 0),
+    ("rack", "teeth", 65), ("regular_prism", "sides", 2), ("regular_prism", "acrossFlats", 0),
+    ("plain", "termination", "sometimes"), ("plain", "minBottomThickness", 0), ("thread_metric_right", "termination", "blind")])
+def test_mechanical_feature_limits_match_typescript(part_id, field, value):
+    raw = copy.deepcopy(next(item for item in FEATURES if item["partId"] == part_id))
+    raw["steps"][-1][field] = value
+    with pytest.raises(ValidationError):
+        CadProgramSpec.model_validate(raw)
+
+
+def test_gear_tooth_budget_includes_pattern_instances():
+    raw = copy.deepcopy(next(item for item in FEATURES if item["partId"] == "spur_gear"))
+    repeated = {**raw["steps"][0], "id": "repeated", "op": "union", "pattern": {"kind": "linear", "count": 64, "offset": {"x": 60, "y": 0, "z": 0}}}
+    raw["steps"].append(repeated)
+    with pytest.raises(ValidationError, match="1024"):
+        CadProgramSpec.model_validate(raw)
+
+
 def test_linked_motion_accepts_rotation_and_translation_with_explicit_factors() -> None:
     assert CadAssemblySpec.model_validate(DRIVE).components[1].motion.factor == -180
     raw = copy.deepcopy(DRIVE)

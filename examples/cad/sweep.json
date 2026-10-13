@@ -1,0 +1,41 @@
+{
+  "schemaVersion": "3.0",
+  "units": "mm",
+  "partId": "sweep",
+  "steps": [
+    {
+      "id": "body",
+      "op": "base",
+      "shape": "sweep",
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "diameter": 6,
+      "innerDiameter": 4,
+      "path": [
+        {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        {
+          "x": 0,
+          "y": 0,
+          "z": 20
+        },
+        {
+          "x": 20,
+          "y": 0,
+          "z": 20
+        }
+      ]
+    }
+  ]
+}

@@ -1,5 +1,8 @@
 # Documentação atual
 
+- [Melhorias gerais — continuação de 2026-10-08](project-improvements-2026-10-08.md): cancelamento, recursos compartilhados, curvas/molas/sweeps, acabamentos locais e avaliação com IA real.
+
+- [Fidelidade e estabilidade — 2026-10-08](audit-2026-10-08.md): fundos cegos, base roscada, engrenagens/cremalheiras, proteção de memória e medição de confiabilidade.
 - [Arquitetura](architecture.md): responsabilidades, agentes, motores e persistência.
 - [Auditoria de 2026-10-06](audit-2026-10-06.md): causas corrigidas, reprodução da interferência base/fuso e limites restantes.
 - [Provedores de IA](ai-providers.md): assinaturas Codex/Claude Code, endpoint externo e diagnóstico.

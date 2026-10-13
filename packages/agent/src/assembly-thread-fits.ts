@@ -83,6 +83,7 @@ export const threadedFitStrategy: AssemblyRepairStrategy = {
       const host = spec.components.find((item) => item.id === collision.components[1 - sourceIndex])
       if (!source || !host || threads(source, false).length !== 1 || threads(host, true).length !== 1) continue
       const male = threads(source, false)[0], female = threads(host, true)[0]
+      if (female.termination === 'blind') continue
       if (!close(male.diameter, female.diameter) || !close(male.pitch, female.pitch) || male.profile !== female.profile ||
           male.handedness !== female.handedness || (male.starts ?? 1) !== (female.starts ?? 1)) continue
       const axis = direction(male.rotation), lead = male.pitch * (male.starts ?? 1), sign = male.handedness === 'right' ? 1 : -1

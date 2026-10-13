@@ -79,6 +79,20 @@ def test_separate_shafts_can_reference_unique_coaxial_instances_of_a_receiving_p
     assert artifact.solid_count == 3
 
 
+def test_circular_receiver_matches_each_individual_shaft():
+    raw = patterned_receiver()
+    raw["components"][0]["steps"][1]["pattern"] = {"kind": "circular", "count": 2, "axis": "z", "center": ZERO, "sweepAngle": 180}
+    assert build_assembly_step(CadAssemblySpec.model_validate(raw), 1_000_000).solid_count == 3
+
+
+def test_circular_bolted_mount_matches_reversed_pattern_order():
+    raw = mounting()
+    for component in raw["components"]:
+        component["steps"][1]["pattern"] = {"kind": "circular", "count": 2, "axis": "z", "center": ZERO, "sweepAngle": 180}
+    raw["components"][1]["steps"][1]["position"]["y"] = 8
+    assert build_assembly_step(CadAssemblySpec.model_validate(raw), 1_000_000).solid_count == 2
+
+
 @pytest.mark.parametrize("failure", ["missing_instance", "ambiguous_instances", "insufficient_engagement", "removed_wall"])
 def test_patterned_receivers_keep_alignment_engagement_and_material_checks(failure):
     raw = patterned_receiver()

@@ -58,7 +58,7 @@ class CadMechanicalConnection(BaseModel):
     secondFeature: str = Field(max_length=64, pattern=r"^[A-Za-z0-9_-]*$")
     maxClearance: float = Field(ge=0, le=1, allow_inf_nan=False)
     minEngagement: float = Field(ge=0.1, le=1_000, allow_inf_nan=False)
-    fastening: Literal["none", "bonded", "bolted", "captured"]
+    fastening: Literal["none", "bonded", "bolted", "threaded", "captured"]
     fastenerDiameter: float = Field(ge=0, le=100, allow_inf_nan=False)
 
     @model_validator(mode="after")
@@ -67,13 +67,13 @@ class CadMechanicalConnection(BaseModel):
             raise ValueError("mechanical connections need distinct components")
         if (self.kind == "fixed") != (self.fastening != "none"):
             raise ValueError("fixed connections need a fastening method; moving joints must use none")
-        needs_features = self.kind != "fixed" or self.fastening == "bolted"
+        needs_features = self.kind != "fixed" or self.fastening in ("bolted", "threaded")
         if needs_features and (not self.firstFeature or not self.secondFeature):
             raise ValueError("mechanical connection needs both feature IDs")
         if bool(self.firstFeature) != bool(self.secondFeature):
             raise ValueError("mechanical connection must supply both feature IDs or neither")
-        if (self.fastening == "bolted") != (self.fastenerDiameter > 0):
-            raise ValueError("only bolted connections need a positive fastener diameter")
+        if (self.fastening in ("bolted", "threaded")) != (self.fastenerDiameter > 0):
+            raise ValueError("only bolted/threaded connections need a positive fastener diameter")
         return self
 
 

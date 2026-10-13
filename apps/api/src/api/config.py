@@ -31,6 +31,10 @@ class Settings(BaseSettings):
     max_cad_stl_bytes: int = Field(default=64_000_000, gt=0)
     max_cad_draft_bundle_bytes: int = Field(default=128_000_000, gt=0)
     cad_kernel_threads: int = Field(default=2, ge=1, le=8)
+    cad_worker_memory_mb: int = Field(default=2048, ge=512, le=8192)
+    cad_worker_timeout_seconds: float = Field(default=240, ge=1, le=1200)
+    cad_worker_queue_timeout_seconds: float = Field(default=60, ge=1, le=600)
+    cad_worker_lock_path: Path = Path(__file__).resolve().parents[2] / "data" / "cad-worker.lock"
     artifact_cache_max_entries: int = Field(default=200, gt=0)
     artifact_cache_ttl_seconds: int = Field(default=3600, gt=0)
     recipe_database_path: Path = Path(__file__).resolve().parents[2] / "data" / "recipes.sqlite3"

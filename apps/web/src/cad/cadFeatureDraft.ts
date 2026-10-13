@@ -9,6 +9,13 @@ export function createCadFeature(shape: CadProgramStep['shape'], id: string, req
   switch (shape) {
     case 'box': return { ...common, shape, width: 20, depth: 20, height: 10 }
     case 'cylinder': return { ...common, shape, diameter: 12, height: 20 }
+    case 'regular_prism': return { ...common, shape, sides: 6, acrossFlats: 13, height: 6 }
+    case 'spur_gear': return { ...common, shape, module: 2, teeth: 24, pressureAngle: 20, backlash: .1, height: 10 }
+    case 'rack': return { ...common, shape, module: 2, teeth: 12, pressureAngle: 20, backlash: .1, baseThickness: 6, height: 10 }
+    case 'pipe_bend': return { ...common, shape, diameter: 12, innerDiameter: 8, bendRadius: 24, bendAngle: 90 }
+    case 'helical_spring': return { ...common, shape, meanDiameter: 20, wireDiameter: 2, pitch: 5, turns: 6, handedness: 'right' }
+    case 'sweep': return { ...common, shape, diameter: 6, innerDiameter: 0,
+      path: [{ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 20 }, { x: 20, y: 0, z: 20 }] }
     case 'sphere': return { ...common, shape, diameter: 20 }
     case 'cone': return { ...common, shape, bottomDiameter: 20, topDiameter: 10, height: 20 }
     case 'polygon_prism': return { ...common, shape, points: [{ x: -10, y: -10 }, { x: 10, y: -10 }, { x: 10, y: 10 }, { x: -10, y: 10 }], height: 10 }

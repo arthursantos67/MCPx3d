@@ -1,0 +1,384 @@
+[
+  {
+    "id": "blind-four-hole-plate",
+    "assembly": false,
+    "request": "Crie uma placa de 80×50×12 mm com quatro furos cegos lisos de diâmetro 5 mm e profundidade 6 mm, acessíveis pelo topo. Conserve pelo menos 2 mm de fundo em cada furo. Não atravesse a face inferior nem acrescente acabamentos cosméticos.",
+    "expectations": {
+      "features": [
+        {
+          "shape": "box",
+          "width": 80,
+          "depth": 50,
+          "height": 12
+        },
+        {
+          "shape": "hole",
+          "diameter": 5,
+          "height": 6,
+          "termination": "blind",
+          "count": 4,
+          "minBottomThickness": 2,
+          "op": "cut"
+        }
+      ]
+    }
+  },
+  {
+    "id": "through-socket-head-plate",
+    "assembly": false,
+    "request": "Crie uma placa 80×50×10 mm com quatro furos de passagem de 5,5 mm para M5 Allen, rebaixo cilíndrico de diâmetro 9,5 mm e profundidade 5,3 mm na face superior. Os furos devem atravessar; conserve assento e parede radial.",
+    "expectations": {
+      "features": [
+        {
+          "shape": "hole",
+          "diameter": 5.5,
+          "holeType": "counterbore",
+          "headDiameter": 9.5,
+          "headDepth": 5.3,
+          "termination": "through",
+          "count": 4,
+          "op": "cut"
+        }
+      ]
+    }
+  },
+  {
+    "id": "blind-threaded-base-mount",
+    "assembly": true,
+    "request": "Crie duas peças: uma base 40×40×12 mm e uma placa superior 30×30×8 mm em contato. Fixe de cima com dois parafusos M4: furos passantes de 4,5 mm na placa e roscas métricas M4×0,7 cegas na base, com engate útil mínimo de 6 mm, folga radial de 0,1 mm e fundo mínimo de 2 mm. Use fastening threaded. A face inferior da base deve ficar fechada. Declare ferragens, comprimento e acesso; não modele os parafusos como corpos adicionais.",
+    "expectations": {
+      "components": 2,
+      "fastening": "threaded",
+      "features": [
+        {
+          "shape": "thread",
+          "diameter": 4,
+          "pitch": 0.7,
+          "termination": "blind",
+          "count": 2,
+          "minBottomThickness": 2,
+          "clearance": 0.1,
+          "profile": "metric",
+          "op": "cut"
+        },
+        {
+          "shape": "hole",
+          "diameter": 4.5,
+          "termination": "through",
+          "count": 2,
+          "op": "cut"
+        }
+      ]
+    }
+  },
+  {
+    "id": "involute-24-tooth-gear",
+    "assembly": false,
+    "request": "Crie uma engrenagem reta involuta de 24 dentes, módulo 2 mm, ângulo de pressão de 20 graus, espessura de 8 mm e redução da espessura do dente de 0,1 mm no círculo primitivo. Use spur_gear e inclua furo central passante de 8 mm usando hole com termination through. Não substitua os dentes por caixas.",
+    "expectations": {
+      "features": [
+        {
+          "shape": "spur_gear",
+          "module": 2,
+          "teeth": 24,
+          "pressureAngle": 20,
+          "backlash": 0.1,
+          "height": 8
+        },
+        {
+          "shape": "hole",
+          "op": "cut",
+          "diameter": 8,
+          "termination": "through"
+        }
+      ]
+    }
+  },
+  {
+    "id": "straight-rack",
+    "assembly": false,
+    "request": "Crie uma cremalheira reta com 12 dentes, módulo 2 mm, ângulo de pressão de 20 graus, redução de espessura de dente de 0,1 mm, base sob a raiz de 6 mm e largura de 10 mm em Z. Use rack. Considere engrenamento e cargas não verificados.",
+    "expectations": {
+      "features": [
+        {
+          "shape": "rack",
+          "module": 2,
+          "teeth": 12,
+          "pressureAngle": 20,
+          "backlash": 0.1,
+          "baseThickness": 6,
+          "height": 10
+        }
+      ]
+    }
+  },
+  {
+    "id": "hex-threaded-nut",
+    "assembly": false,
+    "request": "Crie uma porca sextavada de 13 mm entre faces e altura de 8 mm, com rosca helicoidal interna métrica M8×1,25 direita, uma entrada e folga radial de 0,1 mm. Use regular_prism com 6 lados e corte thread passante. Sem chanfros cosméticos.",
+    "expectations": {
+      "features": [
+        {
+          "shape": "regular_prism",
+          "sides": 6,
+          "acrossFlats": 13,
+          "height": 8
+        },
+        {
+          "shape": "thread",
+          "diameter": 8,
+          "pitch": 1.25,
+          "termination": "through",
+          "op": "cut"
+        }
+      ]
+    }
+  },
+  {
+    "id": "shaft-keyway",
+    "assembly": false,
+    "request": "Crie um eixo liso de 20 mm de diâmetro e 80 mm de comprimento em Z, com rasgo de chaveta longitudinal de 4 mm de largura, 50 mm de comprimento e 2 mm de profundidade a partir da superfície cilíndrica. Use slot como corte real e preserve o núcleo conectado.",
+    "expectations": {
+      "features": [
+        {
+          "shape": "cylinder",
+          "diameter": 20,
+          "height": 80
+        },
+        {
+          "shape": "slot",
+          "op": "cut",
+          "length": 50,
+          "width": 4
+        }
+      ]
+    }
+  },
+  {
+    "id": "side-blind-counterbore",
+    "assembly": false,
+    "request": "Crie um bloco de 30×30×30 mm com furo cego acessível pela face +X: diâmetro 5,5 mm, profundidade 12 mm, rebaixo cilíndrico de 9,5 mm e profundidade 5,3 mm. Conserve pelo menos 2 mm de fundo. A entrada segue Z local negativo, orientado corretamente para dentro do bloco.",
+    "expectations": {
+      "features": [
+        {
+          "shape": "hole",
+          "diameter": 5.5,
+          "height": 12,
+          "holeType": "counterbore",
+          "termination": "blind",
+          "headDiameter": 9.5,
+          "headDepth": 5.3,
+          "minBottomThickness": 2,
+          "op": "cut",
+          "position": {
+            "x": 15,
+            "y": 0,
+            "z": 0
+          },
+          "axisDirection": {
+            "x": 1,
+            "y": 0,
+            "z": 0
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "tube-wall",
+    "assembly": false,
+    "request": "Crie um tubo de diâmetro externo 30 mm, diâmetro interno 24 mm e comprimento de 60 mm, centrado em Z, usando tube. Sem acabamentos adicionais.",
+    "expectations": {
+      "features": [
+        {
+          "shape": "tube",
+          "diameter": 30,
+          "innerDiameter": 24,
+          "height": 60
+        }
+      ],
+      "boundsMm": [
+        30,
+        30,
+        60
+      ],
+      "toleranceMm": 0.001,
+      "volumeMm3": {
+        "min": 15268,
+        "max": 15269
+      }
+    }
+  },
+  {
+    "id": "rounded-slot",
+    "assembly": false,
+    "request": "Crie uma placa de 70×30×10 mm com um rasgo arredondado passante de comprimento total 40 mm e largura 6 mm, alinhado ao eixo X. Use slot e conserve paredes nas extremidades.",
+    "expectations": {
+      "features": [
+        {
+          "shape": "slot",
+          "length": 40,
+          "width": 6,
+          "op": "cut"
+        }
+      ]
+    }
+  },
+  {
+    "id": "three-body-stationary-support",
+    "assembly": true,
+    "request": "Crie exatamente três peças: um eixo estacionário liso de diâmetro 8 mm entre dois suportes separados. O eixo precisa de pelo menos 12 mm de engate em cada suporte, furos de 8,4 mm e parede radial positiva. Declare fixação por adesivo em ambos e ancore um suporte. Decida o comprimento para atender ao engate sem recriar os suportes.",
+    "expectations": {
+      "components": 3,
+      "fastening": "bonded",
+      "features": [
+        {
+          "shape": "cylinder",
+          "diameter": 8
+        }
+      ],
+      "mechanicalStatus": "verified"
+    }
+  },
+  {
+    "id": "hollow-loft-adapter",
+    "assembly": false,
+    "request": "Crie um adaptador entre tubo de diâmetro 30 mm e tubo de diâmetro 20 mm, com altura de 30 mm e parede de aproximadamente 2 mm. Use loft externo e loft interno como corte atravessando as extremidades, com duas seções circulares. Conserve um sólido conectado e abertura real nas duas bocas.",
+    "expectations": {
+      "features": [
+        {
+          "shape": "loft",
+          "op": "base"
+        },
+        {
+          "shape": "loft",
+          "op": "cut"
+        }
+      ]
+    }
+  },
+  {
+    "id": "hollow-pipe-bend",
+    "assembly": false,
+    "request": "Crie uma curva de tubo de 90 graus, raio da linha central 24 mm, diametro externo 12 mm e interno 8 mm. Use pipe_bend centrado na origem, no plano XY. Preserve a passagem interna e as duas bocas abertas. Sem trechos retos ou acabamentos extras.",
+    "expectations": {
+      "features": [
+        {
+          "shape": "pipe_bend",
+          "diameter": 12,
+          "innerDiameter": 8,
+          "bendRadius": 24,
+          "bendAngle": 90
+        }
+      ],
+      "boundsMm": [
+        30,
+        30,
+        12
+      ],
+      "toleranceMm": 0.001,
+      "volumeMm3": {
+        "min": 2368.6,
+        "max": 2368.8
+      }
+    }
+  },
+  {
+    "id": "left-hand-spring",
+    "assembly": false,
+    "request": "Crie uma mola helicoidal real de mao esquerda, diametro medio da linha central de 20 mm, arame de 2 mm, passo axial de 5 mm e exatamente 2,25 voltas. Use helical_spring, eixo Z e extremidades abertas sem retifica ou ganchos. Nao substitua por aneis empilhados.",
+    "expectations": {
+      "features": [
+        {
+          "shape": "helical_spring",
+          "meanDiameter": 20,
+          "wireDiameter": 2,
+          "pitch": 5,
+          "turns": 2.25,
+          "handedness": "left"
+        }
+      ],
+      "volumeMm3": {
+        "min": 444,
+        "max": 447
+      }
+    }
+  },
+  {
+    "id": "hollow-3d-sweep",
+    "assembly": false,
+    "request": "Crie um tubo por trajetoria segmentada com diametro externo 6 mm e interno 4 mm. Use sweep em uma unica operacao com pontos locais (0,0,0), (0,0,20), (20,0,20), nesta ordem, centrado na origem. Preserve passagem interna e cantos de uniao em meia-esquadria. Sem cilindros desconectados.",
+    "expectations": {
+      "features": [
+        {
+          "shape": "sweep",
+          "diameter": 6,
+          "innerDiameter": 4,
+          "path": [
+            {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            },
+            {
+              "x": 0,
+              "y": 0,
+              "z": 20
+            },
+            {
+              "x": 20,
+              "y": 0,
+              "z": 20
+            }
+          ]
+        }
+      ],
+      "volumeMm3": {
+        "min": 600,
+        "max": 660
+      }
+    }
+  },
+  {
+    "id": "local-edge-chamfer",
+    "assembly": false,
+    "request": "Crie um bloco centrado na origem de 40 por 30 por 12 mm. Aplique chanfro de 1 mm SOMENTE na aresta vertical em X=20,Y=15. Use chamfer com selector=parallel_z e selectionBox de minimo (19,14,-1) a maximo (21,16,1), filtrando o centro dessa aresta. As outras tres arestas verticais devem permanecer intactas.",
+    "expectations": {
+      "features": [
+        {
+          "shape": "box",
+          "width": 40,
+          "depth": 30,
+          "height": 12
+        },
+        {
+          "shape": "chamfer",
+          "distance": 1,
+          "selector": "parallel_z",
+          "selectionBox": {
+            "min": {
+              "x": 19,
+              "y": 14,
+              "z": -1
+            },
+            "max": {
+              "x": 21,
+              "y": 16,
+              "z": 1
+            }
+          }
+        }
+      ],
+      "boundsMm": [
+        40,
+        30,
+        12
+      ],
+      "toleranceMm": 0.001,
+      "volumeMm3": {
+        "min": 14393.99,
+        "max": 14394.01
+      }
+    }
+  }
+]

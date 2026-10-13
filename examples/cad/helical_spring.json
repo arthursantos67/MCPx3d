@@ -1,0 +1,27 @@
+{
+  "schemaVersion": "3.0",
+  "units": "mm",
+  "partId": "helical_spring",
+  "steps": [
+    {
+      "id": "body",
+      "op": "base",
+      "shape": "helical_spring",
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "meanDiameter": 20,
+      "wireDiameter": 2,
+      "pitch": 5,
+      "turns": 2.25,
+      "handedness": "left"
+    }
+  ]
+}

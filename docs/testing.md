@@ -17,14 +17,22 @@ npm run build
 
 ## Python
 
-Em `apps/api` e depois em `packages/domain/python`:
+Em `apps/api` e depois em `packages/domain/python`, instale e confira tipos/lint:
 
 ```bash
 uv sync
 uv run ruff check .
 uv run mypy src
-uv run pytest
 ```
+
+Testes do domínio não carregam o motor CAD: `uv run pytest` em `packages/domain/python`. Para testes nativos locais, execute **um grupo por vez**, com teto de memória/prazo, da raiz:
+
+```powershell
+apps/api/.venv/Scripts/python.exe scripts/run-cad-tests.py --timeout 120 apps/api/tests/test_cad_gears.py -q
+apps/api/.venv/Scripts/python.exe scripts/run-cad-tests.py --timeout 150 apps/api/tests/test_cad_holes.py -q
+```
+
+O executor usa por padrão 1.536 MB, uma thread, temporários em `.cache/temp` e encerra a árvore de processos ao atingir o prazo. `--memory-mb` permite 512–4.096 MB e `--timeout` 1–600 s. Escolha grupos pequenos; não execute o atuador complexo simultaneamente com navegador/build ou outro grupo nativo. O teto também inclui os workers filhos no Windows. O CI tem recursos próprios e mantém a suíte completa; sua aprovação não foi medida nesta revisão.
 
 No Windows sem uv no PATH, use `python -m uv` ou o Python do ambiente: `.venv/Scripts/python.exe -m pytest`. Configure `UV_CACHE_DIR`, `TEMP` e `TMP` em F: antes de uma instalação manual neste computador.
 
@@ -69,3 +77,15 @@ Screenshots de inspeção ficam em `.cache/browser`; falhas produzem screenshot 
 Passar nesses testes demonstra os contratos e os fluxos exercitados. Não demonstra que qualquer pedido livre produzirá uma máquina correta. Uma avaliação da IA real precisa de modelo/provedor disponível, pedidos representativos, dimensões esperadas, número de tentativas, latência e critérios geométricos.
 
 O CI executa TypeScript/build, API, domínio Python e navegador em jobs separados. Os resultados executados neste ambiente estão em [verification.md](verification.md).
+
+## Benchmark de fidelidade com IA real
+
+O comando abaixo **consome a assinatura autenticada**, usa a API local já iniciada e executa sequencialmente 16 pedidos de [cad-benchmark-prompts.json](../tests/golden/cad-benchmark-prompts.json). Não roda como parte de `npm test`:
+
+```powershell
+npm.cmd run benchmark:cad -- --run --suite
+```
+
+`--case ID` seleciona um pedido, ou uma lista separada por vírgulas; `--repeat N` repete de 1 a 100 vezes os selecionados. Sem `--run`, apenas mostra o uso. O modo histórico de dois pedidos, `--complex` e `--resume` permanece disponível. Resultados ficam em `.cache/cad-quality-live/report-suite.json`, com receitas e ZIPs, sem salvar projetos no banco. `CAD_BENCHMARK_OUTPUT` escolhe outro diretório para conservar rodadas anteriores; `CAD_BENCHMARK_API` escolhe a API e `CAD_BENCHMARK_MODEL` fixa o modelo. Modelo vazio usa o padrão do cliente e precisa ser identificado como tal na interpretação. Não há repetição automática após falhas; quota interrompe a série e o relatório conta casos não executados.
+
+Sucesso exige aprovação do kernel, correspondência aos recursos/quantidades esperados e ausência de falha de exportação. Requisitos podem declarar campos aninhados, coordenadas, direção de eixo, componente de destino, dimensões medidas, intervalo de volume e estado mecânico; medidas precisam da inspeção real, não são deduzidas da receita. O relatório inclui taxa observada, duração mediana/p95, chamadas/verificações, exportações e limite inferior unilateral exato a 95%. A interpretação exige amostra independente e representativa; repetição de 16 prompts não comprova acerto universal ou dimensionamento mecânico. [project-improvements-2026-10-08.md](project-improvements-2026-10-08.md) registra a avaliação real e seus limites.

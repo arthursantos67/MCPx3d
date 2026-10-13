@@ -9,7 +9,8 @@ Geometria sem colisões não recebe aprovação mecânica. A criação de conjun
 | Vínculo | Evidências verificadas |
 |---|---|
 | Fixo por adesivo | Superfícies planas opostas com área comum de pelo menos 1 mm²; alternativamente eixo/furo com material, folga e engate. O adesivo é requisito explícito de montagem. |
-| Fixo parafusado | Superfícies de montagem em contato; pelo menos dois furos passantes coaxiais em padrão linear, abertos e com material ao redor; diâmetro do fixador compatível. Os parafusos precisam ser instalados. |
+| Fixo parafusado | Superfícies de montagem em contato; pelo menos dois furos passantes coaxiais em padrão linear ou circular, abertos e com material ao redor; diâmetro do fixador compatível. Os parafusos precisam ser instalados. |
+| Fixo em base roscada | Contato de montagem; pelo menos dois pares passagem/rosca métrica interna de uma entrada, nominal compatível, entrada acessível, material e engate útil. Base pode ter fundo cego verificado. Parafusos comerciais precisam ser instalados. |
 | Fixo capturado | Pequenas translações nos dois sentidos dos três eixos encontram batentes físicos; rotação de ±15° no eixo do movimento encontra antirrotação. Uma cavidade circular solta não fixa uma porca. |
 | Guia linear | Eixo positivo e furo receptor alinhados em coordenadas globais, folga e engate dentro dos limites, material presente. O grupo rígido do carro exige duas guias paralelas separadas para impedir giro. |
 | Mancal rotativo | Munhão liso e furo alinhados, material/engate e rotação relativa compatíveis. O eixo precisa de batentes que impeçam deriva axial nos dois sentidos em todas as poses amostradas. |
@@ -17,7 +18,7 @@ Geometria sem colisões não recebe aprovação mecânica. A criação de conjun
 
 Os centros/eixos incluem posição local, rotação do recurso, movimento e posição do componente. Furos começam na entrada e seguem Z local negativo; cilindros/roscas são centrados. Isso evita duplicar a altura da peça na geometria e na posição global, causa dos suportes suspensos do atuador anterior.
 
-Um eixo individual pode usar o ID de um padrão linear receptor quando há exatamente uma instância coaxial. O verificador seleciona essa instância e conserva as provas de engate, folga e material. Correspondências ausentes ou ambíguas não são aceitas. Padrões positivos e receptores circulares exigem recursos individuais.
+Um eixo individual pode usar o ID de um padrão linear ou circular receptor quando há exatamente uma instância coaxial. O verificador seleciona essa instância e conserva as provas de engate, folga e material. Correspondências ausentes ou ambíguas não são aceitas. Padrões positivos exigem recursos individuais. Pares de fixadores também correspondem por eixo global, sem depender da ordem das instâncias.
 
 O motor usa os mesmos sólidos/poses da análise de interferência. Material em pares de recursos é amostrado em quatro direções e três estações axiais; roscas também verificam cristas/vales nas fases da hélice. Um recurso positivo seguido somente de uniões conserva seu material por construção; operações posteriores de corte/acabamento exigem consultar o sólido final. Vales de rosca e material dos receptores são sempre consultados. Contatos planos e provas de retenção usam interseções reais. Classificadores são reutilizados dentro da inspeção; poses exatamente equivalentes de rotação/translação reutilizam verificações e conservam diagnósticos por pose. Nenhum cache persiste entre specs diferentes.
 
@@ -39,6 +40,10 @@ Se a validação do conjunto completo mostrar que é necessário rever peças co
 
 Projetos antigos sem contrato permanecem acessíveis, com `mechanicalStatus=unverified`. A inspeção mostra distâncias entre corpos fixos separados e não inventa fixações a partir dos nomes das peças. Dados do atuador anterior reproduzem o vão de 24 mm entre base e suportes. Conjuntos verificados recebem `mechanicalStatus=verified`, referente a estes vínculos e às poses amostradas.
 
+## Base com fundo fechado
+
+[threaded_blind_mount.json](../examples/cad/threaded_blind_mount.json) liga um suporte à base por dois M4×0,7. O suporte tem passagens/rebaixos e a base tem roscas cegas com fundo mínimo; a validação confirma o sólido final e desconta um passo de saída do macho do engate útil. Esse método conserva a face inferior fechada quando a montagem prevê parafusos por cima. Furos passantes continuam adequados no exemplo de atuador abaixo, que exige porcas inferiores. [A revisão de fidelidade](audit-2026-10-08.md) explica convenções e limites.
+
 ## Atuador reproduzível
 
 [functional_linear_stage.json](../examples/cad/functional_linear_stage.json) contém oito corpos: base, dois suportes, duas guias, fuso, volante removível e carro com porca roscada integrada. Tem 12 conexões declaradas e curso de ±30 mm.
@@ -58,6 +63,6 @@ O [STEP gerado](../examples/cad/functional_linear_stage.step) conserva oito sól
 
 Este perfil não é um solver geral de mates e não simula forças. Verifica relações declaradas e evidências de geometria nas poses atual, 0%, 25%, 50%, 75% e 100%. Não comprova toda a trajetória, rigidez, resistência, desgaste, vibração, lubrificação, pré-carga, classes ISO, processo de fabricação ou sequência de instalação/remoção. Captura geométrica não comprova que uma peça pode ser inserida depois da fabricação.
 
-Ainda não são verificados movimentos helicoidais do próprio corpo, guias prismáticas, engrenamento, fixações roscadas cegas, padrões circulares de fixadores ou padrões de eixos positivos. Padrões lineares receptores precisam de correspondência coaxial única. A criação mecânica escolhe uma alternativa suportada quando viável; se não houver solução verificável, termina em falha técnica. Conceitos geométricos continuam possíveis. A API não transforma uma montagem legada em um projeto funcional automaticamente.
+Ainda não são verificados movimentos helicoidais do próprio corpo, guias prismáticas, engrenamento ou padrões de eixos positivos. Padrões lineares/circulares receptores precisam de correspondência coaxial única. A criação mecânica escolhe uma alternativa suportada quando viável; se não houver solução verificável, termina em falha técnica. Conceitos geométricos continuam possíveis. A API não transforma uma montagem legada em um projeto funcional automaticamente.
 
 Os testes usam CadQuery e STEP reais com respostas de IA programadas. Isso verifica o fluxo, as aceitações e as rejeições cobertas, sem medir a qualidade de geração livre de um modelo. Resultados estão em [verification.md](verification.md); expansão do perfil e prova de sequência de montagem estão priorizadas em [ISSUES.md](../ISSUES.md).

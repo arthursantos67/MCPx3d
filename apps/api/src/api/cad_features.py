@@ -7,23 +7,40 @@ from domain.cad_program import (
     ChamferStep,
     CircleSection,
     FilletStep,
+    HelicalSpringStep,
     HoleStep,
     LoftStep,
+    PipeBendStep,
+    RackStep,
+    RegularPrismStep,
     ShellStep,
     SlotStep,
+    SpurGearStep,
+    SweepStep,
     ThreadStep,
     TorusStep,
     TubeStep,
 )
 
 from api.cad_adapter import CadGeometryError
+from api.cad_gears import build_rack, build_spur_gear
+from api.cad_sweeps import build_sweep
 from api.cad_threads import build_thread
 
 _SELECTORS = {"all": None, "parallel_x": "|X", "parallel_y": "|Y", "parallel_z": "|Z", "circular": "%CIRCLE",
               "top": ">Z", "bottom": "<Z", "positive_x": ">X", "negative_x": "<X", "positive_y": ">Y", "negative_y": "<Y"}
 
 
-def build_feature(step: TubeStep | TorusStep | SlotStep | HoleStep | ThreadStep | LoftStep, cq: Any) -> Any:
+def build_feature(step: TubeStep | TorusStep | SlotStep | HoleStep | ThreadStep | LoftStep | RegularPrismStep | SpurGearStep | RackStep | PipeBendStep | HelicalSpringStep | SweepStep, cq: Any) -> Any:
+    if isinstance(step, (PipeBendStep, HelicalSpringStep, SweepStep)):
+        return build_sweep(step, cq)
+    if isinstance(step, RegularPrismStep):
+        diameter = step.acrossFlats / math.cos(math.pi / step.sides)
+        return cq.Workplane("XY").polygon(step.sides, diameter).extrude(step.height).translate((0, 0, -step.height / 2))
+    if isinstance(step, SpurGearStep):
+        return build_spur_gear(step, cq)
+    if isinstance(step, RackStep):
+        return build_rack(step, cq)
     if isinstance(step, ThreadStep):
         return build_thread(step, cq)
     if isinstance(step, TubeStep):
@@ -54,8 +71,14 @@ def build_feature(step: TubeStep | TorusStep | SlotStep | HoleStep | ThreadStep 
 def finish_part(part: Any, step: FilletStep | ChamferStep | ShellStep) -> Any:
     before = part.val().Volume()
     selection = part.faces(_SELECTORS[step.selector]) if isinstance(step, ShellStep) else part.edges(_SELECTORS[step.selector])
+    if isinstance(step, (FilletStep, ChamferStep)) and step.selectionBox is not None:
+        region = step.selectionBox
+        selection = selection.newObject([edge for edge in selection.vals() if all(
+            getattr(region.min, axis) - 1e-7 <= getattr(edge.Center(), axis) <= getattr(region.max, axis) + 1e-7
+            for axis in ("x", "y", "z"))])
     if selection.size() == 0:
-        raise CadGeometryError(f"CAD step {step.id} selected no {'faces' if isinstance(step, ShellStep) else 'edges'}; revise selector {step.selector}")
+        region_hint = " and selectionBox (edge centers in component coordinates)" if getattr(step, "selectionBox", None) is not None else ""
+        raise CadGeometryError(f"CAD step {step.id} selected no {'faces' if isinstance(step, ShellStep) else 'edges'}; revise selector {step.selector}{region_hint}")
     try:
         if isinstance(step, FilletStep):
             result = selection.fillet(step.radius)

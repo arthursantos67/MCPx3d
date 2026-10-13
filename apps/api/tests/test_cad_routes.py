@@ -1,6 +1,7 @@
 import copy
 import json
 import math
+import os
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -188,11 +189,9 @@ def test_oversized_step_is_not_exposed() -> None:
     assert response.json()["code"] == "COMPLEXITY_LIMIT"
 
 
-def test_missing_cad_engine_returns_actionable_error(monkeypatch: pytest.MonkeyPatch) -> None:
-    def unavailable(_name: str) -> None:
-        raise ImportError("cadquery")
-
-    monkeypatch.setattr("api.cad_adapter.import_module", unavailable)
+def test_missing_cad_engine_returns_actionable_error(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    (tmp_path / "cadquery.py").write_text("raise ImportError('cadquery unavailable in worker')\n")
+    monkeypatch.setenv("PYTHONPATH", str(tmp_path) + os.pathsep + os.environ.get("PYTHONPATH", ""))
 
     response = TestClient(app).post("/api/cad/parts/step", json=_PLATE)
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import re
 from typing import Annotated, Literal
 
@@ -134,6 +135,103 @@ class TubeStep(PrimitiveStep):
         return self
 
 
+class RegularPrismStep(PrimitiveStep):
+    shape: Literal["regular_prism"]
+    sides: int = Field(ge=3, le=32)
+    acrossFlats: float = Field(ge=0.1, le=5_000, allow_inf_nan=False)
+    height: float = Field(ge=0.1, le=10_000, allow_inf_nan=False)
+
+
+class PipeBendStep(PrimitiveStep):
+    shape: Literal["pipe_bend"]
+    diameter: float = Field(ge=0.1, le=1_000, allow_inf_nan=False)
+    innerDiameter: float = Field(default=0, ge=0, le=1_000, allow_inf_nan=False)
+    bendRadius: float = Field(ge=0.1, le=5_000, allow_inf_nan=False)
+    bendAngle: float = Field(ge=1, le=270, allow_inf_nan=False)
+
+    @model_validator(mode="after")
+    def _bend(self) -> PipeBendStep:
+        if self.bendRadius - self.diameter / 2 < 0.1:
+            raise ValueError("pipe bend needs bendRadius at least 0.1 mm greater than the outer radius")
+        if self.innerDiameter > 0 and self.diameter - self.innerDiameter < 0.2:
+            raise ValueError("pipe bend needs at least 0.1 mm radial wall")
+        return self
+
+
+class HelicalSpringStep(PrimitiveStep):
+    shape: Literal["helical_spring"]
+    meanDiameter: float = Field(ge=0.3, le=1_000, allow_inf_nan=False)
+    wireDiameter: float = Field(ge=0.1, le=100, allow_inf_nan=False)
+    pitch: float = Field(ge=0.2, le=1_000, allow_inf_nan=False)
+    turns: float = Field(ge=1, le=32, allow_inf_nan=False)
+    handedness: Literal["right", "left"] = "right"
+
+    @model_validator(mode="after")
+    def _spring(self) -> HelicalSpringStep:
+        circumference = math.pi * self.meanDiameter
+        normal_spacing = self.pitch * circumference / math.hypot(circumference, self.pitch)
+        if self.meanDiameter - self.wireDiameter < 0.2:
+            raise ValueError("spring needs at least 0.1 mm inner radius")
+        if normal_spacing - self.wireDiameter < 0.1:
+            raise ValueError("spring coils need at least 0.1 mm separation normal to the helix")
+        if self.pitch * self.turns > 10_000:
+            raise ValueError("spring centerline height exceeds 10000 mm")
+        return self
+
+
+class SweepStep(PrimitiveStep):
+    shape: Literal["sweep"]
+    diameter: float = Field(ge=0.1, le=1_000, allow_inf_nan=False)
+    innerDiameter: float = Field(default=0, ge=0, le=1_000, allow_inf_nan=False)
+    path: list[Vector3] = Field(min_length=2, max_length=16)
+
+    @model_validator(mode="after")
+    def _sweep(self) -> SweepStep:
+        if self.innerDiameter > 0 and self.diameter - self.innerDiameter < 0.2:
+            raise ValueError("sweep needs at least 0.1 mm radial wall")
+        distances = [math.dist(tuple(a.model_dump().values()), tuple(b.model_dump().values()))
+                     for a, b in zip(self.path, self.path[1:])]
+        if any(distance < 0.1 for distance in distances):
+            raise ValueError("sweep path consecutive points must be at least 0.1 mm apart")
+        if sum(distances) > 20_000:
+            raise ValueError("sweep path exceeds 20000 mm")
+        if self.path[0] == self.path[-1]:
+            raise ValueError("sweep path must be open; use torus for a closed ring")
+        return self
+
+
+class SpurGearStep(PrimitiveStep):
+    shape: Literal["spur_gear"]
+    module: float = Field(ge=0.1, le=20, allow_inf_nan=False)
+    teeth: int = Field(ge=12, le=128)
+    pressureAngle: float = Field(default=20, ge=20, le=30, allow_inf_nan=False)
+    backlash: float = Field(default=0, ge=0, le=4, allow_inf_nan=False)
+    height: float = Field(ge=0.1, le=1_000, allow_inf_nan=False)
+
+    @model_validator(mode="after")
+    def _gear(self) -> SpurGearStep:
+        if self.teeth < math.ceil(2 / math.sin(math.radians(self.pressureAngle)) ** 2):
+            raise ValueError("unshifted full-depth spur gear needs more teeth to avoid undercut at this pressure angle")
+        if self.backlash > self.module * .2:
+            raise ValueError("gear backlash is per-gear pitch-circle tooth thinning, limited to module/5")
+        return self
+
+
+class RackStep(PrimitiveStep):
+    shape: Literal["rack"]
+    module: float = Field(ge=0.1, le=20, allow_inf_nan=False)
+    teeth: int = Field(ge=1, le=64)
+    pressureAngle: float = Field(default=20, ge=20, le=30, allow_inf_nan=False)
+    backlash: float = Field(default=0, ge=0, le=4, allow_inf_nan=False)
+    baseThickness: float = Field(ge=0.1, le=1_000, allow_inf_nan=False)
+    height: float = Field(ge=0.1, le=1_000, allow_inf_nan=False)
+
+    @model_validator(mode="after")
+    def _rack(self) -> RackStep:
+        if self.backlash > self.module * .2:
+            raise ValueError("rack backlash is tooth thinning, limited to module/5")
+        return self
+
 class TorusStep(PrimitiveStep):
     shape: Literal["torus"]
     majorRadius: float = Field(ge=0.1, le=5_000, allow_inf_nan=False)
@@ -167,6 +265,8 @@ class HoleStep(StepBase):
     height: float = Field(ge=0.1, le=10_000, allow_inf_nan=False)
     headDiameter: float = Field(ge=0, le=10_000, allow_inf_nan=False)
     headDepth: float = Field(ge=0, le=10_000, allow_inf_nan=False)
+    termination: Literal["unspecified", "blind", "through"] = "unspecified"
+    minBottomThickness: float = Field(default=1, ge=0.1, le=1_000, allow_inf_nan=False)
 
     @model_validator(mode="after")
     def _head(self) -> HoleStep:
@@ -187,9 +287,13 @@ class ThreadStep(PrimitiveStep):
     handedness: Literal["right", "left"]
     clearance: float = Field(ge=0, le=2, allow_inf_nan=False)
     starts: int = Field(default=1, ge=1, le=4)
+    termination: Literal["unspecified", "blind", "through"] = "unspecified"
+    minBottomThickness: float = Field(default=1, ge=0.1, le=1_000, allow_inf_nan=False)
 
     @model_validator(mode="after")
     def _thread(self) -> ThreadStep:
+        if self.op != "cut" and self.termination != "unspecified":
+            raise ValueError("hole termination only applies to internal thread cuts")
         depth = self.pitch * (0.613434654 if self.profile == "metric" else 0.5)
         if self.diameter / 2 - depth < 0.1:
             raise ValueError("thread pitch leaves no positive core; increase diameter or reduce pitch")
@@ -248,16 +352,30 @@ class ModifierStep(StepBase):
         return self
 
 
+class SelectionBox(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    min: Vector3
+    max: Vector3
+
+    @model_validator(mode="after")
+    def _ordered(self) -> SelectionBox:
+        if any(getattr(self.min, axis) > getattr(self.max, axis) for axis in ("x", "y", "z")):
+            raise ValueError("selectionBox min must not exceed max on any axis")
+        return self
+
+
 class FilletStep(ModifierStep):
     shape: Literal["fillet"]
     selector: EdgeSelector
     radius: float = Field(ge=0.1, le=1_000, allow_inf_nan=False)
+    selectionBox: SelectionBox | None = None
 
 
 class ChamferStep(ModifierStep):
     shape: Literal["chamfer"]
     selector: EdgeSelector
     distance: float = Field(ge=0.1, le=1_000, allow_inf_nan=False)
+    selectionBox: SelectionBox | None = None
 
 
 class ShellStep(ModifierStep):
@@ -268,7 +386,8 @@ class ShellStep(ModifierStep):
 
 CadStep = Annotated[
     BoxStep | CylinderStep | SphereStep | ConeStep | PolygonStep | RevolveStep | TubeStep | TorusStep |
-    SlotStep | HoleStep | ThreadStep | LoftStep | FilletStep | ChamferStep | ShellStep,
+    SlotStep | HoleStep | ThreadStep | LoftStep | FilletStep | ChamferStep | ShellStep |
+    RegularPrismStep | SpurGearStep | RackStep | PipeBendStep | HelicalSpringStep | SweepStep,
     Field(discriminator="shape"),
 ]
 
@@ -294,6 +413,15 @@ class CadProgramSpec(BaseModel):
         if sum(step.height / step.pitch * (step.pattern.count if step.pattern else 1)
                for step in self.steps if isinstance(step, ThreadStep)) > 160:
             raise ValueError("CAD program exceeds 160 thread pitches including patterns")
+        if sum(step.teeth * (step.pattern.count if step.pattern else 1)
+               for step in self.steps if isinstance(step, (SpurGearStep, RackStep))) > 1_024:
+            raise ValueError("CAD program exceeds 1024 gear/rack teeth including patterns")
+        if sum(step.turns * (step.pattern.count if step.pattern else 1)
+               for step in self.steps if isinstance(step, HelicalSpringStep)) > 64:
+            raise ValueError("CAD program exceeds 64 spring turns including patterns")
+        if sum((len(step.path) - 1) * (step.pattern.count if step.pattern else 1)
+               for step in self.steps if isinstance(step, SweepStep)) > 128:
+            raise ValueError("CAD program exceeds 128 sweep segments including patterns")
         ids = [step.id for step in self.steps]
         if len(ids) != len(set(ids)):
             raise ValueError("CAD step IDs must be unique")

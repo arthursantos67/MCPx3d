@@ -1,5 +1,7 @@
 # API Forma
 
+Workers CAD são cancelados por desconexão HTTP e serializados entre processos pelo mesmo `CAD_WORKER_LOCK_PATH` (padrão `data/cad-worker.lock`). `CAD_WORKER_QUEUE_TIMEOUT_SECONDS` limita a espera nesse lock a 60 s por padrão. O sistema operacional libera o bloqueio se o dono cair. Use um caminho absoluto comum em checkouts separados quando quiser compartilhar a cota de um worker; teto de memória/prazo por worker permanece configurável. Recursos novos, limites e medições estão em [melhorias gerais](../../docs/project-improvements-2026-10-08.md).
+
 FastAPI, Python 3.12+, CadQuery e validação X3D local. Na raiz, `npm run dev:api` inicia em `127.0.0.1:8001`. Nesta pasta, `uv sync` e `uv run api` instalam os mesmos motores. Variáveis em [.env.example](.env.example); contratos completos em `/docs`.
 
 | Rota | Função |
@@ -29,4 +31,6 @@ CAD aceita `{ "spec": ... }` na criação e `{ "expectedRevision": N, "spec": ..
 
 CAD e receitas persistem em `data/*.sqlite3`. Sessões X3D ficam em memória; exporte um manifesto entre reinícios. Os bancos são compartilhados entre clientes, sem contas ou propriedade por usuário.
 
-Checks: `uv run ruff check .`, `uv run mypy src`, `uv run pytest`. Testes MCP iniciam serviço isolado para conservar compatibilidade; não é requisito para a aplicação local.
+Operações CAD nativas executam em workers descartáveis: `CAD_WORKER_MEMORY_MB=2048`, `CAD_WORKER_TIMEOUT_SECONDS=240`. Limite de memória/prazo encerra o cálculo e conserva o rascunho; veja [estabilidade](../../docs/audit-2026-10-08.md).
+
+Checks: `uv run ruff check .`, `uv run mypy src`, `uv run pytest`. Para testes CAD locais com proteção de memória/prazo, use o [executor limitado](../../scripts/run-cad-tests.py), conforme [testing.md](../../docs/testing.md). Testes MCP iniciam serviço isolado para conservar compatibilidade; não é requisito para a aplicação local.

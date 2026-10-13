@@ -47,7 +47,7 @@ export function prepareCadDesign(spec: CadProgramSpec, request: string): { spec:
     if (!internalEntry && Math.abs(step.position[axial] - beforeFace) > 1e-5) return step
     if (Math.abs(step.position[axial] - afterFace) < 1e-6) return step
     assumptions.push(`A entrada de ${step.id} foi colocada na face externa ${axial.toUpperCase()} para tornar o alojamento da cabeça acessível.`)
-    return { ...step, position: { ...step.position, [axial]: afterFace }, height: Math.max(step.height, revised[field] + .5) }
+    return { ...step, position: { ...step.position, [axial]: afterFace } }
   })]
   const candidate = { ...spec, steps }
   try { validateCadProgram(candidate) } catch { return { spec, assumptions: [] } }

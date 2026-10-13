@@ -4,24 +4,34 @@ import { performance } from 'node:perf_hooks'
 import { LocalCliProvider } from '../packages/agent/src/local-cli-provider.ts'
 import { CadAgentController } from '../apps/web/src/cad/CadAgentController.ts'
 import { readAssemblyIssue } from '../packages/domain/ts/src/cad-assembly-diagnostics.ts'
+import { evaluateCadRequirements, summarizeCadBenchmark } from './cad-benchmark-metrics.mjs'
+import { cadIdentity } from '../packages/agent/src/cad-identity.ts'
 
 if (!process.argv.includes('--run')) {
-  console.log('Runs two real-model CAD cases through the local CLI, normal action budgets and native validation. Uses your authenticated subscription. Run: node scripts/benchmark-cad.mjs --run')
+  console.log('Uses your authenticated subscription and native CAD workers. Two smoke cases by default; --suite runs the requirement corpus; --repeat N repeats selected cases; --case ID selects one suite case. Run: node scripts/benchmark-cad.mjs --run --suite')
   process.exit(0)
 }
+if (process.argv.includes('--suite') && (process.argv.includes('--complex') || process.argv.includes('--resume'))) throw new Error('--suite cannot be combined with --complex/--resume')
+const repeatIndex = process.argv.indexOf('--repeat')
+const repetitions = repeatIndex < 0 ? 1 : Number(process.argv[repeatIndex + 1])
+if (!Number.isInteger(repetitions) || repetitions < 1 || repetitions > 100 || process.argv.includes('--resume') && repetitions !== 1) throw new Error('--repeat must be 1–100, or 1 when resuming')
 if (process.argv.includes('--resume') && !process.argv.includes('--complex')) {
   console.error('--resume requires --complex to resume the saved eight-body case.')
   process.exit(1)
 }
 const base = process.env.CAD_BENCHMARK_API ?? 'http://127.0.0.1:8001'
-const output = resolve('.cache/cad-quality-live')
+const output = resolve(process.env.CAD_BENCHMARK_OUTPUT ?? '.cache/cad-quality-live')
 await mkdir(output, { recursive: true })
 const provider = new LocalCliProvider({ apiBaseUrl: base, client: 'codex', model: process.env.CAD_BENCHMARK_MODEL ?? '' })
 await provider.initialize()
+const inspections = new Map()
 async function inspect(path, spec, signal, assembly = false) {
   const response = await fetch(`${base}/api/cad/${path}/inspect`, { method: 'POST', signal,
     headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(spec) })
-  if (response.ok) return null
+  if (response.ok) {
+    inspections.set(cadIdentity(spec), await response.json())
+    return null
+  }
   const failure = await response.json()
   if (['CAD_GEOMETRY_INVALID', 'CAD_MECHANICS_INVALID', 'INVALID_CAD_REQUEST'].includes(failure.code))
     return assembly ? readAssemblyIssue(failure.message, failure.details) ?? failure.message : failure.message
@@ -33,11 +43,20 @@ const simpleCases = [
   { id: 'three-body-support', assembly: true,
     request: 'Crie um conjunto funcional com exatamente três peças para apoiar um eixo liso estacionário entre dois suportes separados. O eixo deve engatar pelo menos 12 mm em cada suporte, com parede ao redor dos furos. Fixe o eixo por adesivo nos furos e declare a premissa de montagem. Escolha dimensões proporcionais e úteis, ancore um suporte, não adicione acabamentos cosméticos.' },
 ]
-const cases = process.argv.includes('--complex') ? [{ id: 'eight-body-threaded-actuator', assembly: true,
-  request: 'Crie um atuador linear funcional com exatamente oito peças, acionado por um volante manual e fuso com rosca trapezoidal real. Decida a decomposição no planejamento. O carro deve mover-se sem girar, o fuso deve permanecer retido axialmente, todos os corpos devem estar ligados fisicamente e o curso útil deve ser de pelo menos 20 mm. Escolha dimensões usináveis, verifique engate e paredes em todo o curso, inclua alojamentos para cabeças de parafusos quando necessários e declare ferragens/adesivos exigidos. Evite acabamentos cosméticos e preserve os recursos funcionais.' }] : simpleCases
+const suite = process.argv.includes('--suite') ? JSON.parse(await readFile(resolve('tests/golden/cad-benchmark-prompts.json'), 'utf8')) : simpleCases
+const selected = process.argv.includes('--complex') ? [{ id: 'eight-body-threaded-actuator', assembly: true,
+  request: 'Crie um atuador linear funcional com exatamente oito peças, acionado por um volante manual e fuso com rosca trapezoidal real. Decida a decomposição no planejamento. O carro deve mover-se sem girar, o fuso deve permanecer retido axialmente, todos os corpos devem estar ligados fisicamente e o curso útil deve ser de pelo menos 20 mm. Escolha dimensões usináveis, verifique engate e paredes em todo o curso, inclua alojamentos para cabeças de parafusos quando necessários e declare ferragens/adesivos exigidos. Evite acabamentos cosméticos e preserve os recursos funcionais.' }] : suite
+const caseIndex = process.argv.indexOf('--case')
+const requestedIds = caseIndex < 0 ? null : process.argv[caseIndex + 1]?.split(',')
+if (caseIndex >= 0 && (!requestedIds?.length || requestedIds.some((id) => !selected.some((item) => item.id === id)))) throw new Error('Unknown --case ID')
+const filtered = requestedIds ? selected.filter((item) => requestedIds.includes(item.id)) : selected
+if (!filtered.length) throw new Error('Unknown --case ID')
+const cases = Array.from({ length: repetitions }, (_, index) => filtered.map((item) => ({ ...item, caseId: item.id, trial: index + 1,
+  id: repetitions === 1 ? item.id : `${item.id}-trial-${index + 1}` }))).flat()
 const report = { timestamp: new Date().toISOString(), provider: provider.id, model: provider.model, cases: [] }
-const reportName = process.argv.includes('--resume') ? 'report-complex-resume.json' : process.argv.includes('--complex') ? 'report-complex.json' : 'report.json'
+const reportName = process.argv.includes('--suite') ? 'report-suite.json' : process.argv.includes('--resume') ? 'report-complex-resume.json' : process.argv.includes('--complex') ? 'report-complex.json' : 'report.json'
 for (const item of cases) {
+  inspections.clear()
   let latestDraft = null, stats = null
   const controller = new CadAgentController(provider, {
     checkCadProgram: (spec, signal) => inspect('programs', spec, signal),
@@ -46,7 +65,7 @@ for (const item of cases) {
   controller.setDraftListener((draft) => { latestDraft = draft })
   controller.setStatsListener((current) => { stats = current })
   const started = performance.now()
-  const result = { id: item.id, status: 'failed', stats: null, durationMs: 0, draftZipBytes: 0 }
+  const result = { id: item.id, caseId: item.caseId, trial: item.trial, status: 'failed', stats: null, durationMs: 0, draftZipBytes: 0, requirementIssues: [] }
   console.log(`Starting ${item.id}`)
   try {
     const previous = process.argv.includes('--resume')
@@ -58,6 +77,8 @@ for (const item of cases) {
     if (outcome.kind !== 'create') throw new Error('The model did not create a design')
     await writeFile(resolve(output, `${item.id}.json`), JSON.stringify(outcome.spec, null, 2))
     result.status = 'validated'
+    result.inspection = inspections.get(cadIdentity(outcome.spec))
+    result.requirementIssues = evaluateCadRequirements(outcome.spec, item.expectations, result.inspection)
     latestDraft = { spec: outcome.spec, request: item.request }
   } catch (error) {
     result.error = error instanceof Error ? error.message : String(error)
@@ -76,8 +97,11 @@ for (const item of cases) {
     } else result.exportError = (await response.json()).message
   }
   report.cases.push(result)
+  report.summary = summarizeCadBenchmark(report.cases, cases.length)
+  report.byCase = Object.fromEntries(filtered.map((item) => [item.id,
+    summarizeCadBenchmark(report.cases.filter((entry) => entry.caseId === item.id), repetitions)]))
   await writeFile(resolve(output, reportName), JSON.stringify(report, null, 2))
   console.log(JSON.stringify(result))
   if (result.error && /quota|429|RESOURCE_EXHAUSTED/i.test(result.error)) break
 }
-process.exitCode = report.cases.length === cases.length && report.cases.every((item) => item.status === 'validated') ? 0 : 1
+process.exitCode = report.cases.length === cases.length && report.cases.every((item) => item.status === 'validated' && !item.requirementIssues.length && !item.exportError) ? 0 : 1

@@ -14,6 +14,6 @@ React, TypeScript e Vite. Instale dependências na raiz com `npm ci`; `npm run d
 
 SDKs ficam em `packages/agent`, sem runtime duplicado no frontend. Pacotes privados compartilham fontes por importações relativas; npm workspaces centralizam instalação e checks.
 
-Configuração do provedor passa a valer após recarregar. Chaves ficam em localStorage e seguem diretamente para o endpoint escolhido. Apenas propostas geométricas chegam à API da aplicação.
+Configuração do provedor passa a valer em **Salvar e aplicar**, sem recarregar nem perder o rascunho. Chaves externas ficam em localStorage e seguem diretamente para o endpoint escolhido. Modos Codex/Claude Code usam a ponte local autenticada; as propostas geométricas continuam sujeitas à API.
 
 Checks na raiz: `npm run lint:web`, `npm run typecheck`, `npm test`, `npm run build` e `npm run test:browser`. Veja [testes](../../docs/testing.md) e [arquitetura](../../docs/architecture.md).

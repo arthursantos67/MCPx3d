@@ -12,6 +12,7 @@ __pycache__/
 .ruff_cache/
 .pytest_cache/
 apps/api/data/*.sqlite3*
+apps/api/data/*.lock
 
 # Environment
 .env

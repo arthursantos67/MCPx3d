@@ -2,6 +2,7 @@ import { CAD_EDGE_SELECTORS, CAD_FEATURES, type CadEdgeSelector, type CadFaceSel
 import { validateCadStructure } from './cad-schema.ts'
 
 export type CadVector = { readonly x: number; readonly y: number; readonly z: number }
+export type CadSelectionBox = { readonly min: CadVector; readonly max: CadVector }
 export type CadPattern =
   | { readonly kind: 'circular'; readonly count: number; readonly axis?: 'x' | 'y' | 'z'; readonly center?: CadVector; readonly sweepAngle?: number }
   | { readonly kind: 'linear'; readonly count: number; readonly offset: CadVector }
@@ -14,6 +15,12 @@ export type CadProgramStep = {
 } & (
   | { readonly shape: 'box'; readonly width: number; readonly depth: number; readonly height: number }
   | { readonly shape: 'cylinder'; readonly diameter: number; readonly height: number }
+  | { readonly shape: 'regular_prism'; readonly sides: number; readonly acrossFlats: number; readonly height: number }
+  | { readonly shape: 'spur_gear'; readonly module: number; readonly teeth: number; readonly pressureAngle?: number; readonly backlash?: number; readonly height: number }
+  | { readonly shape: 'rack'; readonly module: number; readonly teeth: number; readonly pressureAngle?: number; readonly backlash?: number; readonly baseThickness: number; readonly height: number }
+  | { readonly shape: 'pipe_bend'; readonly diameter: number; readonly innerDiameter?: number; readonly bendRadius: number; readonly bendAngle: number }
+  | { readonly shape: 'helical_spring'; readonly meanDiameter: number; readonly wireDiameter: number; readonly pitch: number; readonly turns: number; readonly handedness?: 'right' | 'left' }
+  | { readonly shape: 'sweep'; readonly diameter: number; readonly innerDiameter?: number; readonly path: readonly CadVector[] }
   | { readonly shape: 'sphere'; readonly diameter: number }
   | { readonly shape: 'cone'; readonly bottomDiameter: number; readonly topDiameter: number; readonly height: number }
   | { readonly shape: 'polygon_prism'; readonly points: readonly { readonly x: number; readonly y: number }[]; readonly height: number }
@@ -21,11 +28,11 @@ export type CadProgramStep = {
   | { readonly shape: 'tube'; readonly diameter: number; readonly innerDiameter: number; readonly height: number }
   | { readonly shape: 'torus'; readonly majorRadius: number; readonly minorRadius: number }
   | { readonly shape: 'slot'; readonly length: number; readonly width: number; readonly height: number }
-  | { readonly shape: 'hole'; readonly diameter: number; readonly height: number; readonly holeType: 'plain' | 'counterbore' | 'countersink'; readonly headDiameter: number; readonly headDepth: number }
-  | { readonly shape: 'thread'; readonly diameter: number; readonly pitch: number; readonly height: number; readonly profile: 'metric' | 'trapezoidal'; readonly handedness: 'right' | 'left'; readonly clearance: number; readonly starts?: number }
+  | { readonly shape: 'hole'; readonly diameter: number; readonly height: number; readonly holeType: 'plain' | 'counterbore' | 'countersink'; readonly headDiameter: number; readonly headDepth: number; readonly termination?: 'unspecified' | 'blind' | 'through'; readonly minBottomThickness?: number }
+  | { readonly shape: 'thread'; readonly diameter: number; readonly pitch: number; readonly height: number; readonly profile: 'metric' | 'trapezoidal'; readonly handedness: 'right' | 'left'; readonly clearance: number; readonly starts?: number; readonly termination?: 'unspecified' | 'blind' | 'through'; readonly minBottomThickness?: number }
   | { readonly shape: 'loft'; readonly sections: readonly CadLoftSection[]; readonly ruled?: boolean }
-  | { readonly shape: 'fillet'; readonly selector: CadEdgeSelector; readonly radius: number }
-  | { readonly shape: 'chamfer'; readonly selector: CadEdgeSelector; readonly distance: number }
+  | { readonly shape: 'fillet'; readonly selector: CadEdgeSelector; readonly radius: number; readonly selectionBox?: CadSelectionBox }
+  | { readonly shape: 'chamfer'; readonly selector: CadEdgeSelector; readonly distance: number; readonly selectionBox?: CadSelectionBox }
   | { readonly shape: 'shell'; readonly selector: CadFaceSelector; readonly thickness: number }
 )
 
@@ -48,6 +55,9 @@ export function validateCadProgram(spec: CadProgramSpec): void {
   const scalar = (value: number, min: number, max: number) => Number.isFinite(value) && value >= min && value <= max
   let instances = 0
   let threadPitches = 0
+  let gearTeeth = 0
+  let springTurns = 0
+  let sweepSegments = 0
   for (const [index, step] of spec.steps.entries()) {
     if (!step || typeof step.id !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(step.id) || ids.has(step.id)) throw new Error('CAD step IDs must be unique')
     ids.add(step.id)
@@ -86,8 +96,59 @@ export function validateCadProgram(spec: CadProgramSpec): void {
     if (dimensions.some((value) => !scalar(value, 0.1, 10000)) ||
       (step.shape === 'cone' && !scalar(step.topDiameter, 0, 10000))) throw new Error('Invalid CAD dimensions')
     if (step.shape === 'tube' && (!scalar(step.innerDiameter, Number.MIN_VALUE, 10000) || step.diameter - step.innerDiameter < 0.2)) throw new Error('Invalid CAD tube wall')
+    if (step.shape === 'regular_prism' && (!Number.isInteger(step.sides) || !scalar(step.sides, 3, 32) ||
+      !scalar(step.acrossFlats, .1, 5000) || !scalar(step.height, .1, 10000))) throw new Error('Invalid CAD regular prism')
+    if (step.shape === 'spur_gear' || step.shape === 'rack') {
+      gearTeeth += step.teeth * (step.pattern?.count ?? 1)
+      if (gearTeeth > 1024) throw new Error('CAD program exceeds 1024 gear/rack teeth including patterns')
+      const pressure = step.pressureAngle ?? 20, backlash = step.backlash ?? 0
+      if (!Number.isInteger(step.teeth) || !scalar(step.module, .1, 20) || !scalar(pressure, 20, 30) ||
+        !scalar(backlash, 0, step.module * .2) || !scalar(step.height, .1, 1000) ||
+        !scalar(step.teeth, step.shape === 'spur_gear' ? Math.max(12, Math.ceil(2 / Math.sin(pressure * Math.PI / 180) ** 2)) : 1,
+          step.shape === 'spur_gear' ? 128 : 64) ||
+        (step.shape === 'rack' && !scalar(step.baseThickness, .1, 1000))) throw new Error('Invalid CAD gear/rack parameters or undercut')
+    }
     if (step.shape === 'torus' && (step.majorRadius > 5000 || step.minorRadius > 5000 || step.majorRadius <= step.minorRadius)) throw new Error('Invalid CAD torus radii')
     if (step.shape === 'slot' && step.length <= step.width) throw new Error('Invalid CAD slot length')
+    if (step.shape === 'pipe_bend' || step.shape === 'sweep') {
+      const inner = step.innerDiameter ?? 0
+      if (!scalar(step.diameter, .1, 1000) || !scalar(inner, 0, 1000) ||
+        (inner > 0 && step.diameter - inner < .2)) throw new Error('Invalid CAD swept section wall')
+    }
+    if (step.shape === 'pipe_bend' && (!scalar(step.bendRadius, .1, 5000) ||
+      step.bendRadius - step.diameter / 2 < .1 || !scalar(step.bendAngle, 1, 270))) throw new Error('Invalid CAD pipe bend radius or angle')
+    if (step.shape === 'helical_spring') {
+      const circumference = Math.PI * step.meanDiameter
+      const normalSpacing = step.pitch * circumference / Math.hypot(circumference, step.pitch)
+      if (!scalar(step.meanDiameter, .3, 1000) || !scalar(step.wireDiameter, .1, 100) ||
+        !scalar(step.pitch, .2, 1000) || !scalar(step.turns, 1, 32) || step.meanDiameter - step.wireDiameter < .2 ||
+        normalSpacing - step.wireDiameter < .1 || step.pitch * step.turns > 10000 ||
+        !['right', 'left'].includes(step.handedness ?? 'right')) throw new Error('Invalid CAD spring dimensions or coil separation')
+      springTurns += step.turns * (step.pattern?.count ?? 1)
+      if (springTurns > 64) throw new Error('CAD program exceeds 64 spring turns including patterns')
+    }
+    if (step.shape === 'sweep') {
+      if (!Array.isArray(step.path) || step.path.length < 2 || step.path.length > 16) throw new Error('Invalid CAD sweep path')
+      let length = 0
+      for (const [i, point] of step.path.entries()) {
+        if (axesValues(point).some((value) => !scalar(value, -10000, 10000))) throw new Error('Invalid CAD sweep point')
+        if (i > 0) {
+          const previous = step.path[i - 1]
+          const distance = Math.hypot(point.x - previous.x, point.y - previous.y, point.z - previous.z)
+          if (distance < .1) throw new Error('CAD sweep path consecutive points must be at least 0.1 mm apart')
+          length += distance
+        }
+      }
+      const first = step.path[0], last = step.path.at(-1)!
+      if (length > 20000 || first.x === last.x && first.y === last.y && first.z === last.z) throw new Error('Invalid CAD sweep path length or closed path')
+      sweepSegments += (step.path.length - 1) * (step.pattern?.count ?? 1)
+      if (sweepSegments > 128) throw new Error('CAD program exceeds 128 sweep segments including patterns')
+    }
+    if (step.shape === 'hole' || step.shape === 'thread') {
+      if (!['unspecified', 'blind', 'through'].includes(step.termination ?? 'unspecified') ||
+        !scalar(step.minBottomThickness ?? 1, .1, 1000) ||
+        (step.op !== 'cut' && (step.termination ?? 'unspecified') !== 'unspecified')) throw new Error('Invalid CAD hole termination')
+    }
     if (step.shape === 'hole') {
       if (!['plain', 'counterbore', 'countersink'].includes(step.holeType) ||
         !scalar(step.headDiameter, 0, 10000) || !scalar(step.headDepth, 0, 10000) ||
@@ -117,6 +178,11 @@ export function validateCadProgram(spec: CadProgramSpec): void {
       const size = step.shape === 'fillet' ? step.radius : step.shape === 'chamfer' ? step.distance : step.thickness
       if (!Object.hasOwn(CAD_EDGE_SELECTORS, step.selector) || !scalar(size, 0.1, 1000) ||
         (step.shape === 'shell' && ['all', 'parallel_x', 'parallel_y', 'parallel_z', 'circular'].includes(step.selector))) throw new Error('Invalid CAD finishing selection or size')
+      if (step.shape !== 'shell' && step.selectionBox) {
+        const { min, max } = step.selectionBox
+        if ([...axesValues(min), ...axesValues(max)].some((value) => !scalar(value, -10000, 10000)) ||
+          min.x > max.x || min.y > max.y || min.z > max.z) throw new Error('Invalid CAD selectionBox bounds')
+      }
     }
     if (step.shape === 'polygon_prism' || step.shape === 'revolve_profile') {
       if (step.points.length < 3 || step.points.length > 32 || step.points.some((point) => !scalar(point.x, -10000, 10000) || !scalar(point.y, -10000, 10000))) throw new Error('Invalid CAD polygon')
@@ -130,3 +196,5 @@ export function validateCadProgram(spec: CadProgramSpec): void {
   }
   validateCadStructure('program', spec)
 }
+
+function axesValues(point: CadVector): number[] { return [point.x, point.y, point.z] }

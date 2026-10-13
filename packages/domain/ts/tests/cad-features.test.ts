@@ -24,6 +24,22 @@ test('advanced parameters are bounded and finishing cannot carry placement', () 
   }
 })
 
+test('gears, racks, prisms and hole intent enforce bounded mechanical parameters', () => {
+  for (const [id, patch] of [['spur_gear', { teeth: 17 }], ['spur_gear', { teeth: 24.5 }], ['spur_gear', { backlash: .5 }],
+    ['spur_gear', { pressureAngle: 14.5 }], ['rack', { baseThickness: 0 }], ['rack', { teeth: 65 }],
+    ['regular_prism', { sides: 2 }], ['regular_prism', { acrossFlats: 0 }],
+    ['plain', { termination: 'sometimes' }], ['plain', { minBottomThickness: 0 }],
+    ['thread_metric_right', { termination: 'blind' }]] as const) {
+    const raw = structuredClone(features.find((item) => item.partId === id)!)
+    Object.assign(raw.steps.at(-1)!, patch)
+    assert.throws(() => validateCadProgram(raw as CadProgramSpec))
+  }
+  const gear = features.find((item) => item.partId === 'spur_gear')!
+  const repeated = { ...gear, steps: [gear.steps[0], { ...gear.steps[0], id: 'repeated', op: 'union',
+    pattern: { kind: 'linear', count: 64, offset: { x: 60, y: 0, z: 0 } } }] }
+  assert.throws(() => validateCadProgram(repeated as CadProgramSpec), /1024/)
+})
+
 test('coupled motion accepts explicit mixed units and rejects ambiguous legacy groups', () => {
   assert.equal(new Ajv2020().compile(assemblySchema)(drive), true)
   assert.doesNotThrow(() => validateCadAssembly(drive as CadAssemblySpec))

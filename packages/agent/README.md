@@ -1,5 +1,7 @@
 # Agentes e provedores
 
+O catálogo inclui curvas de tubo por arco, molas helicoidais e sweeps segmentados; fillet/chamfer aceitam filtro espacial por centros de arestas. `cad-explicit-requirements.ts` confere operações/campos literais de peças antes do kernel. Reparos não podem apagar ou simplificar recursos funcionais nem alterar terminação/fundo mínimo declarados. `cad-fastener-contract.ts` reconcilia somente limites pequenos inferidos de passagens de fixadores, sem alterar geometria e conservando limites de folga/tolerância pedidos pelo usuário; a montagem sempre exige inspeção completa.
+
 Este pacote concentra SDKs e geração estruturada. A aplicação depende de `LLMProvider`, não chama SDKs diretamente e não executa código produzido por modelos.
 
 | Módulo | Função |

@@ -2,6 +2,34 @@
 
 Executada localmente em Windows/PowerShell, Node 24, Python 3.12 e Chrome instalado. As seções mantêm os resultados de cada revisão. A configuração CI está versionada; os resultados abaixo são locais.
 
+## Continuação geral e avaliação real — 2026-10-08
+
+**505 testes TypeScript/golden passaram**: 66 web, 348 agente, 79 domínio TS e 12 golden. **118 testes do domínio Python passaram** em 4,06 s. Typecheck, lint web, build, Ruff e mypy passaram; mypy verificou 54 arquivos da API e oito do domínio Python. O build conserva o aviso de bundles grandes do WebLLM.
+
+**27 testes direcionados da API passaram** em 42,64 s, num processo sequencial limitado a 1.536 MB, uma thread e 120 s: curvas/molas/sweeps (9), acabamento localizado (4), regressão real M4 (1), supervisão de processo (7), cancelamento/fila HTTP (4) e lock compartilhado entre processos (2). A regressão M4 confirma a rejeição do contrato antigo, a aprovação mecânica após reconciliar somente a folga inferida e o fundo das duas roscas após reimportar STEP. Permanecem os dois avisos de depreciação do TestClient.
+
+**15 regressões adicionais de rotas CAD passaram** em 28,16 s com os mesmos limites, incluindo inspeção/exportação 2.x, STEP reimportado, requisições inválidas, limite de artefato e engine indisponível. Foram **42 casos distintos da API** nesta continuação, distribuídos nas duas execuções limitadas.
+
+**Quatro casos novos de navegador passaram** em 43,7 s, com Chrome e API/CadQuery reais, IA programada e um worker: mola, curva, sweep e chanfro por região. Cada recurso foi editado, salvo, baixado em STEP e recuperado após reload com seus parâmetros. Abortos de prévias obsoletas produziram `CAD_ENGINE_CANCELLED`, sem impedir a conclusão. Não foi repetida toda a suíte Playwright nem a bateria CAD/FreeCAD completa.
+
+A rodada inicial com **IA real** executou os 16 pedidos do corpus: **15 aprovações (93,75%)**, com limite inferior unilateral a 95% de **73,60%**. A falha de fixação M4 orientou o reparo determinístico, depois aprovado no motor sem outra chamada de IA. Uma nova tentativa com IA falhou por indisponibilidade do provedor antes de inspecionar; continua registrada. Não há evidência para declarar 99%. [Relatório detalhado, dados no projeto e limites](project-improvements-2026-10-08.md).
+
+## Fidelidade mecânica e estabilidade — 2026-10-08
+
+**476 testes TypeScript/golden passaram**: 66 web, 330 agente, 73 domínio TS e 7 golden. **102 testes do domínio Python passaram**. Typecheck, lint web, build, Ruff e mypy passaram; mypy verificou 51 arquivos da API e oito do domínio Python. Build mantém aviso de bundles grandes do WebLLM, já listado nas prioridades.
+
+A API teve **65 casos distintos aprovados** em seleções limitadas, sem executar a suíte completa:
+
+| Seleção | Resultado | Proteção |
+|---|---|---|
+| Worker, rotas legadas, rascunhos e STL | 33 passaram em 97,28 s | 1.536 MB, 120 s, sequencial |
+| Furos/fundos, base roscada, engrenagens/cremalheira/prisma, padrões circulares e cache inspeção/salvamento | 31 passaram em 94,01 s | 1.536 MB, 150 s, sequencial |
+| Worker e engine indisponível após ajuste de inicialização/guarda | 6 passaram em 10,96 s; cinco repetidos e um novo | 1.536 MB, 60 s, sequencial |
+
+O teste de limite de memória recusou uma alocação de 600 MB em um processo com teto de 512 MB. Timeout encerrou um filho real, falha nativa conservou a API saudável e falha de instalação da guarda encerrou o worker. Furos foram verificados em eixos distintos/inclinado, com cortes posteriores e STEP reimportado; a fixação cega também conserva o fundo após construir/exportar o conjunto. Engrenagens tiveram dimensões, espessura de dente, spline evolvente e STEP conferidos.
+
+Não se repetiram Playwright, bateria FreeCAD ou o atuador complexo nesta revisão, respeitando o relato de crashes do VS Code. Avisos dos testes nativos são de depreciação Starlette/httpx. Nenhuma chamada real de IA foi feita. A nova suíte de 12 prompts está pronta, mas **a meta de 99% permanece não medida**; os testes programados não estabelecem a taxa de sucesso do modelo. Causas, capacidades e limites em [audit-2026-10-08.md](audit-2026-10-08.md).
+
 ## Qualidade de geração, alojamentos e exportação — 2026-10-07
 
 **461 testes TypeScript passaram**: 64 web, 326 agente, 69 domínio e 2 golden. A API teve seus 32 arquivos de testes executados em processos separados para reduzir picos de memória: **364 casos passaram e dois foram ignorados**, contando a última execução completa de **40 testes mecânicos em 312,88 s** após corrigir alojamentos e padrões receptores. Não foi uma execução única ininterrupta do pytest. Typecheck, lint web, build, Ruff e mypy passaram; mypy verificou 45 arquivos da API. O domínio Python não mudou.
