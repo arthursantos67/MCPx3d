@@ -2,7 +2,7 @@
 
 Baseline de 2026-10-02. Contratos em [PRD.md](../PRD.md); próximos trabalhos em [ISSUES.md](../ISSUES.md).
 
-## Dois agentes
+## Dois agentes e um estúdio visual
 
 Revisão de [fidelidade e estabilidade em 2026-10-08](audit-2026-10-08.md): `cad_holes.py` confere término e fundo no sólido final, aplicando as mesmas transformações/padrões do construtor. `cad_gears.py` constrói prismas/dentes pelo catálogo tipado; engrenamento não é verificado. Fixação `threaded` comprova passagem/rosca métrica e engate útil; pares de fixadores são associados por eixo, sem depender da ordem do padrão.
 
@@ -34,17 +34,29 @@ JSON nativo sem fechamento não comprova limite de tokens: a mensagem distingue 
 
 ```mermaid
 flowchart LR
-  U[Pedido do usuário] --> W[Área CAD ou X3D]
+  U[Pedido do usuário] --> W[Área CAD, X3D ou Three.js]
   W --> A[Provedor de IA]
   A --> J[JSON estruturado]
   J --> D[Schema e domínio]
   D --> C[CadQuery / OpenCascade]
   D --> X[Serialização e validação X3D local]
+  D --> T[Receita Three.js / expansão e animação local]
+  T --> N[Rascunho no navegador / JSON]
   C --> S[Revisão SQLite e STEP validado]
   S --> E[STEP e STL / conjunto e componentes]
   X --> M[Sessão e revisão X3D validada]
   M --> V[HTML sandbox / X3D / X3DV / JSON]
 ```
+
+## Three.js
+
+`WorkspaceShell` carrega `ThreeWorkspace` sob demanda, preservando o estado e passando `active` para suspender o viewport. Edição e renderização rodam no navegador e não dependem da saúde da API nem de IA. A geração usa o `AgentProvider` compartilhado, bloqueando navegação/edições durante a ação.
+
+`src/three/sceneDocument.ts` define e valida `ThreeSceneDocument` 1.1 (migra 1.0): uma lista de nós com IDs/parentId, transformação local e materiais declarativos, mais ambiente. O documento não serializa objetos internos do Three.js nem código executável. Importações e recuperação local usam a mesma validação de tipos, limites e árvore acíclica. Histórico é local à aba e o rascunho único usa uma chave própria de localStorage.
+
+`ThreeViewport` usa `WebGLRenderer`, `OrbitControls`, materiais físicos, PMREM/RoomEnvironment, sombras PCF, raycast e seleção destacada. `ThreeStage` adiciona Fullscreen/fallback sem desmontar o renderer. `sceneGeometrySpec.ts` valida perfis, curvas, índices e orçamento; `sceneGeometry.ts` constrói e normaliza geometrias, e `sceneTextures.ts` gera texturas UV locais. Recursos de geometria/material são reutilizados por parâmetros e descartados quando não usados. Alterações de documento, câmera, seleção, tempo ou tamanho invalidam o frame. Reprodução ativa agenda frames; pausa/área oculta interrompem o loop. `sceneAnimation.ts` amostra poses absolutas, conservando as transformações editáveis. ResizeObserver ajusta câmera/canvas; desativação cancela frames e desmontagem libera controles, recursos e contexto. Contagens vêm de `renderer.info` e não equivalem a benchmark de escalabilidade.
+
+O contrato visual é separado de `ModelSpec` X3D e dos programas CAD. `sceneGeneration.ts` fornece schema, prompt e expansão de receitas compactas com repetições lineares/radiais. Limites de templates/cópias precedem a expansão; a árvore completa passa por `validateScene`. Há uma correção de contrato, aplicação atômica, AbortSignal e prazo total de 2/5/10 minutos (padrão 5) controlado pela interface; `SceneGenerationEvent` registra etapa/chamada/contagens. `ThreeGenerationProgress` mostra etapas, tempo e histórico sem inventar progresso interno do modelo. O timeout inclui a última etapa conhecida; resultados tardios são descartados. O prazo de 300 s por chamada da ponte local permanece independente. `editThreeScene` recebe contexto compacto e aplica patches por ID, sem transmitir buffers/imagens inteiros. `sceneInspection.worker.ts` executa broad phase, BVHs em ambos os meshes e contenção/poses limitadas; propostas com diagnóstico incompleto não são aceitas. `importGlb.ts` converte GLB estático local em malhas/imagens incorporadas, com diagnóstico de recursos recusados ou simplificados. Persistência de servidor e pipeline de assets completo são etapas futuras descritas em [threejs-studio.md](threejs-studio.md).
 
 ## CAD
 

@@ -1,6 +1,6 @@
 # Forma
 
-Estúdio de modelagem com dois agentes de IA: **CAD**, para peças e conjuntos compostos com download STEP/STL, e **X3D**, para cenas editadas por conversa. A API constrói e valida a geometria; a IA propõe somente dados estruturados.
+Estúdio de modelagem com agentes de IA e um editor visual de cenas: **CAD**, para peças e conjuntos compostos com download STEP/STL, e **X3D**, para cenas editadas por conversa. **Three.js**, para composição visual e geração de cenas animadas. A API constrói e valida a geometria CAD/X3D; a IA propõe somente dados estruturados.
 
 ## Iniciar
 
@@ -30,6 +30,12 @@ Se a geração falhar, **Baixar rascunho STEP/STL (ZIP)** exporta os sólidos di
 
 No X3D, descreva a cena, peça alterações ou aplique uma receita da biblioteca. Baixe X3D, HTML, ClassicVRML ou JSON do projeto. O JSON permite importar a cena depois de reiniciar a API. A prévia HTML utiliza X3DOM e precisa de internet para carregar esse visualizador.
 
+No menu **Three.js · Estúdio de cenas**, crie cenas ou escolha **Exemplo detalhado** para explorar o Observatório Helix. O catálogo inclui perfis extrudados/de revolução, tubos por curvas e malhas, além de primitivas. Use **Importar GLB** para modelos estáticos detalhados e **Tela cheia** para inspecioná-los com materiais físicos, texturas, reflexões e sombras. A timeline oferece rotação, flutuação e órbita.
+
+Em **Ação da IA**, escolha **Criar nova cena**, **Editar cena atual** ou **Corrigir sobreposições**. Edição envia o contexto existente e aplica patches por ID; reparo inspeciona superfícies e movimentos em poses amostradas, preservando os objetos. **Verificar sobreposições** funciona localmente, sem IA. Criação/edição recusam interferências novas e uma proposta inválida conserva a cena anterior. O painel mostra etapa, tempo e histórico; o prazo total é de 2, 5 (padrão) ou 10 minutos.
+
+Three.js exporta/importa projeto JSON 1.1 e migra arquivos 1.0. Edição/reprodução funcionam sem API/IA; o viewport requer WebGL2. Rascunhos usam o navegador; malhas/texturas grandes podem exceder sua quota, com aviso para exportar JSON. GLB aceita o perfil estático documentado; skins, clipes e arquivos comprimidos ainda exigem expansão. [Capacidades, limites e próximos passos](docs/threejs-studio.md).
+
 CAD e receitas usam SQLite em `apps/api/data`. Projetos X3D são temporários e expiram após uma hora de inatividade por padrão. A linguagem CAD possui limites explícitos: [formatos e capacidades](docs/cad-readiness.md).
 
 O catálogo CAD oferece 21 recursos, incluindo roscas reais, engrenagens/cremalheiras, curvas de tubo, molas e trajetórias 3D segmentadas. Acabamentos podem ser limitados por região. [Melhorias e avaliação real de confiabilidade](docs/project-improvements-2026-10-08.md) registram resultados e limitações.
@@ -53,6 +59,7 @@ Para configurar os testes de navegador e executar as suítes Python, consulte [d
 | Pasta | Responsabilidade |
 |---|---|
 | `apps/web/src/cad` | Agente CAD, editores, movimento e visualizador de malha |
+| `apps/web/src/three` | Editor de cenas, contrato JSON e motor Three.js local |
 | `apps/web/src/chat` e `src/x3d` | Conversa e área X3D |
 | `apps/web/src/ai` e `src/workspace` | Provedor configurado e navegação compartilhada |
 | `apps/api/src/api` | Motores, validação, persistência e rotas |

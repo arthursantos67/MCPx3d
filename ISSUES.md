@@ -1,6 +1,20 @@
 # Forma — estado e próximos trabalhos
 
-Baseline de 2026-10-02, alinhada ao [PRD](PRD.md). O planejamento antigo permanece no [arquivo histórico](docs/archive/README.md).
+Baseline de 2026-10-02, alinhada ao [PRD](PRD.md). O planejamento antigo permanece no [arquivo histórico](docs/archive/README.md). Atualização Three.js de 2026-10-13.
+
+## Three.js — frente iniciada em 2026-10-13
+
+Primeira entrega: terceiro menu, viewport local, pavilhão demonstrativo, primitivas/grupos, hierarquia, seleção, inspector PBR, iluminação, histórico e JSON com validação/rascunho local. Incremento prioritário: geração por descrição, expansão procedural e animações declarativas com timeline. Correção após timeout com Codex: prazo padrão de 5 minutos (opções 2/5/10), progresso por etapa, relógio e histórico de diagnóstico; o limite de 300 s por chamada da ponte local continua independente. Critérios e arquitetura em [docs/threejs-studio.md](docs/threejs-studio.md).
+
+Revisão de 2026-10-14: catálogo ampliado para perfis/curvas/malhas, GLB estático, materiais físicos/texturas/reflexões/sombras, tela cheia e edição/reparo contextual com inspeção geométrica em worker. Inserção/duplicação posicionam objetos fora dos limites dos anteriores. Escopo e limites no documento do estúdio.
+
+Próximos incrementos desta frente:
+
+1. Gizmos de transformação, seleção múltipla e biblioteca de materiais; medir interação com cenas de 100/500 nós antes de ampliar limites.
+2. Evoluir GLB estático local para pipeline completo com mapas físicos, compressão/clipes, persistência de assets, progresso e exportação.
+3. InstancedMesh, LOD e culling com benchmark reproduzível por hardware; metas de escala dependem dessas medições.
+4. Evoluir geração inicial para edição incremental/planejamento por etapas e medir conclusão/latência com IA real. Preservar aplicação atômica e proibição de JavaScript gerado.
+5. Revisões persistentes, exportação GLB, iluminação HDRI, keyframes/animação esquelética e pós-processamento em fases próprias.
 
 ## Concluído nesta reorganização
 

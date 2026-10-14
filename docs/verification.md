@@ -1,6 +1,32 @@
-# Verificação da reorganização — 2026-10-02
+# Verificações do Forma
 
-Executada localmente em Windows/PowerShell, Node 24, Python 3.12 e Chrome instalado. As seções mantêm os resultados de cada revisão. A configuração CI está versionada; os resultados abaixo são locais.
+As seções mantêm resultados e ambiente de cada revisão. Os registros anteriores ao estúdio Three.js foram obtidos em Windows/PowerShell, Node 24, Python 3.12 e Chrome instalado. A configuração CI está versionada; os resultados abaixo são locais.
+
+## Autoria, qualidade e reparo Three.js — 2026-10-14
+
+**527 testes TypeScript/golden passaram**: 88 web (22 Three.js), 348 agente, 79 domínio e 12 golden. **14 testes de navegador passaram em 2,5 minutos**, incluindo três novos casos de tela cheia nativa/fallback/Escape, edição/reparo contextual com worker real e importação de GLB indexado com recuperação após reload e recusa de clipes/recursos externos. Typecheck dos workspaces/testes, lint e build passaram. A verificação de material GLB inclui opacidade, transparência e dupla face.
+
+Casos geométricos exercitam perfis com recortes inválidos, malhas degeneradas/índices e orçamento, normalização de geometrias procedurais, objetos largos inseridos sem empilhamento, contatos/contenção, visibilidade/hierarquia e colisão presente somente em uma pose animada. Um objeto pequeno dentro do furo de um toro não é classificado como colisão pelo simples cruzamento de AABBs. Geração recebe uma correção espacial e recusa o segundo candidato ainda inválido; reparo preserva a cena original quando não melhora ou tenta esconder objetos.
+
+O Observatório Helix usa 139 nós e foi inspecionado nas quatro poses 0/6/12/18 s com cobertura concluída e sem pares inesperados. A inspeção utiliza BVH dos dois lados: sem a árvore do segundo mesh, a biblioteca percorria triângulos linearmente e esgotava o orçamento no exemplo; compartilhar as duas árvores eliminou esse gargalo. Tempos locais da inspeção ficaram abaixo de um segundo nas execuções observadas, sem constituir benchmark de hardware ou garantia para outros assets. O renderer mostra contagens por frame/passes, incluindo sombras, distintas de uma contagem exclusiva da malha de origem.
+
+Screenshots em `.cache/browser/three-helix-fullscreen.png` e nos artefatos das suítes. Chromium via SwiftShader, sem provedor real. Não houve avaliação de fidelidade do modelo de IA, comparação com outros produtos, teste de milhões de objetos ou repetição das suítes nativas Python; os motores CAD/X3D não foram alterados. O build mantém avisos de chunks grandes, com Three.js/GLB/BVH carregados sob demanda e análise espacial em worker. Persistência de assets grandes ainda depende da quota local ou backup JSON; perfis GLB recusados/simplificados são explicitados na documentação.
+
+## Progresso e prazo Three.js com Codex — 2026-10-13
+
+O frontend encerrava a geração aos 120 s enquanto a ponte local admite 300 s por chamada. O prazo total padrão foi alterado para 5 minutos, com opções de 2/5/10 minutos. Um painel apresenta etapas observáveis, chamada, tempo e histórico; o planejamento interno do modelo continua indisponível nesta integração.
+
+**14 testes Three.js passaram**, incluindo ordem dos eventos, contagens de templates/objetos e diagnóstico antes da correção. **11 testes direcionados de navegador passaram em 48,1 s**: os nove fluxos anteriores e dois novos casos de progresso/correção e timeout com relógio virtual. O teste mantém a espera além de 120 s, cancela após o prazo de 300 s, verifica a etapa interrompida e conserva o documento anterior. Typecheck, lint e build passaram. O viewport foi ajustado para caber no espaço restante quando o histórico é expandido, preservando os controles de reprodução.
+
+São testes com provedor programado; não houve chamada real ao Codex nem medição de latência do prompt do usuário. Aumentar o prazo não comprova conclusão nem altera o teto de cada chamada da ponte local. O histórico de progresso fica na memória da área e uma chamada interrompida exige nova tentativa.
+
+## Estúdio Three.js e cenas animadas — 2026-10-13
+
+Verificado em Linux, Node 25.3.0 e Chromium instalado, com o renderer via SwiftShader. **517 testes TypeScript/golden passaram**: 78 web (12 novos para Three.js), 348 agente, 79 domínio e 12 golden. Typecheck dos workspaces e dos testes web, lint web e build de produção passaram. O build mantém avisos de chunks grandes: Three.js é um bundle sob demanda de aproximadamente 595 kB (151 kB gzip), além dos bundles WebLLM existentes.
+
+**Nove testes direcionados de navegador passaram em 40,0 s**, usando `tests/browser/three-studio.spec.ts`: viewport real, exemplo com 95 nós, seleção por raycast, transformações/grupos, duplicação/exclusão, histórico, reload, troca de área, JSON portátil, importação inválida, layout móvel e falhas de armazenamento/WebGL2. A geração simulada expandiu um template em 24 objetos animados; mudar o tempo alterou a imagem real do canvas sem modificar a pose base exportada. Falha de contrato fez exatamente duas chamadas e preservou a cena anterior; cancelamento liberou o editor. Os testes também detectaram e permitiram corrigir uma nova submissão involuntária ao cancelar o formulário.
+
+Receitas e respostas de IA são programadas; nenhuma assinatura/modelo real foi consumido. Não há medição de latência de inferência, fidelidade visual ou escalabilidade para cenas pesadas. A suíte Python e as suítes de navegador CAD/X3D completas não foram repetidas; os motores/API não mudaram. Screenshots locais: `.cache/browser/three-pavilion.png`, `three-mobile.png` e `three-generated-animated.png`. O Chromium esperado pelo Playwright não estava instalado; foi usado `PLAYWRIGHT_CHROMIUM_EXECUTABLE` apontando ao Chromium disponível.
 
 ## Continuação geral e avaliação real — 2026-10-08
 

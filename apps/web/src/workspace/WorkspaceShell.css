@@ -66,7 +66,7 @@
   .workspace-brand strong { font-size: 19px; }
   .workspace-brand__mark { width: 30px; height: 30px; border-radius: 9px; }
   .workspace-topbar__modes { margin-left: auto; }
-  .workspace-topbar__modes button { padding: 6px 12px; }
+  .workspace-topbar__modes button { padding: 6px 9px; }
   .workspace-runtime { margin-left: 0; }
   .workspace-topbar__settings-button { margin-left: auto; }
   .workspace-toolbar { padding: 10px 12px; gap: 8px; }

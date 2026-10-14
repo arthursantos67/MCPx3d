@@ -1,6 +1,6 @@
 # Configurar e diagnosticar IA
 
-Os agentes CAD e X3D compartilham o provedor escolhido em **Configurar IA**.
+Os agentes CAD/X3D e a geração Three.js compartilham o provedor escolhido em **Configurar IA**.
 
 CAD compartilha o orçamento entre planejamento, revisão, construção e reparos: criação/edição até 20 chamadas, 48 inspeções distintas e 20 minutos; correção de montagem até 5 chamadas, 16 inspeções e 4 minutos. Até três correções por programa na criação e duas na correção de montagem continuam subordinadas ao orçamento global. Dois candidatos repetidos encerram o reparo; falhas de comunicação com o motor não pedem correção à IA. O prazo termina a ação do cliente, sem garantir interrupção do kernel. Planos de três ou mais peças recebem uma revisão adicional antes da construção; rascunhos disponíveis permanecem exportáveis. Medições com modelo real e script em [cad-generation-quality.md](cad-generation-quality.md).
 
@@ -12,6 +12,14 @@ CAD compartilha o orçamento entre planejamento, revisão, construção e reparo
 | Claude Code | Login Claude no cliente oficial | API local → `claude -p` |
 
 Assinaturas não fornecem créditos para o modo **Provedor externo**. Os modos Codex/Claude Code usam os limites e modelos disponibilizados à conta conectada, pelos clientes oficiais. Não importam cookies ou tokens do navegador nem automatizam o site de chat.
+
+## Progresso e timeout no Three.js
+
+O editor oferece **Tempo máximo de geração** de 2, 5 (padrão) ou 10 minutos para a ação inteira, incluindo uma possível correção de contrato. O painel informa etapa, tempo, chamada e histórico. Planejamento e receita são solicitados juntos; não há streaming dos passos internos do modelo nem percentual de conclusão.
+
+Com Codex/Claude Code, a ponte em `api/local_ai.py` aplica também **300 s por chamada**. O antigo limite de 120 s do editor podia interromper o cliente antes desse prazo; o padrão foi alinhado para 5 minutos. Escolher 10 minutos não amplia o prazo de uma chamada: oferece margem total para a geração e sua eventual correção.
+
+Se expirar na etapa da IA, ajuste o prazo ou reduza a complexidade e reenvie. A cena anterior é preservada. Não há checkpoint parcial do JSON nem retomada da chamada interrompida. Se o prazo de 300 s da própria ponte for atingido, simplificar a receita ou escolher outro modelo disponível pode ajudar; repetições cegas não garantem resultado. Nenhuma nova chamada é feita automaticamente após timeout.
 
 ## Assinaturas
 

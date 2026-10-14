@@ -56,7 +56,16 @@ $env:PLAYWRIGHT_CHROMIUM_EXECUTABLE = 'C:\Program Files\Google\Chrome\Applicatio
 npm.cmd run test:browser
 ```
 
-Playwright inicia API na porta 8011 e Vite na 5181, usa SQLite separado em `.cache/browser` e o backend X3D local. Somente respostas HTTP do provedor de IA são simuladas. React, API, CadQuery, validadores, visualizadores e downloads são reais. A prévia X3D ainda carrega X3DOM pela internet.
+Playwright inicia API na porta 8011 e Vite na 5181, usa SQLite separado em `.cache/browser` e o backend X3D local. Nas suítes CAD/X3D, somente respostas HTTP do provedor de IA são simuladas. A suíte independente Three.js também simula indisponibilidade da API e falhas de armazenamento/WebGL2, pois seu motor é local. React, API, CadQuery, validadores, visualizadores e downloads são reais. A prévia X3D ainda carrega X3DOM pela internet.
+
+Para verificar apenas o novo estúdio:
+
+```bash
+npm run test:browser -- tests/browser/three-studio.spec.ts tests/browser/three-quality.spec.ts
+node --test apps/web/tests/three/*.test.ts
+```
+
+Os testes de contrato Three.js cobrem árvores inválidas/cíclicas, limites, números não finitos, duplicação de subárvore, histórico, round trip JSON, compatibilidade de documentos estáticos, expansão procedural, amostragem de animações, reparo limitado e cancelamento. Os testes de navegador usam o renderer Three.js real (exceto o caso de WebGL2 indisponível), seleção por raycast, inspector, troca de área, reload, importação/exportação, viewport móvel e falhas de persistência. A geração usa respostas programadas do provedor, verifica animação no canvas, cancelamento, prazo configurável com relógio virtual, identificação da etapa interrompida/histórico de correção e conservação da cena anterior; não consome uma assinatura real. A suíte de qualidade também verifica tela cheia/fallback, cena procedural detalhada, diagnóstico em worker, reparo/edição de uma cena existente e importação GLB real com recusa de clipes/referências externas. Não são um benchmark de cenas complexas.
 
 Os casos cobrem:
 

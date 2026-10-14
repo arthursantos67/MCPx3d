@@ -1,6 +1,6 @@
 # Forma — requisitos atuais
 
-Baseline de 2026-10-02. Substitui o PRD histórico de Web3D v1, preservado em [docs/archive](docs/archive/README.md). O produto agora tem dois agentes independentes: CAD e X3D.
+Baseline de 2026-10-02. Substitui o PRD histórico de Web3D v1, preservado em [docs/archive](docs/archive/README.md). Atualização de 2026-10-13: o produto tem dois agentes independentes, CAD e X3D, e uma terceira área de edição visual Three.js.
 
 ## Resultado esperado
 
@@ -65,6 +65,27 @@ O usuário descreve uma peça ou um conjunto composto, acompanha sua construçã
 - A prévia fica em iframe com `sandbox="allow-scripts"`. Projetos X3D são sessões temporárias; manifesto JSON exportado/importado permite preservação entre reinícios da API.
 - O cache de artefatos X3D finaliza e libera tarefas mesmo quando o cliente cancela a espera. Resultados válidos podem ser reutilizados; falhas não entram no cache e a exclusão de um projeto cancela suas tarefas.
 - A biblioteca de receitas X3D continua persistente em SQLite e passa pela mesma validação.
+
+## Three.js — estúdio de cenas (início em 2026-10-13)
+
+Objetivo: construir cenas visuais detalhadas com objetos organizados, materiais e controle de iluminação. A primeira entrega estabelece um editor visual independente de CAD/X3D, com reprodução local e geração de receitas animadas pelo provedor configurado. Escala visual não implica validade mecânica ou fabricação.
+
+- Novo item **Three.js** na navegação, carregado sob demanda. Trocar de área preserva o projeto; a renderização pausa quando a área fica oculta.
+- Viewport WebGL2 com câmera orbital, zoom/pan, seleção por raycast, enquadramento e diagnóstico de indisponibilidade/contexto perdido.
+- Cena demonstrativa de um pavilhão com elementos repetidos; cena vazia, primitivas, perfis extrudados/de revolução, tubos, nós toroidais e malhas/grupos. Hierarquia com parentagem acíclica, transformações locais (metros e graus), duplicação de subárvore, visibilidade e exclusão de subárvore.
+- Inspector com nome, transformação e material físico (cor, metalicidade, rugosidade, clearcoat, transmissão, emissão e texturas). Fundo, exposição, intensidade de luz, grade e wireframe são editáveis. Luzes iniciais são um rig fixo; o ambiente de reflexão é gerado localmente e sombras são configuráveis; luzes individuais ainda não são editáveis.
+- Histórico de até 50 edições na memória, rascunho único em localStorage e JSON portátil `ThreeSceneDocument` 1.1, com migração de 1.0. Importações inválidas preservam o documento atual; falhas de armazenamento aparecem na interface. Projeto JSON limitado a 32 MB, GLB estático a 16 MB, 500 nós, profundidade 12 e orçamento de 2 milhões de triângulos; números finitos, IDs únicos e referências válidas são obrigatórios.
+- Renderer descartável, redimensionamento observado, resolução limitada a DPR 2, geometrias/materiais compartilhados, desenho sob demanda quando pausado e loop somente durante reprodução visível. Estatísticas de triângulos e chamadas de desenho ajudam a observar o custo, sem prometer desempenho para cenas arbitrárias.
+- Incremento solicitado em 2026-10-13: geração de cenas animadas por descrição usando o provedor configurado. Receita compacta com até 80 templates e repetições lineares/radiais (1–100 cópias), expandida em até 500 nós; aplicação atômica após validação. Até duas chamadas (uma correção de contrato), cancelamento e prazo total configurável de 2, 5 (padrão) ou 10 minutos; falhas preservam a cena anterior. Meta de segundos/minutos depende de medição real por provedor e não constitui garantia de zero erros.
+- Progresso apresenta etapas observáveis (preparação, espera pela IA, validação, construção e aplicação), relógio, chamada atual e histórico com diagnóstico de falha. A integração recebe um JSON completo e não transmite subetapas internas do planejamento nem percentual. O prazo local Codex/Claude Code continua sendo de 300 s por chamada, independente do prazo total escolhido. Timeout/cancelamento exigem nova tentativa, sem retomada da resposta interrompida.
+- Animações declarativas de rotação, flutuação e órbita por objeto/grupo, com eixo, período, amplitude e fase. Timeline reproduzível de 1–120 s, play/pause, busca e reinício; animação não modifica a pose base nem cria revisões por frame. Arquivos 1.0 anteriores recebem valores padrão ao importar.
+- Ainda fora desta entrega: importação CAD/X3D, glTF por URLs, exportação GLB, HDRI externo, mapas físicos completos de GLB, instanciamento, LOD, gizmos, animação esquelética/keyframes livres, pós-processamento, física, colaboração e persistência no servidor. [Plano, critérios e fases](docs/threejs-studio.md).
+
+### Revisão de qualidade Three.js — 2026-10-14
+
+Adicionar tela cheia com Escape/fallback, geometria procedural de perfis/curvas/malhas e importação GLB estática, materiais físicos, texturas procedurais e iluminação com reflexões/sombras. Separar criar cena, editar a cena existente e reparar sobreposições. Edições são patches por ID com preservação dos nós não mencionados, sem reconstrução implícita nem exclusões silenciosas.
+
+A inspeção espacial deve ocorrer fora da thread da interface, refinar caixas por triângulos, informar contenções/cobertura/poses e reconhecer pares de contato intencional. Diagnóstico amostrado não equivale a solver físico ou prova contínua. Reparos devem reduzir problemas sem introduzir novos pares antes de substituir o documento. Critérios, migração e limites em [threejs-studio.md](docs/threejs-studio.md).
 
 ## Operação e limites
 
