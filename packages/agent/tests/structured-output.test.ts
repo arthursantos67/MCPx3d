@@ -83,3 +83,20 @@ test("usage is read from OpenAI-shaped fields and ignores anything unsafe", () =
   assert.equal(readCompletionUsage({ prompt_tokens: "10" }), undefined);
   assert.equal(readCompletionUsage(null), undefined);
 });
+
+test("a complete JSON value after an unparsable bracketed fragment is still extracted", () => {
+  const result = parse('Plan [draft] {placeholder} -> {"intent":"x","operations":[]}');
+  assert.deepEqual(result.value, { intent: "x", operations: [] });
+  assert.equal(result.completion.locallyRepaired, true);
+});
+
+test("a reasoning prefix is skipped before extracting JSON", () => {
+  const result = parse('<think>Use {braces} and [lists]</think>\n{"intent":"x","operations":[]}');
+  assert.deepEqual(result.value, { intent: "x", operations: [] });
+});
+
+test("an unterminated JSON value after prose is truncation, never a nested fragment", () => {
+  const result = parse('Here is the plan: {"intent":"x","operations":[{"op":"no_change","reason":"a"},{"op":"no_');
+  assert.equal(result.completion.failure, "truncated");
+  assert.equal(result.value, undefined);
+});

@@ -37,6 +37,7 @@ export interface CompletionMetadata {
 export interface GenerationOptions {
   readonly temperature?: number;
   readonly maxTokens?: number;
+  readonly signal?: AbortSignal;
   readonly onCompletion?: (completion: CompletionMetadata) => void;
 }
 
@@ -48,6 +49,14 @@ export class ProviderRequestError extends Error {
     this.name = "ProviderRequestError";
     this.limit = options?.limit ?? (options?.cause instanceof ProviderRequestError ? options.cause.limit : undefined);
   }
+}
+
+export function checkpointScope(provider: LLMProvider): object {
+  return provider.checkpointScope ?? provider;
+}
+
+export function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === "AbortError";
 }
 
 export interface ProviderLimit {
@@ -84,6 +93,8 @@ export interface LLMProvider {
   };
   /** The configured model, for per-provider/model diagnostics. */
   readonly model?: string;
+  /** Identity under which resumable CAD progress is kept; defaults to the provider itself. */
+  readonly checkpointScope?: object;
   /** The provider's own completion-token ceiling, when it has one. */
   readonly maxOutputTokens?: number;
   isAvailable(): Promise<boolean>;
@@ -94,4 +105,6 @@ export interface LLMProvider {
     options?: GenerationOptions,
   ): Promise<T>;
   cancel?(): Promise<void>;
+  /** Releases resources such as workers or loaded models; the provider is not used afterwards. */
+  dispose?(): Promise<void>;
 }

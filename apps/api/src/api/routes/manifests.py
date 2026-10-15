@@ -55,7 +55,7 @@ async def import_manifest(
     with timer.measure("manifest_validation"):
         try:
             manifest = ModelSpec.model_validate(json.loads(content.decode("utf-8")))
-        except (UnicodeDecodeError, json.JSONDecodeError, ValidationError) as exc:
+        except (UnicodeDecodeError, json.JSONDecodeError, RecursionError, ValidationError) as exc:
             raise api_error(400, "INVALID_MANIFEST", "The file is not a compatible ModelSpec v1 manifest") from exc
         validate_spec_dimensions(manifest)
         if len(manifest.objects) > settings.max_objects_per_project:

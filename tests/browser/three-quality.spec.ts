@@ -1,3 +1,4 @@
+import { openAdvancedEditor, projectAction } from './threeHelpers.ts'
 import { expect, test, type Page } from '@playwright/test'
 import { readFile } from 'node:fs/promises'
 import { createEmptyScene, createNode, validateScene } from '../../apps/web/src/three/sceneDocument.ts'
@@ -11,10 +12,11 @@ async function open(page: Page) {
   await page.route('http://127.0.0.1:8011/api/**', (route) => route.fulfill({ status: 503, contentType: 'application/json', body: '{"detail":"offline"}' }))
   await page.goto('/')
   await expect(page.getByRole('img', { name: 'Cena Three.js interativa' })).toBeVisible()
+  await openAdvancedEditor(page)
 }
 async function exported(page: Page) {
   const pending = page.waitForEvent('download')
-  await page.getByRole('button', { name: 'Exportar JSON', exact: true }).click()
+  await projectAction(page, 'Exportar JSON')
   return JSON.parse(await readFile((await (await pending).path())!, 'utf8'))
 }
 async function load(page: Page, value: unknown) {
@@ -26,7 +28,7 @@ test('detailed procedural scene renders in fullscreen and Escape exits the expan
   page.on('pageerror', (error) => errors.push(error.message))
   page.on('console', (message) => { if (/Shader Error|THREE.WebGLProgram/.test(message.text())) errors.push(message.text()) })
   await open(page)
-  await page.getByRole('button', { name: 'Exemplo detalhado', exact: true }).click()
+  await projectAction(page, 'Exemplo detalhado')
   await expect(page.getByText('Observatório Helix', { exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Tela cheia', exact: true }).click()
   await expect(page.getByRole('button', { name: 'Sair da tela cheia', exact: true })).toBeVisible()
@@ -46,51 +48,52 @@ test('detailed procedural scene renders in fullscreen and Escape exits the expan
   expect(errors).toEqual([])
 })
 
-test('existing scenes are inspected, repaired and enriched with contextual patches', async ({ page }) => {
+test('existing scenes are inspected, repaired locally without AI and enriched with contextual patches', async ({ page }) => {
   await open(page)
   const a = { ...createNode('box'), id: 'a', name: 'Carcaça' }, b = { ...createNode('box'), id: 'b', name: 'Módulo', position: [0.25, 0.5, 0] as [number, number, number] }
   const untouched = { ...createNode('lathe'), id: 'ornament', position: [5, 0.5, 0] as [number, number, number] }
   const doc = validateScene({ ...createEmptyScene(), nodes: [a, b, untouched] })
   await load(page, doc)
-  await page.getByRole('button', { name: 'Verificar sobreposições', exact: true }).click()
+  await projectAction(page, 'Verificar cena')
   await expect(page.locator('.three-spatial summary')).toContainText('1 pares')
-  await expect(page.locator('.three-spatial')).toContainText('Superfícies se cruzam')
+  await expect(page.locator('details.three-spatial')).toContainText('Superfícies se cruzam')
   let calls = 0
   await page.route('http://provider.test/v1/chat/completions', async (route) => {
     calls++
     const request = route.request().postDataJSON()
     expect(JSON.stringify(request.messages)).toContain('CENA E DIAGNÓSTICO')
-    const content = calls === 1 ? { updates: [{ id: 'b', changes: { position: [2, 0.5, 0] } }], additions: [] }
-      : { updates: [{ id: 'a', changes: { kind: 'roundedBox', geometry: { bevel: 0.1 }, material: { clearcoat: 0.8, texture: 'metal' } } }], additions: [] }
+    const content = { updates: [{ id: 'a', changes: { kind: 'roundedBox', geometry: { bevel: 0.1 }, material: { clearcoat: 0.8, texture: 'metal' } } }], additions: [] }
     await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ choices: [{ message: { content: JSON.stringify(content) }, finish_reason: 'stop' }] }) })
   })
-  await page.getByRole('button', { name: 'Preparar reparo da cena atual', exact: true }).click()
-  await page.getByRole('button', { name: 'Corrigir sobreposições com IA', exact: true }).click()
+  await page.getByRole('button', { name: 'Preparar Corrigir cena com IA', exact: true }).click()
+  await page.getByRole('button', { name: 'Corrigir cena', exact: true }).click()
   await expect(page.getByText('Cena concluída', { exact: true })).toBeVisible()
   const repaired = await exported(page)
   expect(repaired.nodes.map((node: { id: string }) => node.id)).toEqual(['a', 'b', 'ornament'])
-  expect(repaired.nodes[1].position).toEqual([2, 0.5, 0])
+  expect([repaired.nodes[0].position, repaired.nodes[1].position]).not.toEqual([doc.nodes[0].position, doc.nodes[1].position])
+  expect(calls).toBe(0)
   expect(repaired.nodes[2]).toEqual(doc.nodes[2])
   await expect(page.locator('.three-spatial summary')).toContainText('0 pares')
   await expect(page.locator('.three-spatial summary')).not.toContainText('desatualizado')
   await page.getByRole('combobox', { name: 'Ação da IA', exact: true }).selectOption('edit')
   await page.getByRole('textbox', { name: 'Descreva a cena Three.js', exact: true }).fill('Arredonde a carcaça e aplique metal escovado com verniz, preservando os demais objetos.')
   await page.getByRole('button', { name: 'Editar cena com IA', exact: true }).click()
-  await expect.poll(async () => (await exported(page)).nodes[0].kind).toBe('roundedBox')
+  await expect(page.getByRole('textbox', { name: 'Descreva a cena Three.js', exact: true })).toHaveValue('')
   const edited = await exported(page)
+  expect(edited.nodes[0].kind).toBe('roundedBox')
   expect(edited.nodes[0].material.texture).toBe('metal')
   expect(edited.nodes[0].material.clearcoat).toBe(0.8)
   expect(edited.nodes[2]).toEqual(doc.nodes[2])
-  expect(calls).toBe(2)
+  expect(calls).toBe(1)
 })
 
 test('GLB imports real indexed geometry, preserves it in JSON and refuses unsupported input', async ({ page }) => {
   await open(page)
-  await page.getByRole('button', { name: 'Cena vazia', exact: true }).click()
+  await projectAction(page, 'Cena vazia')
   await page.getByLabel('Importar modelo GLB').setInputFiles({ name: 'Cabine.glb', mimeType: 'model/gltf-binary', buffer: staticGlb() })
   await expect(page.getByText('Modelo GLB importado como malhas editáveis.', { exact: true })).toBeVisible()
   const doc = await exported(page)
-  expect(doc.version).toBe('1.1')
+  expect(doc.version).toBe('1.2')
   expect(doc.nodes).toHaveLength(2)
   const mesh = doc.nodes.find((node: { kind: string }) => node.kind === 'mesh')
   expect(mesh.geometry.vertices).toHaveLength(12)
@@ -107,4 +110,21 @@ test('GLB imports real indexed geometry, preserves it in JSON and refuses unsupp
   await page.getByLabel('Importar modelo GLB').setInputFiles({ name: 'External.glb', mimeType: 'model/gltf-binary', buffer: staticGlb({ external: true }) })
   await expect(page.getByRole('alert').filter({ hasText: 'referências externas' })).toBeVisible()
   expect(await exported(page)).toEqual(doc)
+})
+
+test('Verificar cena audits the scene and the automatic fix resolves it without AI', async ({ page }) => {
+  await open(page)
+  let calls = 0
+  await page.route('http://provider.test/v1/chat/completions', async (route) => { calls++; await route.abort() })
+  const a = { ...createNode('box'), id: 'a', name: 'Bloco A' }, b = { ...createNode('box'), id: 'b', name: 'Bloco B', position: [0.3, 0.5, 0] as [number, number, number] }
+  await load(page, validateScene({ ...createEmptyScene(), nodes: [a, b] }))
+  await projectAction(page, 'Verificar cena')
+  await expect(page.locator('.three-spatial summary')).toContainText('1 pares')
+  await page.getByRole('button', { name: 'Corrigir automaticamente (sem IA)', exact: true }).click()
+  await expect(page.locator('.three-spatial summary')).toContainText('0 pares')
+  await expect(page.locator('.three-generation-notes')).toContainText('Correção automática')
+  await expect(page.locator('.three-generation-notes')).toContainText('Nenhum problema restante')
+  expect(calls).toBe(0)
+  await projectAction(page, 'Desfazer')
+  expect((await exported(page)).nodes[1].position).toEqual([0.3, 0.5, 0])
 })

@@ -63,6 +63,8 @@ const CHAT_COMPLETIONS_PATH = "/chat/completions";
 const MAX_TRANSIENT_RETRIES = 4;
 const MAX_RATE_LIMIT_WAIT_MS = 15_000;
 const BASE_RETRY_DELAY_MS = 1000;
+export const DEFAULT_REQUEST_TIMEOUT_MS = 300_000;
+const TIMEOUT_MESSAGE = "O provedor de IA não respondeu dentro do tempo limite. Tente novamente ou escolha outro modelo.";
 
 function toChatCompletionsUrl(configuredUrl: string): string {
   const normalized = configuredUrl.trim().replace(/\/+$/, "");
@@ -250,6 +252,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
   private readonly fetchImpl: FetchLike;
   private readonly sleepImpl: SleepLike;
   private readonly random: () => number;
+  private readonly requestTimeoutMs: number;
   private state: OpenAICompatibleProviderState = { phase: "idle" };
   private readonly listeners = new Set<OpenAICompatibleStateListener>();
   private inFlight: AbortController | null = null;
@@ -266,6 +269,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
     fetchImpl: FetchLike = fetch.bind(globalThis),
     sleepImpl: SleepLike = sleepWithAbort,
     random: () => number = Math.random,
+    requestTimeoutMs: number = DEFAULT_REQUEST_TIMEOUT_MS,
   ) {
     this.config = { ...config, baseUrl: config.baseUrl.trim() };
     this.model = config.model.trim();
@@ -274,6 +278,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
     this.fetchImpl = fetchImpl;
     this.sleepImpl = sleepImpl;
     this.random = random;
+    this.requestTimeoutMs = requestTimeoutMs;
   }
 
   getState(): OpenAICompatibleProviderState {
@@ -329,9 +334,17 @@ export class OpenAICompatibleProvider implements LLMProvider {
       throw new ProviderRequestError(limitMessage(this.limit, 0), { limit: this.limit });
     }
 
+    options?.signal?.throwIfAborted();
     this.setState({ phase: "generating" });
     const controller = new AbortController();
     this.inFlight = controller;
+    const userSignal = options?.signal ? AbortSignal.any([controller.signal, options.signal]) : controller.signal;
+    let timeoutSignal: AbortSignal | null = null;
+    const failure = (error: unknown, fallback: string): Error => {
+      if (userSignal.aborted) return new DOMException("Request cancelled", "AbortError");
+      if (timeoutSignal?.aborted) return new ProviderRequestError(TIMEOUT_MESSAGE, { cause: error });
+      return new ProviderRequestError(fallback, { cause: error });
+    };
     try {
       const request: RequestInit = {
         method: "POST",
@@ -365,19 +378,15 @@ export class OpenAICompatibleProvider implements LLMProvider {
           // Ignored by models/endpoints that don't recognize it.
           reasoning_effort: "low",
         }),
-        signal: controller.signal,
       };
 
       let response: Response | null = null;
       for (let attempt = 0; attempt <= MAX_TRANSIENT_RETRIES; attempt += 1) {
+        timeoutSignal = AbortSignal.timeout(this.requestTimeoutMs);
         try {
-          response = await this.fetchImpl(this.chatCompletionsUrl, request);
+          response = await this.fetchImpl(this.chatCompletionsUrl, { ...request, signal: AbortSignal.any([userSignal, timeoutSignal]) });
         } catch (error) {
-          if (error instanceof DOMException && error.name === "AbortError") throw error;
-          throw new ProviderRequestError(
-            "Could not reach the configured AI endpoint. Check the Base URL and whether the provider allows browser requests.",
-            { cause: error },
-          );
+          throw failure(error, "Could not reach the configured AI endpoint. Check the Base URL and whether the provider allows browser requests.");
         }
 
         if (response.ok) { this.limit = null; break; }
@@ -387,7 +396,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
           const limit = providerLimit(response, bodyText);
           const retryAfter = limit.retryAt === undefined ? null : Math.max(0, limit.retryAt - Date.now());
           if (limit.kind === 'rate' && attempt === 0 && retryAfter !== null && retryAfter <= MAX_RATE_LIMIT_WAIT_MS) {
-            await this.sleepImpl(retryAfter, controller.signal);
+            await this.sleepImpl(retryAfter, userSignal);
             continue;
           }
           this.limit = limit;
@@ -397,20 +406,25 @@ export class OpenAICompatibleProvider implements LLMProvider {
           throw new ProviderRequestError(providerResponseMessage(response.status, bodyText));
         }
 
-        const delay = retryAfterMilliseconds(response) ?? exponentialDelayMilliseconds(attempt, this.random);
-        await this.sleepImpl(delay, controller.signal);
+        const delay = Math.min(retryAfterMilliseconds(response) ?? exponentialDelayMilliseconds(attempt, this.random), MAX_RATE_LIMIT_WAIT_MS);
+        await this.sleepImpl(delay, userSignal);
       }
 
       if (response === null) throw new ProviderRequestError("The AI provider returned no response.");
 
-      const body = (await response.json()) as {
+      let body: {
         choices?: { message?: { content?: string | null }; finish_reason?: string | null }[];
         usage?: unknown;
-      };
-      const choice = body.choices?.[0];
+      } | null;
+      try {
+        body = await response.json();
+      } catch (error) {
+        throw failure(error, "O provedor de IA devolveu uma resposta que não é JSON válido.");
+      }
+      const choice = body?.choices?.[0];
       return parseStructuredCompletion(
         choice?.message?.content,
-        { finishReason: choice?.finish_reason, usage: readCompletionUsage(body.usage) },
+        { finishReason: choice?.finish_reason, usage: readCompletionUsage(body?.usage) },
         options?.onCompletion,
       ) as T;
     } finally {
@@ -442,13 +456,15 @@ function toOpenAiMessages(messages: readonly AgentMessage[]): { role: string; co
  * separately, so nothing is lost by stripping it from the copy sent here.
  * Local ajv validation (`generate-model-plan.ts`) still uses the original,
  * untouched schema -- only this provider's wire payload is trimmed. */
-function stripDescriptions(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(stripDescriptions);
+const SCHEMA_MAP_KEYWORDS = new Set(["properties", "patternProperties", "$defs", "definitions", "dependentSchemas"]);
+
+function stripDescriptions(value: unknown, schemaMap = false): unknown {
+  if (Array.isArray(value)) return value.map((entry) => stripDescriptions(entry));
   if (value !== null && typeof value === "object") {
     const result: Record<string, unknown> = {};
     for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
-      if (key === "description") continue;
-      result[key] = stripDescriptions(entry);
+      if (!schemaMap && key === "description" && typeof entry === "string") continue;
+      result[key] = stripDescriptions(entry, !schemaMap && SCHEMA_MAP_KEYWORDS.has(key));
     }
     return result;
   }

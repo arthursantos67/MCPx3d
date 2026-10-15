@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 
-export default function ThreeStage({ children, playing, time, duration, onPlay, onSeek }: {
-  children: ReactNode; playing: boolean; time: number; duration: number; onPlay: () => void; onSeek: (seconds: number) => void
+export default function ThreeStage({ children, playing, time, duration, onPlay, onSeek, showPlayback = true }: {
+  children: ReactNode; playing: boolean; time: number; duration: number; onPlay: () => void; onSeek: (seconds: number) => void; showPlayback?: boolean
 }) {
   const host = useRef<HTMLDivElement>(null), toggle = useRef<HTMLButtonElement>(null)
   const [mode, setMode] = useState<'native' | 'expanded' | null>(null)
@@ -26,7 +26,7 @@ export default function ThreeStage({ children, playing, time, duration, onPlay, 
     setMode('expanded')
     toggle.current?.focus()
   }
-  return <div ref={host} className={`three-stage${mode ? ' three-stage--fullscreen' : ''}`} onKeyDown={(event) => {
+  return <div ref={host} className={`three-stage${mode ? ' three-stage--fullscreen' : ''}${showPlayback ? '' : ' three-stage--presentation'}`} onKeyDown={(event) => {
     if (event.key === 'Escape' && mode === 'expanded') { event.preventDefault(); event.stopPropagation(); void exit() }
     if (event.key === 'Tab' && mode) {
       const items = [...host.current!.querySelectorAll<HTMLElement>('button:not(:disabled),input:not(:disabled)')]
@@ -37,7 +37,7 @@ export default function ThreeStage({ children, playing, time, duration, onPlay, 
   }}>
     {children}
     <button ref={toggle} className="three-fullscreen-toggle" type="button" aria-pressed={!!mode} onClick={() => void enter()}>{mode ? 'Sair da tela cheia' : 'Tela cheia'}</button>
-    {mode && <div className="three-fullscreen-playback" role="group" aria-label="Reprodução em tela cheia">
+    {mode && showPlayback && <div className="three-fullscreen-playback" role="group" aria-label="Reprodução em tela cheia">
       <button type="button" aria-pressed={playing} onClick={onPlay}>{playing ? 'Pausar animação' : 'Reproduzir animação'}</button>
       <button type="button" onClick={() => onSeek(0)}>Voltar ao início</button>
       <input type="range" aria-label="Tempo em tela cheia" min={0} max={duration} step={0.01} value={Math.min(time, duration)} onChange={(event) => onSeek(Number(event.target.value))} />

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sys
+import traceback
 from pathlib import Path
 from typing import Any
 
@@ -112,6 +113,9 @@ def main() -> int:
             result = {"error": {"status": 422, "code": "CAD_GEOMETRY_INVALID", "message": str(exc)}}
     except MemoryError:
         result = {"error": {"status": 503, "code": "CAD_ENGINE_RESOURCE_LIMIT", "message": "O cálculo CAD excedeu o limite de memória do processo."}}
+    except Exception as exc:  # noqa: BLE001 -- the worker must always report a structured result
+        traceback.print_exc(file=sys.stderr)
+        result = {"error": {"status": 500, "code": "CAD_ENGINE_FAILURE", "message": f"O motor CAD falhou de forma inesperada ({type(exc).__name__}). O rascunho foi conservado."}}
     (directory / "result.json").write_text(json.dumps(result), encoding="utf-8")
     return 0
 

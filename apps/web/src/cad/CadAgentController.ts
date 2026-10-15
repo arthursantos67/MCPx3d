@@ -17,7 +17,7 @@ export interface CadAgentApi {
 export class CadAgentController {
   private active: AbortController | null = null
   private provider: LLMProvider
-  private guardedProvider: LLMProvider
+  private readonly checkpointScope = {}
   private api: CadAgentApi
   private completed: { key: string; outcome: unknown } | null = null
   private draftListener?: CadDraftListener
@@ -37,6 +37,27 @@ export class CadAgentController {
     this.draftListener?.(this.latestDraft)
   }
 
+  private guard(provider: LLMProvider, cancellation: AbortController, budget: CadActionBudget): LLMProvider {
+    return {
+      id: provider.id, model: provider.model, maxOutputTokens: provider.maxOutputTokens, generationPolicy: provider.generationPolicy,
+      checkpointScope: this.checkpointScope,
+      isAvailable: () => provider.isAvailable(), initialize: () => provider.initialize(),
+      generateStructured: async <T>(messages: readonly AgentMessage[], schema: JsonSchema, options?: GenerationOptions): Promise<T> => {
+        cancellation.signal.throwIfAborted()
+        budget.spend('ai'); if (this.active === cancellation) this.reportBudget()
+        let response: T
+        try {
+          response = await provider.generateStructured<T>(messages, schema, options)
+        } catch (error) {
+          cancellation.signal.throwIfAborted()
+          throw error
+        }
+        cancellation.signal.throwIfAborted()
+        return response
+      },
+    }
+  }
+
   private publishFailure(error: unknown): void {
     if (this.latestDraft) this.publishDraft({ ...this.latestDraft, issue: error instanceof Error ? error.message : String(error) })
   }
@@ -45,22 +66,6 @@ export class CadAgentController {
     this.limits = limits
     this.provider = provider
     this.api = api
-    const getProvider = () => this.provider
-    this.guardedProvider = {
-      get id() { return getProvider().id },
-      get model() { return getProvider().model },
-      get maxOutputTokens() { return getProvider().maxOutputTokens },
-      get generationPolicy() { return getProvider().generationPolicy },
-      isAvailable: () => this.provider.isAvailable(), initialize: () => this.provider.initialize(),
-      generateStructured: async <T>(messages: readonly AgentMessage[], schema: JsonSchema, options?: GenerationOptions): Promise<T> => {
-        const signal = this.active?.signal
-        signal?.throwIfAborted()
-        this.budget?.spend('ai'); this.reportBudget()
-        const response = await this.provider.generateStructured<T>(messages, schema, options)
-        signal?.throwIfAborted()
-        return response
-      },
-    }
   }
 
   setProvider(provider: LLMProvider): void {
@@ -75,7 +80,7 @@ export class CadAgentController {
 
   clearCompletedGeneration(): void { this.completed = null }
 
-  private async run<T extends CadProgramOutcome | CadAssemblyOutcome | CadDesignOutcome>(key: string, generate: (provider: LLMProvider, api: CadAgentApi, signal: AbortSignal) => Promise<T>): Promise<T> {
+  private async run<T extends CadProgramOutcome | CadAssemblyOutcome | CadDesignOutcome>(key: string, generate: (provider: LLMProvider, api: CadAgentApi, signal: AbortSignal, publish: (draft: CadDraftSnapshot) => void) => Promise<T>): Promise<T> {
     if (this.active) throw new Error('Aguarde a geração CAD em andamento.')
     const cancellation = new AbortController()
     this.active = cancellation
@@ -83,14 +88,16 @@ export class CadAgentController {
     this.budget = new CadActionBudget(this.limits ?? (key.startsWith('["assembly-repair",') ? CAD_REPAIR_LIMITS : CAD_CREATE_LIMITS))
     this.reportBudget()
     const budget = this.budget
+    const provider = this.provider
+    const publish = (draft: CadDraftSnapshot) => { if (this.active === cancellation && !cancellation.signal.aborted) this.publishDraft(draft) }
     const pendingChecks = new Map<Promise<unknown>, () => void>()
-    const timer = setTimeout(() => { cancellation.abort(budget.timeout()); void this.provider.cancel?.() }, budget.limits.durationMs)
+    const timer = setTimeout(() => { cancellation.abort(budget.timeout()); void provider.cancel?.() }, budget.limits.durationMs)
     const guard = () => { cancellation.signal.throwIfAborted(); budget.checkTime() }
     const inspect = async <T,>(cache: Map<string, Promise<T>>, spec: unknown, check: () => Promise<T>): Promise<T> => {
       guard()
       const identity = cadIdentity(spec)
       if (!cache.has(identity)) {
-        budget.spend('cad'); this.reportBudget()
+        budget.spend('cad'); if (this.active === cancellation) this.reportBudget()
         const pending = check().catch((error: unknown) => {
           if (cache.get(identity) === pending) cache.delete(identity)
           guard()
@@ -116,9 +123,9 @@ export class CadAgentController {
     })
     try {
       if (this.completed?.key === key) return structuredClone(this.completed.outcome) as T
-      const result = await Promise.race([generate(this.guardedProvider, api, cancellation.signal), aborted])
+      const result = await Promise.race([generate(this.guard(provider, cancellation, budget), api, cancellation.signal, publish), aborted])
       guard()
-      if (this.provider.generationPolicy && !isCadClarification(result)) this.completed = { key, outcome: structuredClone(result) }
+      if (provider.generationPolicy && !isCadClarification(result)) this.completed = { key, outcome: structuredClone(result) }
       return result
     } catch (error) {
       this.publishFailure(error)
@@ -132,37 +139,37 @@ export class CadAgentController {
   }
 
   planCadProgram(request: string, previous?: CadProgramSpec): Promise<CadProgramOutcome> {
-    return this.run(JSON.stringify(['program', request, previous]), (provider, api) => generateCadProgram(provider, request, previous, api.checkCadProgram,
-      { noQuestions: true, maxRepairAttempts: 3, prepareDesign: true, onDraft: (spec, issue) => this.publishDraft({ spec, request, issue }) }))
+    return this.run(JSON.stringify(['program', request, previous]), (provider, api, _signal, publish) => generateCadProgram(provider, request, previous, api.checkCadProgram,
+      { noQuestions: true, maxRepairAttempts: 3, prepareDesign: true, onDraft: (spec, issue) => publish({ spec, request, issue }) }))
   }
 
   planCadAssembly(request: string, previous?: CadAssemblySpec, onProgress?: CadAssemblyProgressListener, requireMechanics = false): Promise<CadAssemblyOutcome> {
-    return this.run(JSON.stringify(['assembly', request, previous, requireMechanics]), (provider, api, signal) => generateCadAssembly(provider, request, api.checkCadProgram,
+    return this.run(JSON.stringify(['assembly', request, previous, requireMechanics]), (provider, api, signal, publish) => generateCadAssembly(provider, request, api.checkCadProgram,
       api.checkCadAssembly, previous, (progress) => { if (!signal.aborted) onProgress?.(progress) }, 0,
       { requireMechanics, noQuestions: true, maxRepairAttempts: 3, allowUnverifiedDrafts: true, prepareDesign: true, reviewPlan: true,
-        repairLimits: { steps: 6, validations: 16 }, onDraft: (draft) => this.publishDraft({ ...draft, request }) }))
+        repairLimits: { steps: 6, validations: 16 }, onDraft: (draft) => publish({ ...draft, request }) }))
   }
 
   repairCadAssembly(spec: CadAssemblySpec, onProgress?: CadAssemblyProgressListener): Promise<CadAssemblyOutcome> {
-    return this.run(JSON.stringify(['assembly-repair', spec]), (provider, api, signal) => generateCadAssembly(provider,
+    return this.run(JSON.stringify(['assembly-repair', spec]), (provider, api, signal, publish) => generateCadAssembly(provider,
       'Corrija as interferências do conjunto existente. Preserve componentes, roscas, posições e movimentos não afetados.',
       api.checkCadProgram, api.checkCadAssembly, spec, (progress) => { if (!signal.aborted) onProgress?.(progress) },
-      0, { repairOnly: true, noQuestions: true, maxRepairAttempts: 2, repairLimits: { steps: 6, validations: 16 }, onDraft: (draft) => this.publishDraft(draft) }))
+      0, { repairOnly: true, noQuestions: true, maxRepairAttempts: 2, repairLimits: { steps: 6, validations: 16 }, onDraft: (draft) => publish(draft) }))
   }
 
   planCadDesign(request: string, previous?: CadProgramSpec, onProgress?: CadAssemblyProgressListener, requireMechanics = false): Promise<CadDesignOutcome> {
-    return this.run(JSON.stringify(['design', request, previous, requireMechanics]), async (provider, api, signal) => {
+    return this.run(JSON.stringify(['design', request, previous, requireMechanics]), async (provider, api, signal, publish) => {
       const mode = previous ? 'part' : await classifyCadDesign(provider, request)
       signal.throwIfAborted()
       if (mode === 'assembly') {
         const outcome = await generateCadAssembly(provider, request, api.checkCadProgram, api.checkCadAssembly,
           undefined, (progress) => { if (!signal.aborted) onProgress?.(progress) }, 0,
           { requireMechanics, noQuestions: true, maxRepairAttempts: 3, allowUnverifiedDrafts: true, prepareDesign: true, reviewPlan: true,
-            repairLimits: { steps: 6, validations: 16 }, onDraft: (draft) => this.publishDraft({ ...draft, request }) })
+            repairLimits: { steps: 6, validations: 16 }, onDraft: (draft) => publish({ ...draft, request }) })
         return { mode, outcome }
       }
       return { mode, outcome: await generateCadProgram(provider, request, previous, api.checkCadProgram,
-        { noQuestions: true, maxRepairAttempts: 3, prepareDesign: true, onDraft: (spec, issue) => this.publishDraft({ spec, request, issue }) }) }
+        { noQuestions: true, maxRepairAttempts: 3, prepareDesign: true, onDraft: (spec, issue) => publish({ spec, request, issue }) }) }
     })
   }
 }

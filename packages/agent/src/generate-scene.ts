@@ -167,6 +167,7 @@ export async function generateScene(input: GenerateSceneInput): Promise<SceneOut
     }
     modelSpec = single.modelSpec;
   } catch (error) {
+    if (input.signal?.aborted) return { status: "cancelled", modelSpec, batches: 0 };
     if (!(error instanceof ModelPlanTruncatedError)) throw error;
   }
 
@@ -175,6 +176,7 @@ export async function generateScene(input: GenerateSceneInput): Promise<SceneOut
   let consecutiveFailures = 0;
   for (let batch = 1; batch <= MAX_SCENE_BATCHES; batch += 1) {
     const committed = counters.committedBatches;
+    if (input.signal?.aborted) return { status: "cancelled", modelSpec, batches: committed };
     let result: StepResult;
     try {
       result = await step(input, counters, modelSpec, { batch, maxOperations: SCENE_BATCH_OPERATIONS });
@@ -209,6 +211,7 @@ async function step(
   modelSpec: ModelSpec,
   continuation: ModelPlanContinuation | undefined,
 ): Promise<StepResult> {
+  if (input.signal?.aborted) return { kind: "cancelled" };
   const batch = continuation?.batch ?? 0;
   const maxApplyRepairs = input.provider.generationPolicy?.maxSceneRepairAttempts ?? MAX_APPLY_REPAIRS;
   const progress = (stage: SceneProgress["stage"]): void =>
@@ -269,7 +272,7 @@ async function planStep(
       priorValidationDiagnostics: applyRejection?.diagnostics,
       rejectedPlan: applyRejection?.rejectedPlan,
       continuation,
-      options: { ...input.options, onCompletion },
+      options: { ...input.options, signal: input.signal ?? input.options?.signal, onCompletion },
       onValidationFailure: (failure) => {
         counters.validationFailures[failure] = (counters.validationFailures[failure] ?? 0) + 1;
       },

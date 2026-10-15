@@ -9,7 +9,7 @@ export async function inspectSceneAsync(doc: ThreeSceneDocument, signal: AbortSi
     const worker = new Worker(new URL('./sceneInspection.worker.ts', import.meta.url), { type: 'module' })
     const cleanup = () => { worker.terminate(); clearTimeout(deadline); signal.removeEventListener('abort', cancel) }
     const cancel = () => { cleanup(); reject(signal.reason ?? new DOMException('Inspeção cancelada', 'AbortError')) }
-    const deadline = setTimeout(() => { cleanup(); reject(new Error('A inspeção espacial excedeu 15 segundos. Reduza a complexidade ou inspecione uma cena menor.')) }, 15000)
+    const deadline = setTimeout(() => { cleanup(); reject(new Error('A inspeção espacial excedeu 45 segundos. Reduza a complexidade ou inspecione uma cena menor.')) }, 45000)
     worker.onmessage = (event: MessageEvent<{ report?: SceneInspection; error?: string }>) => {
       cleanup()
       if (event.data.report) resolve(event.data.report)

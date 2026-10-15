@@ -1,6 +1,6 @@
 # Documentação atual
 
-- [Estúdio Three.js](threejs-studio.md): tela cheia, geometrias/GLB, materiais físicos, edição/reparo contextual, animações e inspeção espacial.
+- [Estúdio Three.js](threejs-studio.md): modo jogo, interações, atalhos/gizmos, céu e pós-processamento, geometrias/terreno/luzes, GLB, edição/reparo contextual, animações e inspeção espacial.
 
 - [Melhorias gerais — continuação de 2026-10-08](project-improvements-2026-10-08.md): cancelamento, recursos compartilhados, curvas/molas/sweeps, acabamentos locais e avaliação com IA real.
 

@@ -6,6 +6,7 @@ import json
 import secrets
 import sqlite3
 import unicodedata
+from contextlib import closing
 from pathlib import Path
 from typing import Literal
 
@@ -77,7 +78,7 @@ class RecipeStore:
     def __init__(self, path: Path) -> None:
         self.path = path
         path.parent.mkdir(parents=True, exist_ok=True)
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute("""
                 CREATE TABLE IF NOT EXISTS recipes (
                     id TEXT PRIMARY KEY,
@@ -117,7 +118,7 @@ class RecipeStore:
 
     def list(self, query: str = "") -> list[Recipe]:
         key = normalize(query)
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             rows = connection.execute(
                 "SELECT * FROM recipes WHERE search_key LIKE ? ORDER BY name LIMIT 30",
                 (f"%{key}%",),
@@ -125,7 +126,7 @@ class RecipeStore:
         return [self._recipe(row) for row in rows]
 
     def get(self, recipe_id: str) -> Recipe | None:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             row = connection.execute("SELECT * FROM recipes WHERE id = ?", (recipe_id,)).fetchone()
         return self._recipe(row) if row is not None else None
 
@@ -135,7 +136,7 @@ class RecipeStore:
             id=f"recipe_{secrets.token_hex(12)}", name=name, units=spec.units,
             displayScale=spec.scene.displayScale, objectCount=len(spec.objects), plan=plan,
         )
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute(
                 "INSERT INTO recipes VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (recipe.id, recipe.schemaVersion, recipe.name, normalize(recipe.name), recipe.units,

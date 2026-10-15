@@ -7,6 +7,7 @@ from functools import lru_cache
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from api.config import Settings, get_settings
@@ -103,7 +104,7 @@ def get_recipe(recipe_id: str, store: Annotated[RecipeStore, Depends(get_recipe_
 
 
 @router.post("", response_model=Recipe, status_code=201)
-def save_recipe(
+async def save_recipe(
     body: SaveRecipeRequest,
     store: Annotated[RecipeStore, Depends(get_recipe_store)],
     projects: Annotated[ProjectSessionService, Depends(get_project_service)],
@@ -116,6 +117,8 @@ def save_recipe(
     if snapshot is None:
         raise api_error(422, "RECIPE_REQUIRES_VALIDATED_MODEL", "Validate the current model before saving a recipe")
     try:
-        return store.save(body.name, snapshot.model_spec, max_operations=settings.max_operations_per_plan)
+        return await run_in_threadpool(
+            store.save, body.name, snapshot.model_spec, max_operations=settings.max_operations_per_plan
+        )
     except ValueError as exc:
         raise api_error(422, "RECIPE_TOO_COMPLEX", str(exc)) from exc

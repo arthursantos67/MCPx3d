@@ -117,3 +117,19 @@ def test_clarify_and_no_change_do_not_require_a_target() -> None:
     )
 
     assert [op.op for op in plan.operations] == ["clarify", "no_change"]
+
+
+@pytest.mark.parametrize("operation", [
+    {"op": "delete_object", "target": "obj_a\n"},
+    {"op": "set_material", "target": "obj_a", "color": "#ff0000\n"},
+])
+def test_trailing_newline_is_rejected_in_plan_ids_and_colors(operation: dict) -> None:
+    with pytest.raises(ValidationError):
+        ModelPlan.model_validate({"intent": "modify_model", "operations": [operation]})
+
+
+def test_plan_ids_and_colors_without_trailing_newline_are_accepted() -> None:
+    ModelPlan.model_validate({"intent": "modify_model", "operations": [
+        {"op": "delete_object", "target": "obj_a"},
+        {"op": "set_material", "target": "obj_a", "color": "#ff0000"},
+    ]})

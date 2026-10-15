@@ -19,6 +19,7 @@ from functools import lru_cache
 
 from domain.model_spec import ModelSpec, Scene, Units
 
+from api.artifacts import StaleArtifactRequestError
 from api.config import get_settings
 
 _PROJECT_ID_PREFIX = "prj_"
@@ -79,6 +80,10 @@ class RevisionSnapshot:
     x3d_content: str
 
 
+class _ArtifactBuildCancelledError(Exception):
+    """A shared build was cancelled because its project was renamed, committed, or deleted."""
+
+
 @dataclass(frozen=True)
 class _CachedArtifact:
     content: str
@@ -109,7 +114,13 @@ class _ArtifactCache:
             in_flight = asyncio.create_task(self._build(key, build))
             self._inflight[key] = in_flight
             in_flight.add_done_callback(lambda task: None if task.cancelled() else task.exception())
-        return await asyncio.shield(in_flight)
+        try:
+            return await asyncio.shield(in_flight)
+        except asyncio.CancelledError:
+            current = asyncio.current_task()
+            if current is not None and current.cancelling():
+                raise
+            raise _ArtifactBuildCancelledError from None
 
     async def _build(self, key: tuple[str, int, str], build: Callable[[], Awaitable[str]]) -> str:
         try:
@@ -130,6 +141,12 @@ class _ArtifactCache:
         for key in [key for key in self._inflight if key[0] == project_id]:
             task = self._inflight.pop(key)
             task.cancel()
+
+    def remove_older_revisions(self, project_id: str, revision: int) -> None:
+        for key in [key for key in self._entries if key[0] == project_id and key[1] < revision]:
+            del self._entries[key]
+        for key in [key for key in self._inflight if key[0] == project_id and key[1] < revision]:
+            del self._inflight[key]
 
     def collect_expired(self) -> None:
         now = self._clock()
@@ -235,6 +252,7 @@ class ProjectSessionService:
         session.validated_x3d = {session.revision: validated_x3d} if validated_x3d else {}
         session.validation_summary = validation_summary if validated_x3d else None
         session.html_artifacts = {}
+        self._artifact_cache.remove_older_revisions(project_id, session.revision)
         return session
 
     def cache_html_artifact(self, project_id: str, revision: int, content: str) -> None:
@@ -246,9 +264,11 @@ class ProjectSessionService:
         session = self.get_project(project_id)
         if session.revision != expected_revision:
             raise RevisionConflictError(project_id, expected_revision, session.revision)
-        scene = session.model_spec.scene.model_copy(update={"title": title.strip(), "titleSource": "user"})
         next_revision = expected_revision + 1
-        session.model_spec = session.model_spec.model_copy(update={"scene": scene, "revision": next_revision})
+        payload = session.model_spec.model_dump()
+        payload["scene"].update(title=title.strip(), titleSource="user")
+        payload["revision"] = next_revision
+        session.model_spec = ModelSpec.model_validate(payload)
         x3d = session.validated_x3d.get(expected_revision)
         session.validated_x3d = {next_revision: x3d} if x3d is not None else {}
         session.html_artifacts = {}
@@ -274,9 +294,13 @@ class ProjectSessionService:
         format_key: str,
         build: Callable[[], Awaitable[str]],
     ) -> str:
-        return await self._artifact_cache.get_or_build(
-            (snapshot.project_id, snapshot.revision, format_key), build
-        )
+        try:
+            return await self._artifact_cache.get_or_build(
+                (snapshot.project_id, snapshot.revision, format_key), build
+            )
+        except _ArtifactBuildCancelledError:
+            current_revision = self.get_project(snapshot.project_id).revision
+            raise StaleArtifactRequestError(snapshot.project_id, snapshot.revision, current_revision) from None
 
     def collect_expired(self) -> int:
         expired = [

@@ -30,15 +30,17 @@ Se a geração falhar, **Baixar rascunho STEP/STL (ZIP)** exporta os sólidos di
 
 No X3D, descreva a cena, peça alterações ou aplique uma receita da biblioteca. Baixe X3D, HTML, ClassicVRML ou JSON do projeto. O JSON permite importar a cena depois de reiniciar a API. A prévia HTML utiliza X3DOM e precisa de internet para carregar esse visualizador.
 
-No menu **Three.js · Estúdio de cenas**, crie cenas ou escolha **Exemplo detalhado** para explorar o Observatório Helix. O catálogo inclui perfis extrudados/de revolução, tubos por curvas e malhas, além de primitivas. Use **Importar GLB** para modelos estáticos detalhados e **Tela cheia** para inspecioná-los com materiais físicos, texturas, reflexões e sombras. A timeline oferece rotação, flutuação e órbita.
+No menu **Three.js · Estúdio de cenas**, descreva um mundo para a IA ou abra **Exemplo jogável** (Ilha do Farol) e pressione **▶ Jogar**/**P** para explorar em primeira pessoa: WASD, mouse, Shift, Espaço, F para voo e E para abrir portas e interagir; cristais são coletados ao se aproximar. O catálogo inclui terreno procedural, luzes pontuais/spot, texto, poliedros, perfis, tubos e malhas; o ambiente oferece céu físico, noite, neblina e bloom. No editor, W/E/R ativam gizmos e **?** lista os atalhos. Use **Importar GLB** para modelos estáticos, **Exportar GLB** para levar a cena animada a outras ferramentas e **Capturar PNG** para imagens.
 
-Em **Ação da IA**, escolha **Criar nova cena**, **Editar cena atual** ou **Corrigir sobreposições**. Edição envia o contexto existente e aplica patches por ID; reparo inspeciona superfícies e movimentos em poses amostradas, preservando os objetos. **Verificar sobreposições** funciona localmente, sem IA. Criação/edição recusam interferências novas e uma proposta inválida conserva a cena anterior. O painel mostra etapa, tempo e histórico; o prazo total é de 2, 5 (padrão) ou 10 minutos.
+O pedido determina a ação da IA; **Opções de criação** permite escolher **Criar nova cena**, **Editar cena atual** ou **Corrigir cena** explicitamente. Edição envia contexto e aplica patches por ID, incluindo remoções solicitadas; reparo inspeciona superfícies e movimentos em poses amostradas, preservando os objetos. **Projeto → Verificar cena** funciona localmente, sem IA. Criação/edição guardam a melhor candidata construída e informam problemas restantes; reparo exige melhora sem novos pares. **Atividade** mostra etapa, tempo e histórico; o prazo total é de 2, 5 (padrão) ou 10 minutos.
 
-Three.js exporta/importa projeto JSON 1.1 e migra arquivos 1.0. Edição/reprodução funcionam sem API/IA; o viewport requer WebGL2. Rascunhos usam o navegador; malhas/texturas grandes podem exceder sua quota, com aviso para exportar JSON. GLB aceita o perfil estático documentado; skins, clipes e arquivos comprimidos ainda exigem expansão. [Capacidades, limites e próximos passos](docs/threejs-studio.md).
+Three.js exporta/importa projeto JSON 1.2 e migra arquivos 1.0/1.1. Edição, reprodução e jogo funcionam sem API/IA; o viewport requer WebGL2. Rascunhos usam o navegador; malhas/texturas grandes podem exceder sua quota, com aviso para exportar JSON. Colisão de objetos móveis é aproximada e não há física de corpos rígidos. [Capacidades, limites e próximos passos](docs/threejs-studio.md).
 
 CAD e receitas usam SQLite em `apps/api/data`. Projetos X3D são temporários e expiram após uma hora de inatividade por padrão. A linguagem CAD possui limites explícitos: [formatos e capacidades](docs/cad-readiness.md).
 
 O catálogo CAD oferece 21 recursos, incluindo roscas reais, engrenagens/cremalheiras, curvas de tubo, molas e trajetórias 3D segmentadas. Acabamentos podem ser limitados por região. [Melhorias e avaliação real de confiabilidade](docs/project-improvements-2026-10-08.md) registram resultados e limitações.
+
+O Three.js abre com a cena em destaque e criação por conversa. **Editor avançado** torna os controles manuais opcionais; **Projeto** reúne arquivos e exemplos, e **Atividade** mostra diagnósticos. **Jogar** usa toda a janela. A [revisão de qualidade de 15/10](docs/threejs-production-upgrade.md) documenta terrenos com biomas, detalhamento, revisão do agente, edição por conversa e a referência Vale dos Ventos.
 
 ## Desenvolvimento
 
@@ -59,7 +61,7 @@ Para configurar os testes de navegador e executar as suítes Python, consulte [d
 | Pasta | Responsabilidade |
 |---|---|
 | `apps/web/src/cad` | Agente CAD, editores, movimento e visualizador de malha |
-| `apps/web/src/three` | Editor de cenas, contrato JSON e motor Three.js local |
+| `apps/web/src/three` | Editor e modo jogo, contrato JSON, motor Three.js e exportação GLB locais |
 | `apps/web/src/chat` e `src/x3d` | Conversa e área X3D |
 | `apps/web/src/ai` e `src/workspace` | Provedor configurado e navegação compartilhada |
 | `apps/api/src/api` | Motores, validação, persistência e rotas |

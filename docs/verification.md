@@ -2,6 +2,54 @@
 
 As seções mantêm resultados e ambiente de cada revisão. Os registros anteriores ao estúdio Three.js foram obtidos em Windows/PowerShell, Node 24, Python 3.12 e Chrome instalado. A configuração CI está versionada; os resultados abaixo são locais.
 
+## Caminhos, camadas de terreno e execução do plano — 2026-10-15
+
+- Núcleo final: **81/81 testes**, repetidos após a recuperação de estradas antigas sem suporte. Casos novos verificam amostras no interior dos triângulos e nas arestas de estradas largas/curvas, cruzamentos sem superfícies duplicadas, reconstrução após edição do relevo, preservação de deslocamentos, terrenos concorrentes, metragens dos mapas PBR, exportação alternativa GLB e execução/revisão espacial do plano.
+- Navegador: **6 cenários distintos**. A primeira rodada passou **5/5** (restauração do Vale, piso legado, pradaria, alpino e cadeia completa pela interface). Após as correções finais de normais e total de chamadas, os três casos de terreno/cadeia passaram **3/3**. O caso adicional de faixa antiga plana sem suporte passou **1/1**, comprovando recuperação ao abrir, geometria reconstruída e exportação sem caminho enterrado/flutuante.
+- O caso da cadeia programa três respostas HTTP do provedor: plano, casa de um pavimento e refinamento para os dois pavimentos exigidos. Verifica o plano no contexto do construtor, diagnóstico na chamada de refinamento, caminho materializado, sete cristais, início definido e histórico **chamada 3 de até 3**. Essa é uma integração real da interface e dos compiladores com IA simulada; não mede a competência de um modelo real em pedidos livres.
+- As capturas `.cache/browser/terrain-meadow-paths.png`, `terrain-alpine-paths.png` e `terrain-legacy-road-recovered.png` mostram a geometria renderizada. Os testes monitoram erros JavaScript/GLSL e reavaliam o JSON exportado. Chromium/SwiftShader, sem benchmark de GPU física.
+- Vale rebalanceado: **982 objetos**, **1.430 triângulos de caminhos**, nenhum problema na auditoria; JSON completo **5.399.987 bytes**, rascunho **2.388.274 bytes UTF-8 / 4.775.740 bytes UTF-16**. A nova geometria dos caminhos é quantizada em micrômetros para reduzir armazenamento sem perder a folga de superfície.
+- Build de produção, tipos web, lint e `git diff --check` passaram. Mantém-se o aviso de bundles grandes. O GLB não reproduz a mistura personalizada de camadas PBR; recebe UVs com escala física. A revisão de rotas usa amostragem conservadora e não prova navegação completa em qualquer cena.
+
+## Pisos, cadeia de geração e persistência Three.js — 2026-10-15
+
+- Núcleo: **66/66 testes** após as alterações. Regressões novas cobrem superfícies coplanares expostas/enterradas, migração idempotente do piso antigo, preservação de materiais e conteúdo autoral, reconstrução de uma casa duplicada antiga com controles externos, validação/execução/cancelamento/quota da cadeia de planejamento, cache de sombras e geometria/alpha da vegetação. Um reparo com cobertura coplanar incompleta não é aprovado.
+- Navegador: primeira rodada **8/8**, cobrindo porta e exploração do sobrado, interior superior, reforma por conversa, criação simples e móvel, salvamento/restauração do Vale completo e migração do térreo antigo. Após o ajuste final de cobertura/progresso, a rodada focada passou em **3/3**: interior superior reenquadrado, inspeção/reparo com edição contextual e auditoria/reparo automático. São **10 cenários distintos** nesta revisão. Sem erros JavaScript/shader nos cenários que monitoram esses eventos. Testes usam Chromium/SwiftShader e provedor programado.
+- A cena de referência tem **982 objetos**, 95.922 triângulos de malhas personalizadas (sem contar primitivas/terreno) e nenhum problema no layout auditado. O JSON completo ocupa **5.266.487 bytes**; o rascunho deduplicado, **2.254.774 bytes UTF-8 / 4.508.740 bytes UTF-16**. O Chromium confirmou o salvamento na quota real e a restauração de todos os objetos e sete coletáveis.
+- Capturas desta rodada: `.cache/browser/architecture-ground-floor-fixed.png`, `architecture-exterior.png`, `architecture-upper-interior.png`, `three-create.png` e `three-valley-game.png`. A captura do piso mostra o documento legado migrado; o teste também compara os dados exportados e a preservação das outras peças.
+- Build de produção, checagem de tipos e lint passaram; permanece o aviso de bundles grandes. A cadeia foi verificada com respostas simuladas, sem aferir qualidade de um modelo real ou FPS em GPU física. Isso não estabelece equivalência visual com Unreal Engine nem conclusão da versão 1.0.
+
+## Arquitetura habitável e edição semântica Three.js — 2026-10-15
+
+Revisão detalhada: [arquitetura, agente e renderer](threejs-production-upgrade.md#arquitetura-habitável-e-edição-semântica).
+
+- Núcleo Three.js final: **54/54** testes. Inclui vãos reais consultados nos dois sentidos, portas nas poses amostradas, subida e descida da escada por cápsula humana sem pular, início dentro dos dois pavimentos, reconstrução por parâmetros, refinamento de requisitos arquitetônicos e preservação de recompensas no piso superior.
+- Navegador: **26 cenários distintos verificados**. A rodada completa passou em 24; os dois casos restantes encontraram normalização de `-0` no JSON e prazo de captura em software. A comparação foi ajustada ao contrato JSON e o prazo dedicado passou a 90 s. A repetição final aprovou **5/5**, incluindo esses dois casos, interior superior, reconstrução por conversa com recompensa no quarto e auditoria/reparo.
+- `npm test` passou nos workspaces/golden durante a revisão; após a última correção de pisos, os 54 testes Three.js foram executados novamente. Checagem de tipos, lint web, build de produção e `git diff --check` passaram. O build ainda informa bundles grandes de Three.js/WebLLM.
+- Vale dos Ventos: **1.053 objetos**, quatro plantas arquitetônicas, três casas com pavimento superior, sete cristais e auditoria completa sem problemas. JSON de aproximadamente **2,30 MB**. O exemplo **Casa com dois pavimentos** abre uma referência próxima para testar os interiores.
+- Capturas: `.cache/browser/architecture-exterior.png`, `architecture-entry.png` e `architecture-upper-interior.png`. Chromium/SwiftShader no Windows; testes do agente usam provedor simulado. Sem medição em GPU física ou aferição de qualidade com geração livre de um modelo real.
+
+Os testes de navegador usam ESM para importar os mesmos compiladores da aplicação. A configuração geral também lista seus 63 cenários sem erro de carregamento; os cenários CAD/API não foram executados nesta rodada de navegador.
+
+## Experiência e qualidade Three.js — 2026-10-15
+
+Revisão: [experiência de criação, terrenos, agente e nível de referência](threejs-production-upgrade.md).
+
+- `npm test`: passou nas suítes de workspaces e golden durante esta revisão.
+- Núcleo Three.js após os ajustes finais: **48/48** testes, incluindo terreno/biomas, estradas, remoções por conversa, preservação de parâmetros do jogador e refinamento do agente.
+- Navegador: **23 cenários verificados**. A rodada completa aprovou 22; a captura/exportação da ilha terminou as ações, mas excedeu o prazo geral de 60 s no SwiftShader. Com prazo específico de 90 s, esse cenário passou; a repetição focada também aprovou criação/remoção por conversa e reparo/edição contextual (**3/3**).
+- `npm run typecheck`, `npm run lint:web`, `npm run build` e `git diff --check`: passaram. O build conserva o aviso de bundles grandes de Three.js/WebLLM.
+- Referência Vale dos Ventos: **1.133 objetos**, sete coletáveis, destino e auditoria completa sem problemas nas poses amostradas. Layout recalculável por `node scripts/bake-three-showcase.mjs`.
+- Chromium Headless Shell 153/SwiftShader no Windows. Integrações de IA nos testes de navegador usam respostas simuladas; não foi aferida qualidade de geração livre com um provedor real nem FPS em GPU física.
+
+A configuração `playwright.three.config.ts` permite repetir as regressões de navegador do Three.js sem iniciar a API/CAD. Os controles avançados são abertos explicitamente pelos testes de edição; a experiência simples possui testes próprios.
+
+## Estúdio jogável Three.js — 2026-10-14
+
+Windows/PowerShell, Node 24 e Chrome instalado via `PLAYWRIGHT_CHROMIUM_EXECUTABLE`, renderer em SwiftShader. **536 testes TypeScript/golden passaram**: 97 web (31 Three.js, 9 novos em `sceneGame.test.ts`), 348 agente, 79 domínio e 12 golden. Typecheck dos workspaces/testes, lint e build passaram. **17 testes de navegador Three.js passaram**, executados uma suíte por vez para limitar memória: `three-studio` (11), `three-quality` (3) e a nova `three-game` (3) — exemplo jogável com céu, luzes e pós-processamento sem erros de shader, exportação GLB (cabeçalho glTF, clipes, `KHR_lights_punctual`) e PNG, modo jogo por teclado com coleta por proximidade, porta aberta com E, gatilho de tecla, deslocamento, voo e documento inalterado, além de gizmos/atalhos, luz spot, céu noturno e bloom.
+
+A inspeção espacial da Ilha do Farol (350 nós) concluiu sem pares inesperados em todas as poses amostradas, inclusive com a porta aberta. Ajustes de renderização encontrados nas capturas: o céu físico passou a ser desenhado após o bloom com radiância calibrada, e o plano de sombra deixou de bloquear o céu. Screenshots em `.cache/browser/three-island-editor.png`, `three-island-game.png` e `three-night-light.png`. O bundle sob demanda Three.js passou para ~982 kB (266 kB gzip); `sceneExport` é carregado à parte (~39 kB). Não houve GPU real, medição de FPS representativa, avaliação com provedor de IA real nem teste com 2.000 nós; colisão de objetos móveis é aproximada por caixas.
+
 ## Autoria, qualidade e reparo Three.js — 2026-10-14
 
 **527 testes TypeScript/golden passaram**: 88 web (22 Three.js), 348 agente, 79 domínio e 12 golden. **14 testes de navegador passaram em 2,5 minutos**, incluindo três novos casos de tela cheia nativa/fallback/Escape, edição/reparo contextual com worker real e importação de GLB indexado com recuperação após reload e recusa de clipes/recursos externos. Typecheck dos workspaces/testes, lint e build passaram. A verificação de material GLB inclui opacidade, transparência e dupla face.

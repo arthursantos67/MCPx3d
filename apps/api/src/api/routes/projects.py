@@ -11,7 +11,7 @@ from typing import Annotated
 
 from domain.model_spec import ModelSpec
 from fastapi import APIRouter, Depends, Response
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from api.projects import ProjectSessionService, get_project_service
 from api.routes.plans import (
@@ -29,6 +29,14 @@ class SceneTitleUpdate(BaseModel):
 
     expectedRevision: int = Field(ge=0)
     title: str = Field(min_length=1, max_length=80)
+
+    @field_validator("title")
+    @classmethod
+    def _strip_title(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("title must not be blank")
+        return value
 
 
 @router.post("", response_model=ModelSpec, status_code=201)

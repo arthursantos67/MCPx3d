@@ -51,6 +51,9 @@ export class WebLLMProvider implements LLMProvider {
   private state: WebLLMProviderState = { phase: "idle" };
   private readonly listeners = new Set<StateListener>();
   private engine: MLCEngineInterface | null = null;
+  private worker: unknown = null;
+  private initialization: Promise<void> | null = null;
+  private lifecycle = 0;
 
   constructor(
     modelId: string,
@@ -80,27 +83,59 @@ export class WebLLMProvider implements LLMProvider {
     return capability.available;
   }
 
-  /** Never throws: failures land in state as `{ phase: "error" }`/`{ phase: "unsupported" }`. */
-  async initialize(): Promise<void> {
+  /** Never throws: failures land in state as `{ phase: "error" }`/`{ phase: "unsupported" }`.
+   * Concurrent and repeated calls share one engine; a failed load may be retried. */
+  initialize(): Promise<void> {
+    this.initialization ??= this.load();
+    return this.initialization;
+  }
+
+  private async load(): Promise<void> {
+    const lifecycle = this.lifecycle;
     const capability = await this.detectWebGpu();
+    if (lifecycle !== this.lifecycle) return;
     if (!capability.available) {
+      this.initialization = null;
       this.setState({ phase: "unsupported", reason: capability.reason ?? NO_WEBGPU_REASON });
       return;
     }
 
     this.setState({ phase: "loading", progress: { progress: 0, text: "", timeElapsed: 0 } });
 
+    let worker: unknown = null;
     try {
-      const worker = this.createWorker();
-      this.engine = await this.createEngine(worker, this.modelId, {
+      worker = this.createWorker();
+      this.worker = worker;
+      const engine = await this.createEngine(worker, this.modelId, {
         initProgressCallback: (progress) => {
-          this.setState({ phase: "loading", progress });
+          if (lifecycle === this.lifecycle) this.setState({ phase: "loading", progress });
         },
       });
+      if (lifecycle !== this.lifecycle) {
+        await releaseEngine(engine, worker);
+        return;
+      }
+      this.engine = engine;
       this.setState({ phase: "ready" });
     } catch (error) {
+      if (lifecycle !== this.lifecycle) return;
+      terminateWorker(worker);
+      this.worker = null;
+      this.initialization = null;
       this.setState({ phase: "error", message: error instanceof Error ? error.message : String(error) });
     }
+  }
+
+  /** Unloads the model and terminates its worker; a later `initialize()` starts over. */
+  async dispose(): Promise<void> {
+    this.lifecycle += 1;
+    const engine = this.engine;
+    const worker = this.worker;
+    this.engine = null;
+    this.worker = null;
+    this.initialization = null;
+    this.setState({ phase: "idle" });
+    await releaseEngine(engine, worker);
   }
 
   async generateStructured<T>(
@@ -112,14 +147,19 @@ export class WebLLMProvider implements LLMProvider {
       throw new Error(`WebLLMProvider.generateStructured called while not ready (phase: ${this.state.phase})`);
     }
 
+    options?.signal?.throwIfAborted();
+    const engine = this.engine;
+    const interrupt = (): void => engine.interruptGenerate();
+    options?.signal?.addEventListener("abort", interrupt, { once: true });
     this.setState({ phase: "generating" });
     try {
-      const completion = await this.engine.chat.completions.create({
+      const completion = await engine.chat.completions.create({
         messages: toWebLlmMessages(messages),
         response_format: { type: "json_object", schema: JSON.stringify(schema) },
         temperature: options?.temperature,
-        max_tokens: options?.maxTokens,
+        max_tokens: Math.min(options?.maxTokens ?? this.maxOutputTokens, this.maxOutputTokens),
       });
+      options?.signal?.throwIfAborted();
       const choice = completion.choices[0];
       return parseStructuredCompletion(
         choice?.message.content,
@@ -127,7 +167,8 @@ export class WebLLMProvider implements LLMProvider {
         options?.onCompletion,
       ) as T;
     } finally {
-      this.setState({ phase: "ready" });
+      options?.signal?.removeEventListener("abort", interrupt);
+      if (this.engine === engine) this.setState({ phase: "ready" });
     }
   }
 
@@ -138,6 +179,19 @@ export class WebLLMProvider implements LLMProvider {
   private setState(state: WebLLMProviderState): void {
     this.state = state;
     for (const listener of this.listeners) listener(state);
+  }
+}
+
+function terminateWorker(worker: unknown): void {
+  const terminate = (worker as { terminate?: unknown } | null)?.terminate;
+  if (typeof terminate === "function") terminate.call(worker);
+}
+
+async function releaseEngine(engine: MLCEngineInterface | null, worker: unknown): Promise<void> {
+  try {
+    await engine?.unload();
+  } finally {
+    terminateWorker(worker);
   }
 }
 

@@ -29,10 +29,10 @@ test('compact linear and radial recipes expand deterministically and preserve an
   assert.equal(new Set(radial.nodes.map((node) => node.id)).size, 4)
 })
 
-test('procedural expansion rejects overflow, invalid arithmetic, repeated groups and ID collisions', () => {
+test('procedural expansion rejects overflow, invalid arithmetic and ID collisions, and repeats groups', () => {
   const source = recipe()
-  assert.throws(() => expandSceneRecipe({ ...source, nodes: Array.from({ length: 6 }, (_, i) => ({ ...template(`part-${i}`), repeat: { ...template().repeat, count: 100 } })) }), /500/)
-  assert.throws(() => expandSceneRecipe({ ...source, nodes: [{ ...template(), kind: 'group' }] }), /Grupos/)
+  assert.throws(() => expandSceneRecipe({ ...source, nodes: Array.from({ length: 6 }, (_, i) => ({ ...template(`part-${i}`), repeat: { ...template().repeat, count: 400 } })) }), /2000/)
+  assert.equal(expandSceneRecipe({ ...source, nodes: [{ ...template(), kind: 'group' }] }).nodes.length, 40)
   assert.throws(() => expandSceneRecipe({ ...source, nodes: [{ ...template(), position: ['1', 0, 0] }] }), /Posição/)
   assert.throws(() => expandSceneRecipe({ ...source, nodes: [{ ...template(), repeat: { ...template().repeat, offset: [Infinity, 0, 0] } }] }), /Offset/)
   assert.throws(() => expandSceneRecipe({ ...source, nodes: [template('detail'), template('detail~2')] }), /duplicados/)

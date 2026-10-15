@@ -104,3 +104,19 @@ test("isUsableByokConfig requires every field to be non-empty", () => {
     true,
   );
 });
+
+test("blocked browser storage falls back to the local default without throwing", () => {
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, "window");
+  Object.defineProperty(globalThis, "window", {
+    configurable: true,
+    value: { get localStorage(): Storage { throw new DOMException("blocked", "SecurityError"); } },
+  });
+  try {
+    assert.equal(loadProviderConfig().mode, "local");
+    assert.doesNotThrow(() => saveProviderConfig({ mode: "local" }));
+    assert.doesNotThrow(() => clearProviderConfig());
+  } finally {
+    if (descriptor) Object.defineProperty(globalThis, "window", descriptor);
+    else delete (globalThis as { window?: unknown }).window;
+  }
+});

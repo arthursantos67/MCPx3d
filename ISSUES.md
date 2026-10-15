@@ -1,6 +1,6 @@
 # Forma — estado e próximos trabalhos
 
-Baseline de 2026-10-02, alinhada ao [PRD](PRD.md). O planejamento antigo permanece no [arquivo histórico](docs/archive/README.md). Atualização Three.js de 2026-10-13.
+Baseline de 2026-10-02, alinhada ao [PRD](PRD.md). O planejamento antigo permanece no [arquivo histórico](docs/archive/README.md). Atualização Three.js de 2026-10-14.
 
 ## Three.js — frente iniciada em 2026-10-13
 
@@ -8,13 +8,18 @@ Primeira entrega: terceiro menu, viewport local, pavilhão demonstrativo, primit
 
 Revisão de 2026-10-14: catálogo ampliado para perfis/curvas/malhas, GLB estático, materiais físicos/texturas/reflexões/sombras, tela cheia e edição/reparo contextual com inspeção geométrica em worker. Inserção/duplicação posicionam objetos fora dos limites dos anteriores. Escopo e limites no documento do estúdio.
 
+Estúdio jogável (2026-10-14): contrato 1.2 com luzes, terreno, texto, poliedros, keyframes e interações; modo jogo em primeira pessoa com colisão; céu físico, neblina, bloom e mapeamento tonal; gizmos com encaixe e atalhos; instanciamento automático; 17 texturas com relevo; exportação GLB/PNG; receitas com grade, dispersão e `onto`; exemplo jogável Ilha do Farol. Contrato e limites em [docs/threejs-studio.md](docs/threejs-studio.md).
+
+Ampliação temática e auditoria (2026-10-15): tópico de espaço sideral, superfícies planetárias e 13 famílias temáticas no guia do construtor; seis biomas e dezenove pré-fabricados novos verificados sem interseções/coplanaridade em várias variantes; planejamento que repara em vez de descartar; correções do runtime de jogo (pisão em inimigos, queda através de pisos, passagens ocultas, vitória indevida, histórico em ações assíncronas, GLB em milímetros). Detalhes em [docs/threejs-production-upgrade.md](docs/threejs-production-upgrade.md#ampliação-temática-e-correções-da-cadeia).
+
 Próximos incrementos desta frente:
 
-1. Gizmos de transformação, seleção múltipla e biblioteca de materiais; medir interação com cenas de 100/500 nós antes de ampliar limites.
-2. Evoluir GLB estático local para pipeline completo com mapas físicos, compressão/clipes, persistência de assets, progresso e exportação.
-3. InstancedMesh, LOD e culling com benchmark reproduzível por hardware; metas de escala dependem dessas medições.
-4. Evoluir geração inicial para edição incremental/planejamento por etapas e medir conclusão/latência com IA real. Preservar aplicação atômica e proibição de JavaScript gerado.
-5. Revisões persistentes, exportação GLB, iluminação HDRI, keyframes/animação esquelética e pós-processamento em fases próprias.
+0. Medir com o provedor real a fidelidade dos temas novos (espaço, floresta, praia, neve, subaquático, cidade) e a taxa de sobreposição (Codex/Claude) num conjunto fixo de pedidos, comparando pré-fabricados/layout automático com a receita peça a peça.
+1. Seleção múltipla, biblioteca de materiais e medição de FPS/memória/tempo de inspeção em cenas de 500/2.000 nós com GPU real antes de ampliar limites.
+2. Física de corpos rígidos opcional, áudio espacial, eventos encadeados, inimigos com variedade de ataques e plataformas móveis que carregam o jogador; colisão exata de objetos móveis.
+3. Pipeline de assets: mapas físicos/compressão/clipes de GLB importado, persistência IndexedDB/servidor e exportação HTML jogável autocontida.
+4. LOD e streaming com benchmark reproduzível por hardware; metas de escala dependem dessas medições.
+5. Planejamento incremental por etapas para cenas maiores e medição de conclusão/latência/fidelidade com IA real. Preservar aplicação atômica e proibição de JavaScript gerado.
 
 ## Concluído nesta reorganização
 

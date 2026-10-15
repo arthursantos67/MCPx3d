@@ -37,7 +37,7 @@ test('bounds hierarchy depth, node count and imported bytes', () => {
   const doc = { ...createEmptyScene(), nodes }
   assert.equal(validateScene(doc).nodes.length, 12)
   assert.throws(() => validateScene({ ...doc, nodes: [...nodes, createNode('box', nodes.at(-1)!.id)] }), /12 níveis/)
-  assert.throws(() => validateScene({ ...doc, nodes: Array.from({ length: MAX_SCENE_NODES + 1 }, () => createNode('box')) }), /500 nós/)
+  assert.throws(() => validateScene({ ...doc, nodes: Array.from({ length: MAX_SCENE_NODES + 1 }, () => createNode('box')) }), /2000 nós/)
   assert.throws(() => parseScene(' '.repeat(32 * 1024 * 1024 + 1)), /32 MB/)
   assert.throws(() => parseScene('{"version":'), SyntaxError)
 })

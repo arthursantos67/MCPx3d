@@ -1,28 +1,44 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import ThreeViewport from './ThreeViewport.tsx'
+import ThreeViewport, { type GizmoMode, type TransformPatch, type ViewportController } from './ThreeViewport.tsx'
 import ThreeStage from './ThreeStage.tsx'
 import GeometryEditor from './GeometryEditor.tsx'
 import { importGlb } from './importGlb.ts'
 import { inspectSceneAsync } from './inspectSceneAsync.ts'
 import type { SceneInspection } from './sceneInspection.ts'
 import { insertionPosition } from './scenePlacement.ts'
-import { generateThreeScene, editThreeScene, SceneGenerationTimeoutError, type SceneGenerationEvent } from './sceneGeneration.ts'
+import { expandSceneRecipe, generateThreeScene, editThreeScene, healScene, SceneGenerationTimeoutError, type SceneGenerationEvent, type SceneGenerationReport } from './sceneGeneration.ts'
 import ThreeGenerationProgress, { type SceneGenerationRun } from './ThreeGenerationProgress.tsx'
+import { auditScene, describeAudit, type SceneAudit } from './sceneLayout.ts'
 import type { AgentProvider } from '../ai/types.ts'
-import { createPavilionScene, createOrbitalScene } from './scenePreset.ts'
+import { createPavilionScene, createOrbitalScene, createIslandScene } from './scenePreset.ts'
+import { createArchitectureScene, createValleyScene } from './sceneShowcase.ts'
+import { createCreationStage,createCombatArenaScene,createPlatformCourseScene,createLabPuzzleScene,createSolarSystemScene,createEnchantedForestScene,creationIdeas } from './sceneExperiences.ts'
+import { inferSceneAction } from './sceneDirection.ts'
+import { serializeSceneDraft } from './sceneDraft.ts'
+import { conformTerrainPaths } from './sceneGrounding.ts'
+import { prefabLabels, prefabTypes, type PrefabType } from './scenePrefabs.ts'
 import { normalizeProjectName } from '../workspace/projectName.ts'
-import { commitScene, createEmptyScene, createNode, duplicateSubtree, MAX_SCENE_BYTES, MAX_SCENE_NODES, nodeLabels,
-  parseScene, redoScene, SCENE_STORAGE_KEY, subtreeIds, undoScene,
-  type NodeKind, type SceneHistory, type SceneNode, type ThreeSceneDocument, type Vector3Tuple } from './sceneDocument.ts'
+import { editorShortcut, editorShortcutList, isTypingTarget, type EditorCommand } from './sceneKeyboard.ts'
+import { commitScene, createEmptyScene, createNode, duplicateSubtree, hasSurface, INTERACTION_KEYS, MAX_SCENE_BYTES, MAX_SCENE_NODES, nodeLabels,
+  parseScene, redoScene, removeSubtree, SCENE_STORAGE_KEY, skyLabels, skyPresets, subtreeIds, textureKinds, textureLabels, undoScene, validateAnimation,validateScene,
+  type NodeKind, type SceneAnimation, type SceneHistory, type SceneInteraction, type SceneKeyframe, type SceneNode, type ScenePlayer, type ThreeSceneDocument, type Vector3Tuple } from './sceneDocument.ts'
 import './ThreeWorkspace.css'
 
-function loadDraft(): { document: ThreeSceneDocument; error: string | null } {
+function loadDraft(): { document: ThreeSceneDocument; error: string | null; restored?: boolean } {
   try {
     const stored = localStorage.getItem(SCENE_STORAGE_KEY)
-    return { document: stored ? parseScene(stored) : createPavilionScene(), error: null }
+    return { document: stored ? validateScene(conformTerrainPaths(parseScene(stored))) : createCreationStage(), error: null, restored: !!stored }
   } catch (error) {
-    return { document: createPavilionScene(), error: `Não foi possível recuperar o rascunho: ${error instanceof Error ? error.message : String(error)} O exemplo foi aberto; o rascunho anterior será preservado até sua próxima edição.` }
+    return { document: createCreationStage(), error: `Não foi possível recuperar o rascunho: ${error instanceof Error ? error.message : String(error)} O espaço de criação foi aberto; o rascunho anterior será preservado até sua próxima edição.` }
   }
+}
+function download(blob: Blob, name: string) {
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = name
+  link.click()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 function NumericField({ label, value, min, max, step = 0.1, onChange }: {
   label: string; value: number; min: number; max: number; step?: number; onChange: (value: number) => void
@@ -41,11 +57,15 @@ function NumericField({ label, value, min, max, step = 0.1, onChange }: {
     onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur() }} />
     {invalid && <small role="alert">Use {min} a {max}.</small>}</label>
 }
-function TextField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+function TextField({ label, value, max = 120, onChange }: { label: string; value: string; max?: number; onChange: (value: string) => void }) {
   const [draft, setDraft] = useState(value)
-  return <label className="three-field">{label}<input value={draft} maxLength={120}
+  return <label className="three-field">{label}<input value={draft} maxLength={max}
     onChange={(event) => setDraft(event.target.value)} onBlur={() => { if (draft.trim()) onChange(draft); else setDraft(value) }}
     onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur() }} /></label>
+}
+function SelectField<T extends string>({ label, value, options, onChange }: { label: string; value: T; options: [T, string][]; onChange: (value: T) => void }) {
+  return <label className="three-field">{label}<select value={value} onChange={(event) => onChange(event.target.value as T)}>
+    {options.map(([option, text]) => <option key={option} value={option}>{text}</option>)}</select></label>
 }
 function VectorFields({ label, value, min, max, step, onChange }: {
   label: string; value: Vector3Tuple; min: number; max: number; step?: number; onChange: (value: Vector3Tuple) => void
@@ -54,6 +74,17 @@ function VectorFields({ label, value, min, max, step, onChange }: {
     <NumericField key={`${axis}-${value[index]}`} label={`${label} ${axis}`} value={value[index]} min={min} max={max} step={step}
       onChange={(next) => { const vector: Vector3Tuple = [...value]; vector[index] = next; onChange(vector) }} />)}</div></fieldset>
 }
+function KeyframeEditor({ animation, onApply }: { animation: SceneAnimation; onApply: (keys: SceneKeyframe[]) => boolean }) {
+  const [draft, setDraft] = useState(() => JSON.stringify(animation.keys ?? [], null, 1))
+  const [error, setError] = useState('')
+  return <div className="three-keyframes"><p>Chaves {'{'}at 0–1, move [m], turn [°], scale [×]{'}'} relativas à pose base.</p>
+    <textarea aria-label="Keyframes" rows={6} value={draft} onChange={(event) => setDraft(event.target.value)} />
+    <button type="button" onClick={() => {
+      try { if (onApply(validateAnimation({ ...animation, keys: JSON.parse(draft) }).keys!)) setError('') } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
+    }}>Aplicar keyframes</button>{error && <p role="alert">{error}</p>}</div>
+}
+const animationLabels: Record<SceneAnimation['kind'], string> = { none: 'Sem movimento', spin: 'Rotação contínua', float: 'Flutuação', orbit: 'Órbita circular', pulse: 'Pulsar (escala)', swing: 'Balanço', bounce: 'Quicar', keyframes: 'Keyframes' }
+const kindIcons: Partial<Record<NodeKind, string>> = { group: '▤', light: '✺', terrain: '⛰', text: 'T' }
 
 export default function ThreeWorkspace({ active, provider, ready, onBusyChange, onOpenProviderSettings }: {
   active: boolean; provider: AgentProvider; ready: boolean; onBusyChange: (busy: boolean) => void; onOpenProviderSettings: () => void
@@ -62,6 +93,8 @@ export default function ThreeWorkspace({ active, provider, ready, onBusyChange, 
   const [history, setHistory] = useState<SceneHistory>(() => ({ past: [], present: initial.document, future: [] }))
   const doc = history.present
   const lastCommitted = useRef(doc)
+  const historyRef = useRef(history)
+  historyRef.current = history
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const selected = doc.nodes.find((node) => node.id === selectedId) ?? null
   const [error, setError] = useState<string | null>(initial.error)
@@ -71,42 +104,68 @@ export default function ThreeWorkspace({ active, provider, ready, onBusyChange, 
   const [fitRequest, setFitRequest] = useState(0)
   const fileInput = useRef<HTMLInputElement>(null)
   const glbInput = useRef<HTMLInputElement>(null)
+  const viewport = useRef<ViewportController | null>(null)
   const [assetBusy, setAssetBusy] = useState(false)
   const [assetNotice, setAssetNotice] = useState('')
   const [inspecting, setInspecting] = useState(false)
   const inspection = useRef<AbortController | null>(null)
-  const [spatial, setSpatial] = useState<{ document: ThreeSceneDocument; report: SceneInspection } | null>(null)
-  const [action, setAction] = useState<'create' | 'edit' | 'repair'>('create')
+  const [spatial, setSpatial] = useState<{ document: ThreeSceneDocument; report: SceneInspection; audit?: SceneAudit } | null>(null)
+  const [action, setAction] = useState<'auto' | 'create' | 'edit' | 'repair'>('auto')
   const [filter, setFilter] = useState('')
-  const [addKind, setAddKind] = useState<NodeKind>('box')
+  const [addKind, setAddKind] = useState<NodeKind | `prefab:${PrefabType}`>('box')
   const [playing, setPlaying] = useState(false)
   const [time, setTime] = useState(0)
   const [seekTime, setSeekTime] = useState(0)
   const [seekRequest, setSeekRequest] = useState(0)
+  const [gizmo, setGizmo] = useState<GizmoMode>('translate')
+  const [snap, setSnap] = useState(false)
+  const [playMode, setPlayMode] = useState(false)
+  const [helpOpen, setHelpOpen] = useState(false)
+  const [studioOpen, setStudioOpen] = useState(false)
+  const [projectMenu, setProjectMenu] = useState(false)
+  const [reportsOpen, setReportsOpen] = useState(false)
+  const [hasCreated, setHasCreated] = useState(!!initial.restored)
   const [prompt, setPrompt] = useState('')
+  const effectiveAction = action === 'auto' ? inferSceneAction(prompt, hasCreated) : action
   const [generating, setGenerating] = useState(false)
   const [generationStatus, setGenerationStatus] = useState('')
   const [timeoutSeconds, setTimeoutSeconds] = useState(300)
   const [generationRun, setGenerationRun] = useState<SceneGenerationRun | null>(null)
+  const [generationNotes, setGenerationNotes] = useState<string[]>([])
   const generation = useRef<AbortController | null>(null)
   useEffect(() => () => { generation.current?.abort(); inspection.current?.abort(); onBusyChange(false) }, [onBusyChange])
+  // Every opened scene (draft, import, example, AI result) is audited in the background so problems surface without asking.
+  const [auditRequest, setAuditRequest] = useState(1)
+  useEffect(() => {
+    if (!auditRequest || !active) return
+    const controller = new AbortController(), target = doc
+    const timer = setTimeout(() => {
+      inspectSceneAsync(target, controller.signal).then((report) => { if (!controller.signal.aborted) setSpatial({ document: target, report, audit: auditScene(target, report) }) }).catch(() => {})
+    }, 800)
+    return () => { clearTimeout(timer); controller.abort() }
+  // The audit runs per opened scene, not per edit.
+  // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [auditRequest, active])
   const seek = (value: number) => { setSeekTime(value); setSeekRequest((request) => request + 1); setTime(value) }
 
   useEffect(() => {
     if (!storageEnabled) return
     // Storage is an external system; reflect its synchronous result in the status.
     // oxlint-disable-next-line react/set-state-in-effect
-    try { localStorage.setItem(SCENE_STORAGE_KEY, JSON.stringify(doc)); setSaveStatus('Salvo neste navegador'); setStorageError(null) }
+    try { localStorage.setItem(SCENE_STORAGE_KEY, serializeSceneDraft(doc)); setSaveStatus('Salvo neste navegador'); setStorageError(null) }
     // oxlint-disable-next-line react/set-state-in-effect
     catch { setSaveStatus('Não salvo'); setStorageError('Não foi possível salvar no navegador. Exporte o JSON para guardar este projeto.') }
   }, [doc, storageEnabled])
 
   const commit = (document: ThreeSceneDocument): boolean => {
     try {
-      const next = commitScene(history, document)
+      // Async actions (AI, import, auto-fix) commit later: always extend the latest history, never the one from their start.
+      const next = commitScene(historyRef.current, document)
+      historyRef.current = next
       setHistory(next)
       lastCommitted.current = next.present
       setStorageEnabled(true)
+      setPlayMode(false)
       setError(null)
       return true
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); return false }
@@ -114,9 +173,38 @@ export default function ThreeWorkspace({ active, provider, ready, onBusyChange, 
   const updateNode = (patch: Partial<SceneNode>) => {
     if (selected) return commit({ ...doc, nodes: doc.nodes.map((node) => node.id === selected.id ? { ...node, ...patch } : node) })
   }
+  const transformNode = (id: string, patch: TransformPatch) => commit({ ...doc, nodes: doc.nodes.map((node) => node.id === id ? { ...node, ...patch } : node) })
   const updateEnvironment = (patch: Partial<ThreeSceneDocument['environment']>) => commit({ ...doc, environment: { ...doc.environment, ...patch } })
+  const updatePlayer = (patch: Partial<ScenePlayer>) => updateEnvironment({ player: { ...doc.environment.player!, ...patch } })
+  const updateAnimation = (patch: Partial<SceneAnimation>) => {
+    if (!selected) return
+    const next = { ...selected.animation, ...patch }
+    if (next.kind === 'keyframes' && (next.keys?.length ?? 0) < 2) next.keys = [{ at: 0, move: [0, 0, 0], turn: [0, 0, 0], scale: [1, 1, 1] }, { at: 1, move: [0, 1, 0], turn: [0, 0, 0], scale: [1, 1, 1] }]
+    return updateNode({ animation: next })
+  }
+  const updateInteraction = (patch: Partial<SceneInteraction> | null) => {
+    if (!selected) return
+    if (!patch) { const { interaction: _removed, ...rest } = selected; return commit({ ...doc, nodes: doc.nodes.map((node) => node.id === selected.id ? rest : node) }) }
+    const base: SceneInteraction = selected.interaction ?? { trigger: 'click', key: '', radius: 3, action: selected.animation.kind !== 'none' ? 'toggleAnimation' : 'message', targetId: null, message: '' }
+    const next = { ...base, ...patch }
+    if (next.trigger === 'key' && !INTERACTION_KEYS.test(next.key)) next.key = '1'
+    return updateNode({ interaction: next })
+  }
   const add = () => {
-    const node = createNode(addKind, selected?.kind === 'group' ? selected.id : selected?.parentId ?? null)
+    const parentId = selected?.kind === 'group' ? selected.id : selected?.parentId ?? null
+    if (addKind.startsWith('prefab:')) {
+      try {
+        const type = addKind.slice(7) as PrefabType, id = `${type}-${crypto.randomUUID().slice(0, 8)}`
+        const expanded = expandSceneRecipe({ name: doc.name, background: doc.environment.background, exposure: doc.environment.exposure, lightIntensity: doc.environment.lightIntensity, duration: doc.timeline.duration, environment: doc.environment,
+          nodes: [{ ...createNode('group', parentId), id, name: prefabLabels[type], color: '#cccccc', metalness: 0, roughness: 0.6, repeat: { mode: 'linear', count: 1, offset: [0, 0, 0], radius: 0, axis: 'y' },
+            prefab: { type, size: 1, seed: Math.floor(Math.random() * 1000), primary: null, secondary: null, text: '', lit: true, interactive: true } }] }, () => {}, doc.nodes)
+        const added = expanded.nodes.slice(doc.nodes.length), root = added[0]
+        root.position = insertionPosition(doc, { ...root, position: [0, 0, 0] }, added)
+        if (commit({ ...doc, nodes: [...doc.nodes, ...added] })) { setSelectedId(root.id); setFilter('') }
+      } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
+      return
+    }
+    const node = createNode(addKind as NodeKind, parentId)
     node.position = insertionPosition(doc, node)
     if (commit({ ...doc, nodes: [...doc.nodes, node] })) { setSelectedId(node.id); setFilter('') }
   }
@@ -127,36 +215,47 @@ export default function ThreeWorkspace({ active, provider, ready, onBusyChange, 
   }
   const remove = () => {
     if (!selected) return
-    const ids = subtreeIds(doc.nodes, selected.id)
-    if (commit({ ...doc, nodes: doc.nodes.filter((node) => !ids.has(node.id)).map((node) => ({ ...node, overlapWith: node.overlapWith.filter((id) => !ids.has(id)) })) })) setSelectedId(null)
+    if (commit(removeSubtree(doc, selected.id))) setSelectedId(null)
   }
   const replace = (document: ThreeSceneDocument) => {
-    if (commit(document)) { setSelectedId(null); setFilter(''); setPlaying(false); seek(0); setFitRequest((value) => value + 1) }
+    if (commit(document)) { setSelectedId(null); setFilter(''); setProjectMenu(false); setPlaying(false); seek(0); setFitRequest((value) => value + 1); setAuditRequest((value) => value + 1) }
   }
   const importFile = async (file: File) => {
     try {
       if (file.size > MAX_SCENE_BYTES) throw new Error('O projeto excede o limite de 32 MB.')
-      const document = parseScene(await file.text())
+      const document = validateScene(conformTerrainPaths(parseScene(await file.text())))
       replace(document)
+      setHasCreated(true)
+      setAction('auto')
+      setPrompt('')
     } catch (cause) { setError(`Importação recusada: ${cause instanceof Error ? cause.message : String(cause)}`) }
   }
-  const exportFile = () => {
-    const blob = new Blob([JSON.stringify(doc, null, 2)], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `${normalizeProjectName(doc.name)}.three.json`
-    link.click()
-    setTimeout(() => URL.revokeObjectURL(url), 1000)
+  const exportFile = () => { download(new Blob([JSON.stringify(doc, null, 2)], { type: 'application/json' }), `${normalizeProjectName(doc.name)}.three.json`); setProjectMenu(false) }
+  const exportGlb = async () => {
+    if (assetBusy) return
+    setAssetBusy(true)
+    setAssetNotice('')
+    try {
+      const { exportSceneGlb } = await import('./sceneExport.ts')
+      download(new Blob([await exportSceneGlb(doc)], { type: 'model/gltf-binary' }), `${normalizeProjectName(doc.name)}.glb`)
+      setAssetNotice('GLB exportado com materiais PBR, luzes e animações em clipes. Interações, céu e efeitos de pós-processamento são do estúdio e não fazem parte do arquivo.')
+    } catch (cause) { setError(`Exportação GLB falhou: ${cause instanceof Error ? cause.message : String(cause)}`) }
+    finally { setAssetBusy(false) }
+  }
+  const capture = async () => {
+    try { const blob = await viewport.current?.capture(); if (blob) download(blob, `${normalizeProjectName(doc.name)}.png`) }
+    catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
   }
   const generate = async () => {
-    if (generation.current || inspecting || assetBusy || !ready || (action !== 'repair' && !prompt.trim())) return
+    if (generation.current || inspecting || assetBusy || !ready || (effectiveAction !== 'repair' && !prompt.trim())) return
     const controller = new AbortController()
     generation.current = controller
     setGenerating(true)
     onBusyChange(true)
     setError(null)
+    setGenerationNotes([])
     setPlaying(false)
+    setPlayMode(false)
     // Timestamp capture runs only after an explicit form submission.
     // oxlint-disable-next-line react/purity
     const started = performance.now()
@@ -166,24 +265,31 @@ export default function ThreeWorkspace({ active, provider, ready, onBusyChange, 
     setGenerationRun({ startedAt, budgetSeconds: timeoutSeconds, events: [], outcome: 'running' })
     const deadline = setTimeout(() => controller.abort(new SceneGenerationTimeoutError(timeoutSeconds, lastEvent)), timeoutSeconds * 1000)
     try {
-      let checked: SceneInspection | null = null
+      let checked: SceneInspection | null = null, outcome: SceneGenerationReport | null = null
+      const collect = (report: SceneGenerationReport) => { outcome = report; if (report.inspection) checked = report.inspection }
       const progress = (event: SceneGenerationEvent) => {
         lastEvent = event
         setGenerationStatus(event.detail)
         setGenerationRun((run) => run ? { ...run, events: [...run.events, { ...event, at: Date.now() }] } : run)
       }
-      const document = action === 'create'
-        ? await generateThreeScene(provider, prompt, controller.signal, setGenerationStatus, progress)
-        : await editThreeScene(provider, doc, prompt, controller.signal, { mode: action, selectedId, onProgress: progress, onInspection: (report) => { checked = report; setSpatial({ document: doc, report }) } })
-      if (controller.signal.aborted) return
+      const document = effectiveAction === 'create'
+        ? await generateThreeScene(provider, prompt, controller.signal, setGenerationStatus, progress, collect)
+        : await editThreeScene(provider, doc, prompt, controller.signal, { mode: effectiveAction, selectedId, onProgress: progress, onReport: collect, onInspection: (report) => { if (!checked) setSpatial({ document: doc, report }); checked = report } })
+      if (controller.signal.aborted && !(controller.signal.reason instanceof SceneGenerationTimeoutError)) return
       replace(document)
-      if (checked) setSpatial({ document: lastCommitted.current, report: checked })
-      setPlaying(document.nodes.some((node) => node.animation.kind !== 'none'))
-      setGenerationRun((run) => run ? { ...run, outcome: 'success', finishedAt: Date.now(), events: [...run.events, { stage: 'application', attempt: lastEvent.attempt, at: Date.now(), detail: `Cena aplicada no editor: ${document.nodes.length} objetos.`, objects: document.nodes.length }] } : run)
+      setHasCreated(true)
+      setAction('auto')
+      setPrompt('')
+      if (checked) setSpatial({ document: lastCommitted.current, report: checked, audit: auditScene(lastCommitted.current, checked) })
+      if (studioOpen) setReportsOpen(true)
+      setGenerationNotes((outcome as SceneGenerationReport | null)?.warnings ?? [])
+      setPlaying(document.nodes.some((node) => node.animation.kind !== 'none' && node.animation.start !== 'trigger'))
+      setGenerationRun((run) => run ? { ...run, outcome: 'success', finishedAt: Date.now(), events: [...run.events, { stage: 'application', attempt: lastEvent.attempt,maxAttempts:lastEvent.maxAttempts, at: Date.now(), detail: `Cena aplicada no editor: ${document.nodes.length} objetos.`, objects: document.nodes.length }] } : run)
       // oxlint-disable-next-line react/purity
       setGenerationStatus(`Cena aplicada em ${((performance.now() - started) / 1000).toFixed(1)} s · ${document.nodes.length} objetos`)
     } catch (cause) {
       const outcome = cause instanceof SceneGenerationTimeoutError ? 'timeout' : controller.signal.aborted ? 'cancelled' : 'error'
+      setReportsOpen(true)
       setGenerationRun((run) => run ? { ...run, outcome, finishedAt: Date.now(), events: [...run.events, { ...lastEvent, at: Date.now(), detail: cause instanceof Error ? cause.message : String(cause) }] } : run)
       setGenerationStatus('A cena anterior foi preservada.')
       setError(cause instanceof Error ? cause.message : String(cause))
@@ -196,14 +302,39 @@ export default function ThreeWorkspace({ active, provider, ready, onBusyChange, 
   }
   const verify = async () => {
     if (generating || assetBusy || inspection.current) return
+    setReportsOpen(true)
+    setProjectMenu(false)
     const controller = new AbortController()
     inspection.current = controller
     setInspecting(true)
     setPlaying(false)
+    setPlayMode(false)
     onBusyChange(true)
     setError(null)
-    try { const report = await inspectSceneAsync(doc, controller.signal); if (!controller.signal.aborted) setSpatial({ document: doc, report }) }
+    try { const report = await inspectSceneAsync(doc, controller.signal); if (!controller.signal.aborted) setSpatial({ document: doc, report, audit: auditScene(doc, report) }) }
     catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
+    finally { inspection.current = null; setInspecting(false); onBusyChange(false) }
+  }
+  /** Scene doctor without AI: flattens terrain under structures, rescues objects from the water, rests, separates and fixes reach and spawn. */
+  const autoFix = async () => {
+    if (generating || assetBusy || inspection.current) return
+    setReportsOpen(true)
+    const controller = new AbortController()
+    inspection.current = controller
+    setInspecting(true)
+    setPlaying(false)
+    setPlayMode(false)
+    onBusyChange(true)
+    setError(null)
+    try {
+      const before = spatial?.document === doc ? spatial.report : await inspectSceneAsync(doc, controller.signal)
+      const healed = await healScene(doc, before, controller.signal)
+      if (controller.signal.aborted) return
+      if (healed.document !== doc && commit(healed.document)) setSpatial({ document: lastCommitted.current, report: healed.inspection ?? before, audit: healed.audit })
+      else setSpatial({ document: doc, report: healed.inspection ?? before, audit: healed.audit })
+      const remaining = describeAudit(healed.audit)
+      setGenerationNotes([...healed.notes, ...(remaining.length ? [`Ainda restam: ${remaining.join('; ')}. Use Corrigir cena com IA para as sobreposições.`] : ['Nenhum problema restante nas verificações automáticas.'])])
+    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
     finally { inspection.current = null; setInspecting(false); onBusyChange(false) }
   }
   const importAsset = async (file: File) => {
@@ -224,145 +355,295 @@ export default function ThreeWorkspace({ active, provider, ready, onBusyChange, 
     finally { setAssetBusy(false); onBusyChange(false) }
   }
   const busy = generating || inspecting || assetBusy
+  const enterPlay = () => { if (!busy && doc.nodes.length) { setPlaying(false); setHelpOpen(false); setPlayMode(true) } }
+  const runShortcut = (shortcut: EditorCommand) => {
+    switch (shortcut.command) {
+      case 'translate': case 'rotate': case 'scale': setGizmo(shortcut.command); break
+      case 'frame': setFitRequest((value) => value + 1); break
+      case 'delete': remove(); break
+      case 'duplicate': duplicate(); break
+      case 'undo': setHistory(undoScene(history)); setError(null); break
+      case 'redo': setHistory(redoScene(history)); setError(null); break
+      case 'toggleVisible': if (selected) updateNode({ visible: !selected.visible }); break
+      case 'deselect': if (helpOpen) setHelpOpen(false); else setSelectedId(null); break
+      case 'playPause': setPlaying(!playing); break
+      case 'grid': updateEnvironment({ grid: !doc.environment.grid }); break
+      case 'play': enterPlay(); break
+      case 'snap': setSnap(!snap); break
+      case 'help': setHelpOpen(true); break
+      case 'capture': void capture(); break
+      case 'view': viewport.current?.view(shortcut.view); break
+      case 'nudge': if (selected) { const position: Vector3Tuple = [...selected.position]; position[shortcut.axis] = Math.round((position[shortcut.axis] + shortcut.amount) * 1000) / 1000; updateNode({ position }) } break
+    }
+  }
+  const shortcuts = useRef(runShortcut)
+  useEffect(() => { shortcuts.current = runShortcut })
+  useEffect(() => {
+    if (!active || playMode || busy) return
+    const handler = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || isTypingTarget(event.target)) return
+      const target = event.target as HTMLElement | null
+      if ((event.code === 'Space' || event.code === 'Enter') && target?.closest?.('button, a, summary, [role="slider"]')) return
+      const shortcut = editorShortcut(event)
+      if (!shortcut) return
+      if (!studioOpen && !['play', 'frame', 'help', 'capture', 'deselect', 'undo', 'redo'].includes(shortcut.command)) return
+      event.preventDefault()
+      shortcuts.current(shortcut)
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [active, playMode, busy, studioOpen])
+  useEffect(() => {
+    if (!projectMenu) return
+    const dismiss = (event: PointerEvent) => { if (!(event.target as HTMLElement).closest('.three-toolbar, .three-commandbar')) setProjectMenu(false) }
+    const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') setProjectMenu(false) }
+    window.addEventListener('pointerdown', dismiss)
+    window.addEventListener('keydown', escape)
+    return () => { window.removeEventListener('pointerdown', dismiss); window.removeEventListener('keydown', escape) }
+  }, [projectMenu])
+
   const descendants = selected ? subtreeIds(doc.nodes, selected.id) : new Set<string>()
   const visibleRows = (parentId: string | null, depth = 0): ReactNode => doc.nodes.filter((node) => node.parentId === parentId).map((node) => {
     const matches = !filter || node.name.toLocaleLowerCase().includes(filter.toLocaleLowerCase())
     return <div key={node.id}>{matches && <button type="button" className="three-tree__node" aria-pressed={selectedId === node.id}
       style={{ paddingLeft: 12 + depth * 14 }} onClick={() => setSelectedId(node.id)}>
-      <span aria-hidden="true">{node.kind === 'group' ? '▤' : '◇'}</span><span>{node.name}</span>
-      <small>{!node.visible ? 'Oculto' : nodeLabels[node.kind]}</small></button>}{visibleRows(node.id, depth + 1)}</div>
+      <span aria-hidden="true">{kindIcons[node.kind] ?? '◇'}</span><span>{node.name}</span>
+      <small>{!node.visible ? 'Oculto' : node.interaction ? 'Interativo' : nodeLabels[node.kind]}</small></button>}{visibleRows(node.id, depth + 1)}</div>
   })
+  const env = doc.environment, player = env.player!
+  const material = selected?.material
 
-  return <div className="three-workspace" hidden={!active}>
+  return <div className={`three-workspace three-workspace--${studioOpen ? 'studio' : 'create'}${playMode ? ' three-workspace--playing' : ''}`} hidden={!active}>
+    <header className="three-commandbar">
+      <div className="three-commandbar__identity"><span className="three-brandmark" aria-hidden="true">◈</span><div><span className="workspace-eyebrow">FORMA / MUNDOS</span><strong>{doc.name}</strong></div></div>
+      <span className="three-save-indicator" title={saveStatus}><span className="three-dot" />{storageError || (initial.error && !storageEnabled) ? 'Não salvo' : 'Salvo localmente'}</span>
+      <div className="three-commandbar__actions">
+        <button type="button" aria-pressed={studioOpen} onClick={() => { setStudioOpen(!studioOpen); setSelectedId(null); setProjectMenu(false) }}>Editor avançado</button>
+        <button type="button" aria-expanded={projectMenu} onClick={() => setProjectMenu(!projectMenu)}>Projeto ▾</button>
+        <button type="button" aria-label="Atividade" aria-expanded={reportsOpen || generating || inspecting} onClick={() => setReportsOpen(!reportsOpen)}>Atividade{generating ? ' ◌' : generationNotes.length ? <span className="three-activity-count" aria-hidden="true">{generationNotes.length}</span> : ''}</button>
+        <button type="button" className="three-button--primary" disabled={busy || !doc.nodes.length} onClick={enterPlay}>▶ Jogar</button>
+      </div>
+    </header>
     <form className="three-prompt" onSubmit={(event) => { event.preventDefault(); void generate() }}>
-      <div className="three-prompt__intro"><span className="workspace-eyebrow">DA DESCRIÇÃO À CENA</span><strong>Crie um mundo em movimento</strong>
-        <span>Composição, detalhes e animação com sua IA.</span></div>
+      <div className="three-prompt__intro"><span className="workspace-eyebrow">{hasCreated ? 'CONTINUE CRIANDO' : 'SEU PRÓXIMO MUNDO'}</span><strong>{hasCreated ? 'O que vamos mudar?' : 'Imagine. Descreva. Explore.'}</strong>
+        <span>Você traz a ideia. A IA cuida da cena.</span></div>
       <div className="three-prompt__composer"><textarea aria-label="Descreva a cena Three.js" maxLength={4000} rows={2} disabled={busy}
-        placeholder="Uma estação orbital detalhada, com anéis girando, painéis solares e pequenos satélites em órbita…" value={prompt} onChange={(event) => setPrompt(event.target.value)} />
-        <div className="three-prompt__buttons"><label className="three-generation-limit">Ação da IA
+        placeholder="Descreva o lugar, o que o jogador faz e seu objetivo: combate, plataformas, enigmas, exploração…" value={prompt} onChange={(event) => setPrompt(event.target.value)} />
+        {!hasCreated && !prompt && <div className="three-prompt__suggestions" aria-label="Ideias para começar">{creationIdeas.map(([label, idea]) => <button key={label} type="button" disabled={busy} onClick={() => setPrompt(idea)}>{label} ↗</button>)}</div>}
+        <div className="three-prompt__buttons"><details className="three-prompt__options"><summary>Opções de criação</summary><div><label className="three-generation-limit">Ação da IA
           <select aria-label="Ação da IA" value={action} disabled={busy} onChange={(event) => setAction(event.target.value as typeof action)}>
-            <option value="create">Criar nova cena</option><option value="edit">Editar cena atual</option><option value="repair">Corrigir sobreposições</option></select></label><label className="three-generation-limit">Tempo máximo de geração
+            <option value="auto">Automática pelo pedido</option><option value="create">Criar nova cena</option><option value="edit">Editar cena atual</option><option value="repair">Corrigir cena</option></select></label><label className="three-generation-limit">Tempo máximo de geração
           <select aria-label="Tempo máximo de geração" value={timeoutSeconds} disabled={busy} onChange={(event) => setTimeoutSeconds(Number(event.target.value))}>
-            <option value={120}>2 minutos</option><option value={300}>5 minutos</option><option value={600}>10 minutos</option></select></label>
+            <option value={120}>2 minutos</option><option value={300}>5 minutos</option><option value={600}>10 minutos</option></select></label></div></details>
           {generating ? <button type="button" onClick={(event) => { event.preventDefault(); generation.current?.abort(new DOMException('Geração cancelada. A cena anterior foi preservada.', 'AbortError')) }}>Cancelar geração</button>
-          : ready ? <button type="submit" className="three-button--primary" disabled={inspecting || assetBusy || (action !== 'repair' && !prompt.trim())}>{action === 'create' ? 'Criar cena com IA' : action === 'edit' ? 'Editar cena com IA' : 'Corrigir sobreposições com IA'}</button>
+          : ready ? <button type="submit" className="three-button--primary" disabled={inspecting || assetBusy || (effectiveAction !== 'repair' && !prompt.trim())}>{effectiveAction === 'create' ? 'Criar cena com IA' : effectiveAction === 'edit' ? 'Editar cena com IA' : 'Corrigir cena'}</button>
             : <button type="button" onClick={onOpenProviderSettings}>Configurar IA para criar</button>}
-          {provider.id.startsWith('local-') && <span>Na assinatura, cada chamada tem limite próprio de 5 minutos. Este prazo vale para a ação inteira.</span>}
-          <span role="status">{generationStatus || 'Você também pode construir e animar manualmente.'}</span></div>
+          <span className="three-prompt__status" role="status">{generationStatus || (effectiveAction === 'edit' ? 'Alterando a cena atual · Desfazer disponível' : 'Composição, materiais e iluminação automáticos')}</span></div>
       </div>
     </form>
+    <div className="three-reports" hidden={!reportsOpen && !generating && !inspecting}>
     {generationRun && <ThreeGenerationProgress run={generationRun} model={`${provider.id === 'local-codex' ? 'Codex' : provider.id === 'local-claude' ? 'Claude Code' : 'IA'} · ${provider.model?.trim() || 'modelo padrão'}`} />}
-    {inspecting && <div className="three-spatial" role="status">Verificando superfícies e poses em segundo plano… <button type="button" onClick={() => inspection.current?.abort(new Error('Inspeção cancelada.'))}>Cancelar inspeção</button></div>}
-    {spatial && <details className="three-spatial" open={spatial.report.intersections.length > 0}><summary>Diagnóstico espacial: {spatial.report.intersections.length} pares · {spatial.document === doc ? spatial.report.complete ? 'amostras concluídas' : 'cobertura incompleta' : 'desatualizado — verifique novamente'}</summary>
-      <p>{spatial.report.sampledTimes.length} poses · {spatial.report.checkedPairs} pares refinados por triângulos · {spatial.report.skippedContacts} contatos declarados. Não é uma prova contínua de ausência de colisões.</p>
+    {generationNotes.length > 0 && <details className="three-generation-notes" open><summary>Cena aplicada com {generationNotes.length} {generationNotes.length === 1 ? 'observação' : 'observações'}</summary>
+      <ul>{generationNotes.map((note) => <li key={note}>{note}</li>)}</ul>
+      <p>Peça mudanças com <strong>Editar cena atual</strong> ou use <strong>Corrigir cena</strong> para resolver o que restou. Desfazer restaura a cena anterior.</p>
+      <button type="button" onClick={() => setGenerationNotes([])}>Dispensar</button></details>}
+    {inspecting && <div className="three-spatial three-inspecting" role="status">Verificando superfícies e poses em segundo plano… <button type="button" onClick={() => inspection.current?.abort(new Error('Inspeção cancelada.'))}>Cancelar inspeção</button></div>}
+    {spatial && <details className="three-spatial" open={(spatial.audit?.total ?? spatial.report.intersections.length) > 0 && !generationNotes.length}><summary>Diagnóstico: {spatial.report.intersections.length} pares{spatial.audit ? ` · ${spatial.audit.total - spatial.audit.overlaps} outros problemas` : ''} · {spatial.document === doc ? spatial.report.complete ? 'amostras concluídas' : 'cobertura incompleta' : 'desatualizado — verifique novamente'}</summary>
+      {spatial.audit && describeAudit({ ...spatial.audit, overlaps: 0 }).length > 0 && <ul className="three-spatial__audit">{describeAudit({ ...spatial.audit, overlaps: 0 }).map((item) => <li key={item}>{item}</li>)}</ul>}
+      <p>{spatial.report.sampledTimes.length} poses · {spatial.report.checkedPairs} pares refinados por triângulos · {spatial.report.skippedContacts} contatos declarados, apoios no solo ou decoração não colidível · {spatial.report.assemblyContacts ?? 0} encaixes internos de montagens. Não é uma prova contínua de ausência de colisões.</p>
       {spatial.report.intersections.slice(0, 30).map((issue) => <div key={`${issue.a}-${issue.b}`} className="three-spatial__pair"><button type="button" onClick={() => { setSelectedId(issue.a); setFitRequest((value) => value + 1) }}>{issue.nameA}</button><span>↔</span><button type="button" onClick={() => { setSelectedId(issue.b); setFitRequest((value) => value + 1) }}>{issue.nameB}</button><small>{issue.kind === 'surface' ? 'Superfícies se cruzam' : 'Contenção'} · t={issue.times.map((time) => time.toFixed(1)).join(', ')} s</small></div>)}
-      <button type="button" disabled={busy} onClick={() => setAction('repair')}>Preparar reparo da cena atual</button>
+      {(spatial.report.surfaceConflicts ?? []).slice(0, 30).map((issue) => <div key={`surface-${issue.a}-${issue.b}`} className="three-spatial__pair"><button type="button" onClick={() => { setSelectedId(issue.a); setFitRequest(value => value + 1) }}>{issue.nameA}</button><span>↔</span><button type="button" onClick={() => { setSelectedId(issue.b); setFitRequest(value => value + 1) }}>{issue.nameB}</button><small>Superfícies na mesma profundidade · {issue.area.toFixed(2)} m²</small></div>)}
+      {spatial.report.surfaceCheckComplete === false && <p>A verificação de superfícies coplanares atingiu o orçamento de análise; a cobertura dessa etapa está incompleta.</p>}
+      <div className="three-spatial__actions"><button type="button" className="three-button--primary" disabled={busy} onClick={() => void autoFix()}>Corrigir automaticamente (sem IA)</button>
+        <button type="button" disabled={busy} onClick={() => setAction('repair')}>Preparar Corrigir cena com IA</button></div>
     </details>}
+    </div>
     <fieldset className="three-editor" disabled={busy}>
-    <div className="three-toolbar">
-      <div className="three-toolbar__title"><span className="workspace-eyebrow">ESTÚDIO DE CENAS</span><strong>{doc.name}</strong></div>
+    <div className="three-toolbar" hidden={!projectMenu}>
+      <div className="three-toolbar__title"><span className="workspace-eyebrow">ARQUIVOS, EXEMPLOS E FERRAMENTAS</span></div>
       <div className="three-toolbar__actions">
         <button type="button" onClick={() => replace(createEmptyScene())}>Cena vazia</button>
         <button type="button" onClick={() => replace(createPavilionScene())}>Abrir exemplo</button>
         <button type="button" onClick={() => replace(createOrbitalScene())}>Exemplo detalhado</button>
+        <button type="button" onClick={() => replace(createIslandScene())}>Exemplo jogável</button>
+        <button type="button" onClick={() => replace(createCombatArenaScene())}>Arena de combate</button>
+        <button type="button" onClick={() => replace(createPlatformCourseScene())}>Plataformas no espaço</button>
+        <button type="button" onClick={() => replace(createLabPuzzleScene())}>Puzzle no laboratório</button>
+        <button type="button" onClick={() => replace(createSolarSystemScene())}>Sistema solar</button>
+        <button type="button" onClick={() => replace(createEnchantedForestScene())}>Floresta encantada</button>
+        <button type="button" onClick={() => replace(createValleyScene())}>Vale dos Ventos</button>
+        <button type="button" onClick={() => replace(createArchitectureScene())}>Casa com dois pavimentos</button>
         <span className="three-toolbar__separator" />
         <button type="button" disabled={!history.past.length} onClick={() => { setHistory(undoScene(history)); setError(null) }}>Desfazer</button>
         <button type="button" disabled={!history.future.length} onClick={() => { setHistory(redoScene(history)); setError(null) }}>Refazer</button>
         <button type="button" onClick={() => fileInput.current?.click()}>Importar JSON</button>
         <button type="button" onClick={() => glbInput.current?.click()}>Importar GLB</button>
         <input ref={glbInput} type="file" accept=".glb,model/gltf-binary" aria-label="Importar modelo GLB" hidden onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ''; if (file) void importAsset(file) }} />
-        <button type="button" onClick={() => void verify()}>Verificar sobreposições</button>
+        <button type="button" onClick={() => void verify()}>Verificar cena</button>
+        <button type="button" onClick={() => void capture()}>Capturar PNG</button>
+        <button type="button" onClick={() => void exportGlb()}>Exportar GLB</button>
         <button type="button" className="three-button--primary" onClick={exportFile}>Exportar JSON</button>
         <input ref={fileInput} type="file" accept=".json,application/json" aria-label="Importar projeto Three.js" hidden
           onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ''; if (file) void importFile(file) }} />
       </div>
     </div>
-    {(assetNotice || assetBusy) && <p className="three-asset-notice" role="status">{assetBusy ? 'Convertendo o GLB em malhas editáveis…' : assetNotice}</p>}
+    {(assetNotice || assetBusy) && <p className="three-asset-notice" role="status">{assetBusy ? 'Processando o modelo GLB…' : assetNotice}</p>}
     {(error || storageError) && <div className="three-notice" role="alert">{error && <span>{error}</span>}{storageError && <span>{storageError}</span>}</div>}
     <div className="three-layout">
-      <aside className="three-panel three-hierarchy" aria-label="Hierarquia da cena">
+      <aside className="three-panel three-hierarchy" aria-label="Hierarquia da cena" hidden={!studioOpen}>
         <div className="three-panel__heading"><h2>Cena</h2><span>{doc.nodes.length} / {MAX_SCENE_NODES}</span></div>
-        <p className="three-panel__intro">Organize formas e grupos para compor cada detalhe.</p>
-        <div className="three-add"><select aria-label="Tipo de objeto" value={addKind} onChange={(event) => setAddKind(event.target.value as NodeKind)}>
-          {Object.entries(nodeLabels).map(([kind, label]) => <option key={kind} value={kind}>{label}</option>)}</select>
+        <p className="three-panel__intro">Organize formas, luzes e grupos para compor cada detalhe.</p>
+        <div className="three-add"><select aria-label="Tipo de objeto" value={addKind} onChange={(event) => setAddKind(event.target.value as typeof addKind)}>
+          <optgroup label="Formas e luzes">{Object.entries(nodeLabels).map(([kind, label]) => <option key={kind} value={kind}>{label}</option>)}</optgroup>
+          <optgroup label="Pré-fabricados">{prefabTypes.map((type) => <option key={type} value={`prefab:${type}`}>{prefabLabels[type]}</option>)}</optgroup></select>
           <button type="button" onClick={add} disabled={doc.nodes.length >= MAX_SCENE_NODES}>Adicionar</button></div>
         <input className="three-search" aria-label="Buscar objetos" placeholder="Buscar na cena…" value={filter} onChange={(event) => setFilter(event.target.value)} />
         <div className="three-tree">{visibleRows(null)}{!doc.nodes.length && <p className="three-empty">Sua cena começa aqui. Adicione uma forma ou um grupo.</p>}</div>
         <div className="three-panel__footnote">{selected?.kind === 'group' ? 'Novos objetos entram no grupo selecionado.' : 'Selecione um grupo para adicionar objetos dentro dele.'}</div>
       </aside>
-      <ThreeStage playing={playing} time={time} duration={doc.timeline.duration} onPlay={() => setPlaying(!playing)} onSeek={(seconds) => { setPlaying(false); seek(seconds) }}><ThreeViewport document={doc} selectedId={selected?.id ?? null} active={active} fitRequest={fitRequest} playing={playing} seekTime={seekTime} seekRequest={seekRequest} onTimeChange={setTime} onSelect={setSelectedId} />
-        <div className="three-stage__tools"><button type="button" onClick={() => setFitRequest((value) => value + 1)}>{selected ? 'Enquadrar seleção' : 'Enquadrar cena'}</button>
-          {selected && <button type="button" onClick={() => setSelectedId(null)}>Limpar seleção</button>}</div>
+      <ThreeStage showPlayback={studioOpen && !playMode} playing={playing} time={time} duration={doc.timeline.duration} onPlay={() => setPlaying(!playing)} onSeek={(seconds) => { setPlaying(false); seek(seconds) }}>
+        <ThreeViewport document={doc} selectedId={selected?.id ?? null} active={active} fitRequest={fitRequest} playing={playing} seekTime={seekTime} seekRequest={seekRequest}
+          gizmo={studioOpen ? gizmo : null} snap={snap} playMode={playMode} presentation={!studioOpen} controller={viewport} onTimeChange={setTime} onSelect={studioOpen ? setSelectedId : () => {}} onTransform={transformNode} onExitPlay={() => setPlayMode(false)} />
+        {!playMode && !studioOpen && <div className="three-scene-caption"><span className="workspace-eyebrow">{hasCreated ? 'SUA CRIAÇÃO' : 'EXPLORE UMA CENA'}</span><strong>{doc.name}</strong><span>Arraste para olhar ao redor · Role para aproximar</span>
+          <div><button type="button" disabled={busy} onClick={() => { replace(createCombatArenaScene()); setProjectMenu(false) }}>Jogar arena ↗</button><button type="button" disabled={busy} onClick={() => { replace(createPlatformCourseScene()); setProjectMenu(false) }}>Jogar plataformas ↗</button><button type="button" disabled={busy} onClick={() => { replace(createLabPuzzleScene()); setProjectMenu(false) }}>Resolver puzzle ↗</button></div></div>}
+        {!playMode && studioOpen && <div className="three-stage__tools">
+          <div className="three-segmented" role="group" aria-label="Ferramenta de transformação">
+            {([['translate', 'Mover', 'W'], ['rotate', 'Girar', 'E'], ['scale', 'Escalar', 'R']] as const).map(([mode, label, key]) =>
+              <button key={mode} type="button" aria-pressed={gizmo === mode} title={`${label} (${key})`} onClick={() => setGizmo(gizmo === mode ? null : mode)}>{label}</button>)}
+          </div>
+          <button type="button" aria-pressed={snap} title="Encaixe (S)" onClick={() => setSnap(!snap)}>Encaixe</button>
+          <button type="button" onClick={() => setFitRequest((value) => value + 1)}>{selected ? 'Enquadrar seleção' : 'Enquadrar cena'}</button>
+          {selected && <button type="button" onClick={() => setSelectedId(null)}>Limpar seleção</button>}
+          <select aria-label="Vista da câmera" value="" onChange={(event) => { if (event.target.value) viewport.current?.view(event.target.value as 'front') }}>
+            <option value="">Vista…</option><option value="front">Frente (1)</option><option value="right">Lateral (3)</option><option value="top">Topo (7)</option><option value="perspective">Perspectiva (0)</option></select>
+          <button type="button" onClick={() => setHelpOpen(true)}>Atalhos</button>
+        </div>}
+        {!playMode && <button type="button" className="three-stage__play three-button--primary" disabled={busy || !doc.nodes.length} onClick={enterPlay}>Explorar em primeira pessoa</button>}
+        {helpOpen && <div className="three-help" role="dialog" aria-modal="true" aria-label="Atalhos de teclado">
+          <div className="three-help__heading"><strong>Atalhos do editor</strong><button type="button" onClick={() => setHelpOpen(false)}>Fechar</button></div>
+          <dl>{editorShortcutList.map(([keys, label]) => <div key={keys}><dt>{keys}</dt><dd>{label}</dd></div>)}</dl>
+          <p>No modo jogo: WASD anda, mouse olha, Espaço pula, Shift corre, F alterna voo, E interage e Esc sai.</p>
+        </div>}
       </ThreeStage>
-      <aside className="three-panel three-inspector" aria-label="Inspector de cena">
+      <aside className="three-panel three-inspector" aria-label="Inspector de cena" hidden={!studioOpen}>
         <div className="three-panel__heading"><h2>Inspector</h2><span>{selected ? nodeLabels[selected.kind] : 'Ambiente'}</span></div>
         <div className="three-inspector__body">
-          {selected ? <div key={selected.id}>
+          {selected && material ? <div key={selected.id}>
             <TextField key={selected.name} label="Nome do objeto" value={selected.name} onChange={(name) => updateNode({ name })} />
             <label className="three-field">Grupo pai<select value={selected.parentId ?? ''} onChange={(event) => updateNode({ parentId: event.target.value || null })}>
               <option value="">Raiz da cena</option>{doc.nodes.filter((node) => node.kind === 'group' && !descendants.has(node.id)).map((node) => <option key={node.id} value={node.id}>{node.name}</option>)}</select></label>
-            <p className="three-hint">Transformações locais ao grupo. Trocar o pai conserva os valores locais.</p>
+            <p className="three-hint">Transformações locais ao grupo. Trocar o pai conserva os valores locais.{selected.animation.kind !== 'none' ? ' Objetos animados são editados pelos campos, não pelo gizmo.' : ''}</p>
             <label className="three-check"><input type="checkbox" checked={selected.visible} onChange={(event) => updateNode({ visible: event.target.checked })} /> Visível</label>
+            {hasSurface(selected.kind) && <label className="three-check"><input type="checkbox" checked={selected.collidable !== false} onChange={(event) => updateNode({ collidable: event.target.checked })} /> Colide com o jogador</label>}
             <VectorFields label="Posição (m)" value={selected.position} min={-10000} max={10000} onChange={(position) => updateNode({ position })} />
             <VectorFields label="Rotação (°)" value={selected.rotation} min={-360} max={360} step={1} onChange={(rotation) => updateNode({ rotation })} />
             <VectorFields label="Escala" value={selected.scale} min={0.01} max={100} onChange={(scale) => updateNode({ scale })} />
-            {selected.kind !== 'group' && <>
+            {selected.kind === 'light' && selected.light && <>
+              <h3>Luz</h3>
+              <SelectField label="Tipo de luz" value={selected.light.type} options={[['point', 'Pontual'], ['spot', 'Spot (aponta para -Y)']]} onChange={(type) => updateNode({ light: { ...selected.light!, type } })} />
+              <label className="three-color">Cor da luz<input type="color" value={selected.light.color} onChange={(event) => updateNode({ light: { ...selected.light!, color: event.target.value } })} /></label>
+              <div className="three-material"><NumericField key={`li-${selected.light.intensity}`} label="Intensidade (cd)" value={selected.light.intensity} min={0} max={2000} step={1} onChange={(intensity) => updateNode({ light: { ...selected.light!, intensity } })} />
+                <NumericField key={`ld-${selected.light.distance}`} label="Alcance (m, 0 = infinito)" value={selected.light.distance} min={0} max={1000} step={1} onChange={(distance) => updateNode({ light: { ...selected.light!, distance } })} /></div>
+              {selected.light.type === 'spot' && <div className="three-material"><NumericField key={`la-${selected.light.angle}`} label="Abertura (°)" value={selected.light.angle} min={1} max={89} step={1} onChange={(angle) => updateNode({ light: { ...selected.light!, angle } })} />
+                <NumericField key={`lp-${selected.light.penumbra}`} label="Penumbra" value={selected.light.penumbra} min={0} max={1} step={0.05} onChange={(penumbra) => updateNode({ light: { ...selected.light!, penumbra } })} /></div>}
+              <label className="three-check"><input type="checkbox" checked={selected.light.castShadow} onChange={(event) => updateNode({ light: { ...selected.light!, castShadow: event.target.checked } })} /> Projeta sombras (até 4 luzes)</label>
+            </>}
+            {hasSurface(selected.kind) && <>
               <VectorFields label="Dimensões (m)" value={selected.dimensions} min={0.01} max={1000} onChange={(dimensions) => updateNode({ dimensions })} />
+              {selected.kind === 'text' && <TextField key={selected.geometry.text} label="Texto da placa" max={160} value={selected.geometry.text} onChange={(text) => updateNode({ geometry: { ...selected.geometry, text } })} />}
               <GeometryEditor key={`${selected.id}-${history.past.length}-${history.future.length}`} node={selected} onApply={(geometry) => updateNode({ geometry }) ?? false} />
               <h3>Material físico</h3>
-              <label className="three-color">Cor<input type="color" value={selected.material.color} onChange={(event) => updateNode({ material: { ...selected.material, color: event.target.value } })} /></label>
-              <div className="three-material"><NumericField key={`Metalicidade-${selected.material.metalness}`} label="Metalicidade" value={selected.material.metalness} min={0} max={1} step={0.05} onChange={(metalness) => updateNode({ material: { ...selected.material, metalness } })} />
-                <NumericField key={`Rugosidade-${selected.material.roughness}`} label="Rugosidade" value={selected.material.roughness} min={0} max={1} step={0.05} onChange={(roughness) => updateNode({ material: { ...selected.material, roughness } })} /></div>
-              <label className="three-field">Textura<select value={selected.material.texture ?? 'none'} onChange={(event) => updateNode({ material: { ...selected.material, texture: event.target.value as SceneNode['material']['texture'], textureImage: '' } })}>
-                <option value="none">Sem textura procedural</option><option value="metal">Metal escovado</option><option value="concrete">Concreto</option><option value="wood">Madeira</option><option value="solar">Células solares</option><option value="tiles">Revestimento</option></select></label>
-              <div className="three-material"><NumericField key={`coat-${selected.material.clearcoat}`} label="Verniz" value={selected.material.clearcoat ?? 0} min={0} max={1} step={0.05} onChange={(clearcoat) => updateNode({ material: { ...selected.material, clearcoat } })} />
-                <NumericField key={`glass-${selected.material.transmission}`} label="Transmissão" value={selected.material.transmission ?? 0} min={0} max={1} step={0.05} onChange={(transmission) => updateNode({ material: { ...selected.material, transmission } })} /></div>
-              <NumericField key={`opacity-${selected.material.opacity}`} label="Opacidade" value={selected.material.opacity ?? 1} min={0} max={1} step={0.05} onChange={(opacity) => updateNode({ material: { ...selected.material, opacity, transparent: opacity < 1 } })} />
-              <label className="three-color">Cor de emissão<input type="color" value={selected.material.emissive ?? '#000000'} onChange={(event) => updateNode({ material: { ...selected.material, emissive: event.target.value } })} /></label>
-              <div className="three-material"><NumericField key={`emissive-${selected.material.emissiveIntensity}`} label="Intensidade de emissão" value={selected.material.emissiveIntensity ?? 0} min={0} max={10} step={0.1} onChange={(emissiveIntensity) => updateNode({ material: { ...selected.material, emissiveIntensity } })} />
-                <NumericField key={`texscale-${selected.material.textureScale}`} label="Repetição da textura" value={selected.material.textureScale ?? 1} min={0.1} max={32} step={0.5} onChange={(textureScale) => updateNode({ material: { ...selected.material, textureScale } })} /></div>
+              <label className="three-color">{selected.kind === 'text' ? 'Cor do texto' : 'Cor'}<input type="color" value={material.color} onChange={(event) => updateNode({ material: { ...material, color: event.target.value } })} /></label>
+              <div className="three-material"><NumericField key={`Metalicidade-${material.metalness}`} label="Metalicidade" value={material.metalness} min={0} max={1} step={0.05} onChange={(metalness) => updateNode({ material: { ...material, metalness } })} />
+                <NumericField key={`Rugosidade-${material.roughness}`} label="Rugosidade" value={material.roughness} min={0} max={1} step={0.05} onChange={(roughness) => updateNode({ material: { ...material, roughness } })} /></div>
+              <SelectField label="Textura" value={material.texture ?? 'none'} options={textureKinds.map((kind) => [kind, textureLabels[kind]])} onChange={(texture) => updateNode({ material: { ...material, texture, textureImage: '' } })} />
+              <div className="three-material"><NumericField key={`texscale-${material.textureScale}`} label="Repetição da textura" value={material.textureScale ?? 1} min={0.1} max={64} step={0.5} onChange={(textureScale) => updateNode({ material: { ...material, textureScale } })} />
+                <NumericField key={`normal-${material.normalStrength}`} label="Relevo da textura" value={material.normalStrength ?? 1} min={0} max={3} step={0.1} onChange={(normalStrength) => updateNode({ material: { ...material, normalStrength } })} /></div>
+              <div className="three-material"><NumericField key={`coat-${material.clearcoat}`} label="Verniz" value={material.clearcoat ?? 0} min={0} max={1} step={0.05} onChange={(clearcoat) => updateNode({ material: { ...material, clearcoat } })} />
+                <NumericField key={`glass-${material.transmission}`} label="Transmissão" value={material.transmission ?? 0} min={0} max={1} step={0.05} onChange={(transmission) => updateNode({ material: { ...material, transmission } })} /></div>
+              <NumericField key={`opacity-${material.opacity}`} label="Opacidade" value={material.opacity ?? 1} min={0} max={1} step={0.05} onChange={(opacity) => updateNode({ material: { ...material, opacity, transparent: opacity < 1 } })} />
+              <label className="three-color">Cor de emissão<input type="color" value={material.emissive ?? '#000000'} onChange={(event) => updateNode({ material: { ...material, emissive: event.target.value } })} /></label>
+              <NumericField key={`emissive-${material.emissiveIntensity}`} label="Intensidade de emissão" value={material.emissiveIntensity ?? 0} min={0} max={20} step={0.1} onChange={(emissiveIntensity) => updateNode({ material: { ...material, emissiveIntensity } })} />
+              <details className="three-geometry-editor"><summary>Acabamentos avançados</summary>
+                <div className="three-material"><NumericField key={`ior-${material.ior}`} label="Índice de refração" value={material.ior ?? 1.5} min={1} max={2.333} step={0.01} onChange={(ior) => updateNode({ material: { ...material, ior } })} />
+                  <NumericField key={`thick-${material.thickness}`} label="Espessura (vidro)" value={material.thickness ?? 0} min={0} max={10} step={0.05} onChange={(thickness) => updateNode({ material: { ...material, thickness } })} /></div>
+                <div className="three-material"><NumericField key={`sheen-${material.sheen}`} label="Brilho têxtil" value={material.sheen ?? 0} min={0} max={1} step={0.05} onChange={(sheen) => updateNode({ material: { ...material, sheen } })} />
+                  <NumericField key={`irid-${material.iridescence}`} label="Iridescência" value={material.iridescence ?? 0} min={0} max={1} step={0.05} onChange={(iridescence) => updateNode({ material: { ...material, iridescence } })} /></div>
+                <label className="three-check"><input type="checkbox" checked={material.flatShading ?? false} onChange={(event) => updateNode({ material: { ...material, flatShading: event.target.checked } })} /> Sombreamento facetado (low poly)</label>
+              </details>
             </>}
             <details className="three-geometry-editor"><summary>Contatos intencionais</summary><p>Selecione somente objetos com encaixe intencional. Outros pares continuam sendo verificados.</p>
               <label className="three-field">Encaixes intencionais com<select multiple size={4} value={selected.overlapWith} onChange={(event) => updateNode({ overlapWith: Array.from(event.target.selectedOptions, (option) => option.value) })}>
-                {doc.nodes.filter((node) => node.id !== selected.id && node.kind !== 'group').map((node) => <option key={node.id} value={node.id}>{node.name}</option>)}</select></label></details>
+                {doc.nodes.filter((node) => node.id !== selected.id && hasSurface(node.kind)).map((node) => <option key={node.id} value={node.id}>{node.name}</option>)}</select></label></details>
             <h3>Animação</h3>
-            <label className="three-field">Movimento<select value={selected.animation.kind} onChange={(event) => updateNode({ animation: { ...selected.animation, kind: event.target.value as SceneNode['animation']['kind'] } })}>
-              <option value="none">Sem movimento</option><option value="spin">Rotação contínua</option><option value="float">Flutuação</option><option value="orbit">Órbita circular</option></select></label>
+            <SelectField label="Movimento" value={selected.animation.kind} options={Object.entries(animationLabels) as [SceneAnimation['kind'], string][]} onChange={(kind) => updateAnimation({ kind })} />
             {selected.animation.kind !== 'none' && <>
-              <label className="three-field">Eixo do movimento<select value={selected.animation.axis} onChange={(event) => updateNode({ animation: { ...selected.animation, axis: event.target.value as 'x' | 'y' | 'z' } })}>
-                <option value="x">X</option><option value="y">Y</option><option value="z">Z</option></select></label>
-              <div className="three-material"><NumericField key={`period-${selected.animation.duration}`} label="Período (s)" value={selected.animation.duration} min={1} max={120} onChange={(duration) => updateNode({ animation: { ...selected.animation, duration } })} />
-                <NumericField key={`phase-${selected.animation.phase}`} label="Fase (°)" value={selected.animation.phase} min={0} max={360} step={1} onChange={(phase) => updateNode({ animation: { ...selected.animation, phase } })} /></div>
-              {selected.animation.kind !== 'spin' && <NumericField key={`amplitude-${selected.animation.amplitude}`} label="Amplitude / raio (m)" value={selected.animation.amplitude} min={0} max={100} onChange={(amplitude) => updateNode({ animation: { ...selected.animation, amplitude } })} />}
+              <SelectField label="Início" value={selected.animation.start ?? 'auto'} options={[['auto', 'Automático em loop'], ['trigger', 'Ao interagir (modo jogo)']]} onChange={(start) => updateAnimation({ start })} />
+              {selected.animation.kind !== 'keyframes' && <SelectField label="Eixo do movimento" value={selected.animation.axis} options={[['x', 'X'], ['y', 'Y'], ['z', 'Z']]} onChange={(axis) => updateAnimation({ axis })} />}
+              <div className="three-material"><NumericField key={`period-${selected.animation.duration}`} label="Período (s)" value={selected.animation.duration} min={0.2} max={120} onChange={(duration) => updateAnimation({ duration })} />
+                <NumericField key={`phase-${selected.animation.phase}`} label="Fase (°)" value={selected.animation.phase} min={0} max={360} step={1} onChange={(phase) => updateAnimation({ phase })} /></div>
+              {!['spin', 'keyframes'].includes(selected.animation.kind) && <NumericField key={`amplitude-${selected.animation.amplitude}`} label={selected.animation.kind === 'swing' ? 'Amplitude (°)' : selected.animation.kind === 'pulse' ? 'Amplitude (fração 0–0,95)' : 'Amplitude / raio (m)'} value={selected.animation.amplitude} min={0} max={100} onChange={(amplitude) => updateAnimation({ amplitude })} />}
+              {selected.animation.kind === 'keyframes' && <>
+                <SelectField label="Suavização" value={selected.animation.easing ?? 'smooth'} options={[['smooth', 'Suave'], ['linear', 'Linear'], ['step', 'Degrau']]} onChange={(easing) => updateAnimation({ easing })} />
+                <KeyframeEditor key={`${selected.id}-${history.past.length}-${history.future.length}`} animation={selected.animation} onApply={(keys) => updateAnimation({ keys }) ?? false} />
+              </>}
+            </>}
+            <h3>Interação (modo jogo)</h3>
+            <SelectField label="Gatilho" value={selected.interaction?.trigger ?? 'none'} options={[['none', 'Sem interação'], ['click', 'Mirar e pressionar E'], ['proximity', 'Ao se aproximar'], ['key', 'Tecla global']]}
+              onChange={(trigger) => updateInteraction(trigger === 'none' ? null : { trigger })} />
+            {selected.interaction && <>
+              <SelectField label="Ação" value={selected.interaction.action} options={[['toggleAnimation', 'Alternar animação (portas, mecanismos)'], ['toggleVisibility', 'Mostrar/ocultar (luzes, passagens)'], ['collect', 'Coletar item'], ['message', 'Mostrar mensagem']]}
+                onChange={(next) => updateInteraction({ action: next, ...(next === 'collect' ? { targetId: null } : {}) })} />
+              {selected.interaction.action !== 'collect' && <label className="three-field">Alvo<select value={selected.interaction.targetId ?? ''} onChange={(event) => updateInteraction({ targetId: event.target.value || null })}>
+                <option value="">Este objeto</option>{doc.nodes.filter((node) => node.id !== selected.id).map((node) => <option key={node.id} value={node.id}>{node.name}</option>)}</select></label>}
+              <div className="three-material">
+                {selected.interaction.trigger === 'key' ? <TextField key={`key-${selected.interaction.key}`} label="Tecla" max={1} value={selected.interaction.key} onChange={(key) => updateInteraction({ key: key.toLowerCase() })} />
+                  : <NumericField key={`radius-${selected.interaction.radius}`} label="Alcance (m)" value={selected.interaction.radius} min={0.5} max={50} onChange={(radius) => updateInteraction({ radius })} />}
+              </div>
+              <label className="three-field">Mensagem<input key={`msg-${selected.interaction.message}`} defaultValue={selected.interaction.message} maxLength={160} onBlur={(event) => { if (event.target.value !== selected.interaction!.message) updateInteraction({ message: event.target.value }) }} /></label>
             </>}
             <div className="three-object-actions"><button type="button" onClick={duplicate}>Duplicar{selected.kind === 'group' ? ' grupo' : ''}</button>
               <button type="button" className="three-button--danger" onClick={remove}>Excluir{selected.kind === 'group' ? ' grupo' : ''}</button></div>
             {selected.kind === 'group' && <p className="three-hint">Duplicar e excluir incluem todos os descendentes.</p>}
-          </div> : <div className="three-selection-tip"><span aria-hidden="true">◇</span><strong>Escolha um detalhe</strong><p>Clique em um objeto na cena ou na hierarquia para editar suas propriedades.</p></div>}
+          </div> : <div className="three-selection-tip"><span aria-hidden="true">◇</span><strong>Escolha um detalhe</strong><p>Clique em um objeto na cena ou na hierarquia para editar suas propriedades. Pressione ? para ver os atalhos.</p></div>}
           <details open={!selected} className="three-environment"><summary>Projeto e ambiente</summary>
             <TextField key={doc.name} label="Nome do projeto" value={doc.name} onChange={(name) => commit({ ...doc, name })} />
             <NumericField key={`timeline-${doc.timeline.duration}`} label="Duração da timeline (s)" value={doc.timeline.duration} min={1} max={120} onChange={(duration) => { if (commit({ ...doc, timeline: { duration } })) seek(0) }} />
-            <label className="three-color">Cor de fundo<input type="color" value={doc.environment.background} onChange={(event) => updateEnvironment({ background: event.target.value })} /></label>
-            <div className="three-material"><NumericField key={`Exposição-${doc.environment.exposure}`} label="Exposição" value={doc.environment.exposure} min={0.1} max={3} onChange={(exposure) => updateEnvironment({ exposure })} />
-              <NumericField key={`Intensidade da luz-${doc.environment.lightIntensity}`} label="Intensidade da luz" value={doc.environment.lightIntensity} min={0} max={5} onChange={(lightIntensity) => updateEnvironment({ lightIntensity })} /></div>
-            <label className="three-check"><input type="checkbox" checked={doc.environment.shadows ?? true} onChange={(event) => updateEnvironment({ shadows: event.target.checked })} /> Sombras suaves</label>
-            <label className="three-check"><input type="checkbox" checked={doc.environment.reflections ?? true} onChange={(event) => updateEnvironment({ reflections: event.target.checked })} /> Reflexões de estúdio</label>
-            <label className="three-check"><input type="checkbox" checked={doc.environment.grid} onChange={(event) => updateEnvironment({ grid: event.target.checked })} /> Grade de referência</label>
-            <label className="three-check"><input type="checkbox" checked={doc.environment.wireframe} onChange={(event) => updateEnvironment({ wireframe: event.target.checked })} /> Wireframe</label>
+            <SelectField label="Céu e iluminação" value={env.sky ?? 'studio'} options={skyPresets.map((sky) => [sky, skyLabels[sky]])}
+              onChange={(sky) => updateEnvironment({ sky, ...(sky === 'sunset' ? { sunElevation: 5 } : sky === 'day' || sky === 'overcast' ? { sunElevation: Math.max(25, env.sunElevation ?? 38) } : {}) })} />
+            {(env.sky ?? 'studio') === 'studio' && <label className="three-color">Cor de fundo<input type="color" value={env.background} onChange={(event) => updateEnvironment({ background: event.target.value })} /></label>}
+            <div className="three-material"><NumericField key={`elev-${env.sunElevation}`} label="Elevação do sol (°)" value={env.sunElevation ?? 38} min={-10} max={90} step={1} onChange={(sunElevation) => updateEnvironment({ sunElevation })} />
+              <NumericField key={`azim-${env.sunAzimuth}`} label="Azimute do sol (°)" value={env.sunAzimuth ?? 35} min={0} max={360} step={1} onChange={(sunAzimuth) => updateEnvironment({ sunAzimuth })} /></div>
+            <div className="three-material"><NumericField key={`Exposição-${env.exposure}`} label="Exposição" value={env.exposure} min={0.1} max={3} onChange={(exposure) => updateEnvironment({ exposure })} />
+              <NumericField key={`Intensidade da luz-${env.lightIntensity}`} label="Intensidade da luz" value={env.lightIntensity} min={0} max={5} onChange={(lightIntensity) => updateEnvironment({ lightIntensity })} /></div>
+            <div className="three-material"><NumericField key={`fog-${env.fog}`} label="Neblina" value={env.fog ?? 0} min={0} max={0.2} step={0.002} onChange={(fog) => updateEnvironment({ fog })} />
+              <NumericField key={`bloom-${env.bloom}`} label="Brilho (bloom)" value={env.bloom ?? 0} min={0} max={3} step={0.1} onChange={(bloom) => updateEnvironment({ bloom })} /></div>
+            <SelectField label="Mapeamento tonal" value={env.toneMapping ?? 'aces'} options={[['aces', 'ACES Filmic'], ['agx', 'AgX'], ['neutral', 'Neutro (Khronos)']]} onChange={(toneMapping) => updateEnvironment({ toneMapping })} />
+            <label className="three-check"><input type="checkbox" checked={env.shadows ?? true} onChange={(event) => updateEnvironment({ shadows: event.target.checked })} /> Sombras suaves</label>
+            <label className="three-check"><input type="checkbox" checked={env.reflections ?? true} onChange={(event) => updateEnvironment({ reflections: event.target.checked })} /> Reflexões do ambiente</label>
+            <label className="three-check"><input type="checkbox" checked={env.grid} onChange={(event) => updateEnvironment({ grid: event.target.checked })} /> Grade de referência</label>
+            <label className="three-check"><input type="checkbox" checked={env.wireframe} onChange={(event) => updateEnvironment({ wireframe: event.target.checked })} /> Wireframe</label>
+            <h3>Jogador</h3>
+            <p className="three-hint">Início: {player.spawn ? player.spawn.map((value) => value.toFixed(1)).join(' · ') : 'automático, diante da cena'}{player.spawn ? ` · direção ${player.yaw.toFixed(0)}°` : ''}</p>
+            <div className="three-object-actions"><button type="button" onClick={() => { const camera = viewport.current?.cameraSpawn(); if (camera) updatePlayer(camera) }}>Início na câmera atual</button>
+              <button type="button" disabled={!player.spawn} onClick={() => updatePlayer({ spawn: null, yaw: 0 })}>Início automático</button></div>
+            <div className="three-material"><NumericField key={`speed-${player.speed}`} label="Velocidade (m/s)" value={player.speed} min={1} max={20} step={0.5} onChange={(speed) => updatePlayer({ speed })} />
+              <NumericField key={`jump-${player.jumpHeight}`} label="Altura do pulo (m)" value={player.jumpHeight} min={0} max={5} step={0.1} onChange={(jumpHeight) => updatePlayer({ jumpHeight })} /></div>
+            <SelectField label="Modo inicial" value={player.mode} options={[['walk', 'Caminhada com gravidade'], ['fly', 'Voo livre']]} onChange={(mode) => updatePlayer({ mode })} />
           </details>
-          <div className="three-roadmap"><span className="workspace-eyebrow">EM EVOLUÇÃO</span><p>Perfis, curvas, malhas GLB, materiais físicos e reparo contextual disponíveis. A análise de interferências é amostrada; animação esquelética e física exigem recursos próprios.</p></div>
+          <div className="three-roadmap"><span className="workspace-eyebrow">PRONTO PARA JOGAR</span><p>Pressione P ou ▶ Jogar para explorar em primeira pessoa com colisão, interações e coletáveis. Colisões e inspeções usam aproximações declaradas; não há física de corpos rígidos.</p></div>
         </div>
       </aside>
     </div>
     </fieldset>
-    <div className="three-playback" role="group" aria-label="Reprodução da cena">
-      <button type="button" disabled={busy} aria-pressed={playing} onClick={() => setPlaying(!playing)}>{playing ? 'Pausar' : 'Reproduzir'}</button>
-      <button type="button" onClick={() => { setPlaying(false); seek(0) }}>Reiniciar</button>
-      <input type="range" aria-label="Tempo da cena" min={0} max={doc.timeline.duration} step={0.01} value={Math.min(time, doc.timeline.duration)}
+    <div className="three-playback" role="group" aria-label="Reprodução da cena" hidden={!studioOpen || playMode}>
+      <button type="button" disabled={busy || playMode} aria-pressed={playing} onClick={() => setPlaying(!playing)}>{playing ? 'Pausar' : 'Reproduzir'}</button>
+      <button type="button" disabled={playMode} onClick={() => { setPlaying(false); seek(0) }}>Reiniciar</button>
+      <input type="range" aria-label="Tempo da cena" disabled={playMode} min={0} max={doc.timeline.duration} step={0.01} value={Math.min(time, doc.timeline.duration)}
         onChange={(event) => { setPlaying(false); seek(Number(event.target.value)) }} />
       <output aria-label="Tempo atual">{time.toFixed(1)} / {doc.timeline.duration} s</output>
-      <span>{doc.nodes.filter((node) => node.animation.kind !== 'none').length} animações · loop</span>
+      <span>{doc.nodes.filter((node) => node.animation.kind !== 'none').length} animações · {doc.nodes.filter((node) => node.interaction).length} interações</span>
     </div>
-    <footer className="three-statusbar"><span><span className="three-dot" /> Three.js · local</span><span>{doc.nodes.filter((node) => node.kind !== 'group').length} malhas</span><span role="status">{saveStatus}</span><span>Projeto JSON 1.1</span></footer>
+    <footer className="three-statusbar" hidden={!studioOpen || playMode}><span><span className="three-dot" /> Three.js · local</span><span>{doc.nodes.filter((node) => hasSurface(node.kind)).length} malhas · {doc.nodes.filter((node) => node.kind === 'light').length} luzes</span><span role="status">{saveStatus}</span><span>Projeto JSON 1.2</span></footer>
   </div>
 }

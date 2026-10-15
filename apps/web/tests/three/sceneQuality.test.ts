@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import { createEmptyScene, createNode, validateScene } from '../../src/three/sceneDocument.ts'
 import { buildNodeGeometry } from '../../src/three/sceneGeometry.ts'
 import { inspectSceneGeometry } from '../../src/three/sceneInspection.ts'
-import { applySceneEdit, editThreeScene, generateThreeScene, SceneSpatialError } from '../../src/three/sceneGeneration.ts'
+import { applySceneEdit, editThreeScene, generateThreeScene, type SceneGenerationReport } from '../../src/three/sceneGeneration.ts'
 import { insertionPosition } from '../../src/three/scenePlacement.ts'
 import { createOrbitalScene } from '../../src/three/scenePreset.ts'
 import type { AgentMessage, LLMProvider } from '../../../../packages/agent/src/provider.ts'
@@ -99,23 +99,38 @@ test('contextual patches preserve untouched IDs, geometry, animation and add det
   assert.throws(() => applySceneEdit(doc, { updates: [], additions: [], deleteIds: [node.id] }), /exclusões/)
 })
 
-test('repair operates on the existing scene and accepts only verified improvement', async () => {
-  const doc = overlapping()
+/** Two huge slabs: the layout solver treats them as fixed, so only the AI can resolve them. */
+function slabs() {
+  const a = { ...createNode('box'), id: 'a', dimensions: [40, 1, 40] as [number, number, number] }, b = { ...createNode('box'), id: 'b', dimensions: [40, 1, 40] as [number, number, number], position: [5, 0.5, 0] as [number, number, number] }
+  return validateScene({ ...createEmptyScene(), nodes: [a, b] })
+}
+test('repair resolves simple overlaps locally and only then asks the AI, accepting verified improvement', async () => {
   let calls = 0
-  const result = await editThreeScene(fake([{ updates: [{ id: 'b', changes: { position: [2, 0.5, 0] } }], additions: [] }], (messages) => { calls++; assert.ok(JSON.stringify(messages).includes('CENA E DIAGNÓSTICO')) }), doc, '', new AbortController().signal, { mode: 'repair' })
+  const local = await editThreeScene(fake([], () => calls++), overlapping(), '', new AbortController().signal, { mode: 'repair' })
+  assert.equal(calls, 0)
+  assert.equal(inspectSceneGeometry(local).intersections.length, 0)
+  const doc = slabs()
+  const result = await editThreeScene(fake([{ updates: [{ id: 'b', changes: { position: [45, 0.5, 0] } }], additions: [] }], (messages) => { calls++; assert.ok(JSON.stringify(messages).includes('CENA E DIAGNÓSTICO')) }), doc, '', new AbortController().signal, { mode: 'repair' })
   assert.equal(calls, 1)
   assert.deepEqual(result.nodes.map((node) => node.id), ['a', 'b'])
   assert.equal(inspectSceneGeometry(result).intersections.length, 0)
-  assert.deepEqual(doc.nodes[1].position, [0.25, 0.5, 0])
-  await assert.rejects(editThreeScene(fake([{ updates: [{ id: 'b', changes: { visible: false } }], additions: [] }]), doc, '', new AbortController().signal, { mode: 'repair' }), /ocultar/)
-  await assert.rejects(editThreeScene(fake([{ updates: [], additions: [] }, { updates: [], additions: [] }]), doc, '', new AbortController().signal, { mode: 'repair' }), /não reduziu/)
+  assert.deepEqual(doc.nodes[1].position, [5, 0.5, 0])
+  const hide = { updates: [{ id: 'b', changes: { visible: false } }], additions: [] }
+  await assert.rejects(editThreeScene(fake([hide, hide]), slabs(), '', new AbortController().signal, { mode: 'repair' }), /não reduziu/)
+  await assert.rejects(editThreeScene(fake([{ updates: [], additions: [] }, { updates: [], additions: [] }]), slabs(), '', new AbortController().signal, { mode: 'repair' }), /não reduziu/)
 })
 
-test('generation repairs overlaps before applying and never accepts an overlapping second candidate', async () => {
-  const node = createNode('box')
-  const source = { name: 'Two boxes', background: '#112233', exposure: 1, lightIntensity: 1, duration: 20, nodes: [{ ...node, id: 'piece', color: '#abcdef', metalness: 0, roughness: 0.5, repeat: { mode: 'linear', count: 2, offset: [0.2, 0, 0], radius: 0, axis: 'y' } }] }
-  const fixed = structuredClone(source); fixed.nodes[0].repeat.offset = [2, 0, 0]
+test('generation settles overlaps locally, asks the AI once for the rest and still delivers the best scene with a report instead of an error', async () => {
+  const node = { ...createNode('box'), dimensions: [40, 1, 40] as [number, number, number] }
+  const source = { name: 'Two boxes', background: '#112233', exposure: 1, lightIntensity: 1, duration: 20, nodes: [{ ...node, id: 'piece', color: '#abcdef', metalness: 0, roughness: 0.5, repeat: { mode: 'linear', count: 2, offset: [5, 0, 0], radius: 0, axis: 'y' } }] }
+  const fixed = structuredClone(source); fixed.nodes[0].repeat.offset = [41, 0, 0]
   const doc = await generateThreeScene(fake([source, fixed]), 'Duas peças separadas', new AbortController().signal)
   assert.equal(inspectSceneGeometry(doc).intersections.length, 0)
-  await assert.rejects(generateThreeScene(fake([source, source]), 'Duas peças', new AbortController().signal), SceneSpatialError)
+  let report: SceneGenerationReport | null = null
+  const delivered = await generateThreeScene(fake([source, source]), 'Duas peças', new AbortController().signal, () => {}, () => {}, (value) => { report = value })
+  assert.equal(delivered.nodes.length, 2)
+  assert.equal(report!.inspection!.intersections.length, 1)
+  assert.ok(report!.warnings.some((warning) => warning.includes('Corrigir sobreposições')))
+  const late = await generateThreeScene(fake([source]), 'Duas peças', new AbortController().signal)
+  assert.equal(late.nodes.length, 2)
 })

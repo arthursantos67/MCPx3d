@@ -71,10 +71,6 @@ def _correlation_id(request: Request) -> str:
     return stored if isinstance(stored, str) and stored else str(uuid4())
 
 
-def _pydantic_error_details(exc: ValidationError) -> list[object]:
-    return [{"loc": list(error["loc"]), "message": error["msg"]} for error in exc.errors()]
-
-
 def _x3d_validation_details(exc: X3DValidationError) -> list[object]:
     result = exc.result
     details: list[object] = [{"schemaError": error} for error in result.schema_errors]
@@ -214,10 +210,9 @@ def register_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(ValidationError)
     async def _pydantic_validation_error(request: Request, exc: ValidationError) -> JSONResponse:
         return error_response(
-            400,
-            "INVALID_PLAN",
-            "The request body is not a valid apply-plan request.",
-            details=_pydantic_error_details(exc),
+            500,
+            "INTERNAL_ERROR",
+            "Unexpected server failure.",
             correlation_id=_correlation_id(request),
         )
 

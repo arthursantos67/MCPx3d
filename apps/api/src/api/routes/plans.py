@@ -40,6 +40,7 @@ plan's net effect on the object count.
 from __future__ import annotations
 
 import logging
+import re
 from time import perf_counter
 from typing import Annotated, Literal
 from uuid import uuid4
@@ -47,12 +48,12 @@ from uuid import uuid4
 from domain.model_plan import Clarify, ModelPlan, NoChange
 from domain.model_spec import ModelSpec
 from fastapi import APIRouter, Body, Depends, Request, Response
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from api.config import Settings, get_settings
 from api.errors import api_error
 from api.limits import ComplexityLimitError
-from api.mutation import apply_plan
+from api.mutation import MutationError, apply_plan
 from api.overlap import check_scene_layout
 from api.projects import (
     ProjectSessionService,
@@ -66,6 +67,9 @@ from api.x3d_validation import build_and_validate_candidate
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/projects", tags=["plans"])
+
+_REQUEST_ID_PATTERN = r"^[A-Za-z0-9._:-]{1,128}$"
+_REQUEST_ID = re.compile(_REQUEST_ID_PATTERN)
 
 ArtifactFormat = Literal["html", "x3d", "x3dj", "x3dv"]
 _ARTIFACT_AVAILABILITY: tuple[tuple[ArtifactFormat, bool, str | None], ...] = (
@@ -82,7 +86,7 @@ class ApplyPlanRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
     expectedRevision: int = Field(ge=0)
-    requestId: str | None = None
+    requestId: str | None = Field(default=None, pattern=_REQUEST_ID_PATTERN)
     plan: ModelPlan
     overlapPolicy: Literal["visual", "strict"] = "visual"
     resolveOverlaps: bool = False
@@ -127,7 +131,7 @@ def artifact_descriptors() -> list[ArtifactDescriptor]:
 
 def _request_id(body: dict[str, object]) -> str:
     raw = body.get("requestId")
-    return raw if isinstance(raw, str) and raw else str(uuid4())
+    return raw if isinstance(raw, str) and _REQUEST_ID.fullmatch(raw) else str(uuid4())
 
 
 @router.post("/{project_id}/plans", response_model=ApplyPlanResponse)
@@ -146,9 +150,17 @@ async def apply_plan_endpoint(
     # raised below, including ones this endpoint never explicitly catches.
     http_request.state.correlation_id = correlation_id
 
-    # ValidationError propagates to the INVALID_PLAN handler (api.error_handlers, Issue #23).
     with timer.measure("plan_validation"):
-        plan_request = ApplyPlanRequest.model_validate(body)
+        try:
+            plan_request = ApplyPlanRequest.model_validate(body)
+        except ValidationError as exc:
+            raise api_error(
+                400,
+                "INVALID_PLAN",
+                "The request body is not a valid apply-plan request.",
+                details=[{"loc": list(error["loc"]), "message": error["msg"]} for error in exc.errors()],
+                correlation_id=correlation_id,
+            ) from exc
 
     logger.info(
         "apply_plan.start correlation_id=%s project_id=%s expected_revision=%s",
@@ -186,9 +198,12 @@ async def apply_plan_endpoint(
 
     # UnknownTargetError/MutationError/ComplexityLimitError propagate to their handlers.
     with timer.measure("candidate_mutation"):
-        candidate = apply_plan(
-            session.model_spec, plan_request.plan, max_objects=settings.max_objects_per_project
-        )
+        try:
+            candidate = apply_plan(
+                session.model_spec, plan_request.plan, max_objects=settings.max_objects_per_project
+            )
+        except ValidationError as exc:
+            raise MutationError(f"The plan produces an invalid model: {exc.errors()[0]['msg']}") from exc
 
     candidate, layout_warnings, overlap_fixes = check_scene_layout(
         session.model_spec, candidate, plan_request.plan,
@@ -208,7 +223,7 @@ async def apply_plan_endpoint(
                 if session.revision in session.validated_x3d
                 else None
             ),
-            artifacts=artifact_descriptors(),
+            artifacts=artifact_descriptors() if session.revision in session.validated_x3d else [],
             timings=timer.summary(),
         )
 

@@ -1,4 +1,4 @@
-import { ProviderRequestError, type AgentMessage, type GenerationOptions, type JsonSchema, type LLMProvider } from './provider.ts'
+import { ProviderRequestError, checkpointScope, type AgentMessage, type GenerationOptions, type JsonSchema, type LLMProvider } from './provider.ts'
 
 export const CAD_AUTONOMY_INSTRUCTIONS = 'The user delegates CAD design decisions and does not want questions or permission requests. Choose compatible dimensions, fits, wall thicknesses and fastening positions autonomously. Prefer adjusting the current component and retaining validated mating geometry. If an inferred height or mounting pattern intersects a cavity, revise those dimensions while preserving the global mating axis and necessary clearance from other parts. Preserve requested functions and real threads; document decisions, approximations and any unavoidable requirement conflicts in assumptions. Never claim unsupported functionality or bypass geometry/mechanical validation. Return a construction decision with question empty, not clarification.'
 
@@ -9,7 +9,7 @@ export class CadAutonomyError extends ProviderRequestError {
   }
 }
 
-const pendingDecisions = new WeakMap<LLMProvider, Map<string, readonly string[]>>()
+const pendingDecisions = new WeakMap<object, Map<string, readonly string[]>>()
 
 export async function generateCadDecision(
   provider: LLMProvider, messages: readonly AgentMessage[], schema: JsonSchema,
@@ -22,8 +22,8 @@ export async function generateCadDecision(
     decision: { ...properties.decision, enum: decisions }, question: { type: 'string', const: '' } } }
   const base: AgentMessage[] = [...messages, { role: 'system', content: CAD_AUTONOMY_INSTRUCTIONS }]
   const key = JSON.stringify([messages, autonomousSchema, options.maxTokens])
-  let store = pendingDecisions.get(provider)
-  if (!store) { store = new Map(); pendingDecisions.set(provider, store) }
+  let store = pendingDecisions.get(checkpointScope(provider))
+  if (!store) { store = new Map(); pendingDecisions.set(checkpointScope(provider), store) }
   let questions = store.get(key) ?? []
   const resolve = () => provider.generateStructured<unknown>([...base,
     ...questions.map((question): AgentMessage => ({ role: 'assistant', content: JSON.stringify({ decision: 'clarify', question }) })),

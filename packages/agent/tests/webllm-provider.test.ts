@@ -182,3 +182,41 @@ test("onStateChange unsubscribe stops further notifications", async () => {
 
   assert.deepEqual(observed, []);
 });
+
+test("concurrent initialize calls share one worker and engine; dispose releases them", async () => {
+  let workers = 0;
+  let engines = 0;
+  let unloaded = 0;
+  let terminated = 0;
+  const provider = new WebLLMProvider(
+    "some-model",
+    async () => AVAILABLE,
+    () => { workers += 1; return { terminate: () => { terminated += 1; } }; },
+    async () => {
+      engines += 1;
+      return Object.assign(fakeEngine(), { unload: async () => { unloaded += 1; } }) as unknown as MLCEngineInterface;
+    },
+  );
+
+  await Promise.all([provider.initialize(), provider.initialize()]);
+  await provider.initialize();
+  assert.equal(workers, 1);
+  assert.equal(engines, 1);
+
+  await provider.dispose();
+  assert.equal(unloaded, 1);
+  assert.equal(terminated, 1);
+  assert.deepEqual(provider.getState(), { phase: "idle" });
+});
+
+test("max_tokens never exceeds the provider's output ceiling", async () => {
+  let request: { max_tokens?: number } | undefined;
+  const provider = new WebLLMProvider("some-model", async () => AVAILABLE, () => ({}), async () => fakeEngine({
+    create: async (body) => { request = body as { max_tokens?: number }; return { choices: [{ message: { content: "{}" } }] }; },
+  }));
+  await provider.initialize();
+
+  await provider.generateStructured([], {}, { maxTokens: 100_000 });
+
+  assert.equal(request?.max_tokens, provider.maxOutputTokens);
+});

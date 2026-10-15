@@ -7,6 +7,15 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 from api.cad_cancellation import cad_cancellation
 
 
+def runs_cad_worker(scope: Scope) -> bool:
+    if scope["type"] != "http" or not scope["path"].startswith("/api/cad/") or scope["method"] == "OPTIONS":
+        return False
+    path: str = scope["path"]
+    if scope["method"] not in ("GET", "HEAD"):
+        return True
+    return path.endswith("/stl") or "/components/" in path
+
+
 class CadWorkMiddleware:
     def __init__(self, app: ASGIApp, queue_timeout: float = 60) -> None:
         self.app = app
@@ -15,7 +24,7 @@ class CadWorkMiddleware:
         self.gate: asyncio.Semaphore | None = None
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] != "http" or not scope["path"].startswith("/api/cad/") or scope["method"] == "OPTIONS":
+        if not runs_cad_worker(scope):
             await self.app(scope, receive, send)
             return
         loop = asyncio.get_running_loop()

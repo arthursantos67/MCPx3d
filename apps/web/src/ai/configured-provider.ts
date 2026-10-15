@@ -39,6 +39,7 @@ function toAgentProvider(webllm: WebLLMProvider): AgentProvider {
     initialize: () => webllm.initialize(),
     generateStructured: (messages, schema, options) => webllm.generateStructured(messages, schema, options),
     cancel: () => webllm.cancel(),
+    dispose: () => webllm.dispose(),
     getState: () => toAgentStatus(webllm.getState()),
     onStateChange: (listener) => webllm.onStateChange((next) => listener(toAgentStatus(next))),
   };

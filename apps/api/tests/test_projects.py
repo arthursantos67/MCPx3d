@@ -3,6 +3,7 @@ import asyncio
 import pytest
 from domain.model_spec import Material, ModelObject, ModelSpec, Scene, Transform
 
+from api.artifacts import StaleArtifactRequestError
 from api.projects import (
     ProjectNotFoundError,
     ProjectSessionService,
@@ -272,8 +273,52 @@ async def test_deleting_a_project_cancels_its_inflight_artifact_build() -> None:
     await started.wait()
     service.delete_project(session.project_id)
 
-    with pytest.raises(asyncio.CancelledError):
+    with pytest.raises(ProjectNotFoundError):
         await artifact
+    assert not service._artifact_cache._entries
+
+
+@pytest.mark.anyio
+async def test_renaming_during_a_build_reports_a_stale_artifact_to_waiters() -> None:
+    service = _service()
+    session = service.create_project()
+    committed = service.commit_revision(
+        session.project_id, 0, _add_object(session.model_spec), "<X3D/>"
+    )
+    snapshot = service.snapshot_revision(session.project_id, committed.revision)
+    assert snapshot is not None
+    started = asyncio.Event()
+
+    async def build() -> str:
+        started.set()
+        await asyncio.Event().wait()
+        return "<html>stale</html>"
+
+    artifact = asyncio.create_task(service.get_or_build_artifact(snapshot, "html", build))
+    await started.wait()
+    service.set_scene_title(session.project_id, committed.revision, "Renomeado")
+
+    with pytest.raises(StaleArtifactRequestError) as caught:
+        await artifact
+    assert caught.value.requested_revision == 1
+    assert caught.value.current_revision == 2
+
+
+@pytest.mark.anyio
+async def test_commit_evicts_cached_artifacts_of_older_revisions() -> None:
+    service = _service()
+    session = service.create_project()
+    first = service.commit_revision(session.project_id, 0, _add_object(session.model_spec), "<X3D/>")
+    snapshot = service.snapshot_revision(session.project_id, first.revision)
+    assert snapshot is not None
+
+    async def build() -> str:
+        return "<html>revision 1</html>"
+
+    await service.get_or_build_artifact(snapshot, "html", build)
+    assert service._artifact_cache._entries
+    service.commit_revision(session.project_id, first.revision, _add_object(first.model_spec, "obj_b"), "<X3D/>")
+
     assert not service._artifact_cache._entries
 
 

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { generateCadProgram } from '../src/generate-cad-program.ts'
-import { MockLLMProvider } from '../src/mock-provider.ts'
+import { MockLLMProvider, mockCompletion } from '../src/mock-provider.ts'
 import { ProviderRequestError } from '../src/provider.ts'
 import { OpenAICompatibleProvider } from '../src/openai-compatible-provider.ts'
 
@@ -729,4 +729,12 @@ test('a failed geometry correction does not return an invalid program', async ()
     generateCadProgram(provider, 'Bloco', undefined, async () => 'CAD step body (base) produces an invalid or empty solid'),
     /A geração automática não conseguiu validar a peça/,
   )
+})
+
+test('an unparsable first response gets the format repair without an empty assistant turn', async () => {
+  const provider = new MockLLMProvider([mockCompletion('not json at all'), { decision: 'create', spec, question: '', assumptions: [] }])
+  const result = await generateCadProgram(provider, 'Crie um suporte')
+  assert.equal(result.kind, 'create')
+  assert.equal(provider.calls.length, 2)
+  assert.ok(provider.calls[1].messages.every((message) => message.role !== 'assistant'))
 })

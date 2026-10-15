@@ -28,13 +28,13 @@ _COLOR_PATTERN = re.compile(r"^#[0-9a-f]{6}$")
 
 
 def _check_id(value: str) -> str:
-    if not _ID_PATTERN.match(value):
+    if not _ID_PATTERN.fullmatch(value):
         raise ValueError("id must match ^[A-Za-z0-9_-]+$")
     return value
 
 
 def _check_color(value: str) -> str:
-    if not _COLOR_PATTERN.match(value):
+    if not _COLOR_PATTERN.fullmatch(value):
         raise ValueError("color must be a normalized lowercase 6-digit hex value, e.g. #ff0000")
     return value
 

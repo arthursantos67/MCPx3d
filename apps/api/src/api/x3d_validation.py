@@ -36,6 +36,7 @@ _SECTION_LEVELS: dict[str, DiagnosticLevel] = {
     "## Info": "info",
 }
 _DIAGNOSTIC_LINE = re.compile(r"^- \*\*\[(?P<check>[\w-]+)\]\*\* (?P<message>.+)$")
+_SUMMARY_LINE = re.compile(r"Found (?P<errors>\d+) error\(s\), \d+ warning\(s\), \d+ info\(s\)\.")
 
 
 class X3DValidationError(Exception):
@@ -109,9 +110,14 @@ def _parse_semantic_report(report: str) -> tuple[Diagnostic, ...]:
     saw_report = False
     saw_section = False
     saw_diagnostic = False
+    declared_errors: int | None = None
     for line in report.splitlines():
         if line == "# Semantic Check Report":
             saw_report = True
+            continue
+        summary = _SUMMARY_LINE.fullmatch(line)
+        if summary is not None and declared_errors is None:
+            declared_errors = int(summary["errors"])
             continue
         section_level = _SECTION_LEVELS.get(line)
         if section_level is not None:
@@ -122,7 +128,8 @@ def _parse_semantic_report(report: str) -> tuple[Diagnostic, ...]:
         if match is not None and level is not None:
             diagnostics.append(Diagnostic(level, match["check"], match["message"]))
             saw_diagnostic = True
-    if saw_report and saw_section and saw_diagnostic:
+    parsed_errors = sum(1 for diagnostic in diagnostics if diagnostic.level == "error")
+    if saw_report and saw_section and saw_diagnostic and declared_errors == parsed_errors:
         return tuple(diagnostics)
     return (Diagnostic("error", "semantic-report-protocol", "Unrecognized or incomplete semantic report."),)
 

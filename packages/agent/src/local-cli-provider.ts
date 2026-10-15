@@ -58,7 +58,10 @@ export class LocalCliProvider implements LLMProvider {
       });
     }
     try { return await response.json(); }
-    catch (error) { throw new ProviderRequestError('A API local não entregou uma resposta válida. Nenhuma retentativa automática foi feita.', { cause: error }); }
+    catch (error) {
+      if (init?.signal?.aborted) throw new ProviderRequestError('Solicitação ao cliente local cancelada.', { cause: error });
+      throw new ProviderRequestError('A API local não entregou uma resposta válida. Nenhuma retentativa automática foi feita.', { cause: error });
+    }
   }
 
   async checkStatus(): Promise<LocalClientStatus> {
@@ -84,8 +87,11 @@ export class LocalCliProvider implements LLMProvider {
   }
   async generateStructured<T>(messages: readonly AgentMessage[], schema: JsonSchema, options?: GenerationOptions): Promise<T> {
     if (this.abort) throw new ProviderRequestError('Este cliente já está gerando uma resposta.');
+    options?.signal?.throwIfAborted();
     const abort = new AbortController();
     this.abort = abort;
+    const forwardAbort = (): void => abort.abort();
+    options?.signal?.addEventListener('abort', forwardAbort, { once: true });
     this.setState({ phase: 'generating' });
     try {
       const result = await this.request('generate', {
@@ -110,6 +116,7 @@ export class LocalCliProvider implements LLMProvider {
       }
       throw error;
     } finally {
+      options?.signal?.removeEventListener('abort', forwardAbort);
       this.abort = null;
     }
   }

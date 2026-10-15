@@ -54,12 +54,11 @@ export function parseStructuredCompletion(
       value = direct.value;
     } else {
       const repaired = losslessRepair(text);
-      const reparsed = repaired === null ? { ok: false as const } : tryParse(repaired);
-      if (reparsed.ok) {
-        value = reparsed.value;
+      if (repaired.ok) {
+        value = repaired.value;
         locallyRepaired = true;
       } else {
-        failure = isUnterminatedJson(text) ? "truncated" : "malformed";
+        failure = repaired.unterminated ? "truncated" : "malformed";
       }
     }
   }
@@ -102,20 +101,34 @@ function withoutCodeFence(text: string): string {
   return fenced ? fenced[1] : text.replace(/^\s*```[a-z]*\s*\n?/i, "");
 }
 
-function losslessRepair(text: string): string | null {
-  const unfenced = withoutCodeFence(text);
-  const start = unfenced.search(/[{[]/);
-  if (start < 0) return null;
-  const scan = scanJsonValue(unfenced, start);
-  if (scan.status !== "complete") return null;
-  return withoutTrailingCommas(unfenced.slice(start, scan.end));
+const MAX_JSON_START_CANDIDATES = 64;
+
+function withoutReasoning(text: string): string {
+  return text.replace(/^\s*<think>[\s\S]*?<\/think>/i, "");
 }
 
-function isUnterminatedJson(text: string): boolean {
-  const unfenced = withoutCodeFence(text);
-  const start = unfenced.search(/\S/);
-  if (start < 0 || (unfenced[start] !== "{" && unfenced[start] !== "[")) return false;
-  return scanJsonValue(unfenced, start).status === "unterminated";
+function losslessRepair(text: string): { readonly ok: true; readonly value: unknown } | { readonly ok: false; readonly unterminated: boolean } {
+  const unfenced = withoutCodeFence(withoutReasoning(text));
+  let start = nextJsonStart(unfenced, 0);
+  for (let candidates = 0; start >= 0 && candidates < MAX_JSON_START_CANDIDATES; candidates += 1) {
+    const scan = scanJsonValue(unfenced, start);
+    if (scan.status === "unterminated") return { ok: false, unterminated: start === unfenced.search(/\S/) || /"\s*:/.test(unfenced.slice(start)) };
+    if (scan.status === "complete") {
+      const parsed = tryParse(withoutTrailingCommas(unfenced.slice(start, scan.end)));
+      if (parsed.ok) return parsed;
+      start = nextJsonStart(unfenced, scan.end);
+    } else {
+      start = nextJsonStart(unfenced, start + 1);
+    }
+  }
+  return { ok: false, unterminated: false };
+}
+
+function nextJsonStart(text: string, from: number): number {
+  for (let index = from; index < text.length; index += 1) {
+    if (text[index] === "{" || text[index] === "[") return index;
+  }
+  return -1;
 }
 
 type ScanResult =
@@ -159,10 +172,16 @@ function withoutTrailingCommas(text: string): string {
       else if (char === '"') inString = false;
     } else if (char === '"') {
       inString = true;
-    } else if (char === "," && /^\s*[}\]]/.test(text.slice(index + 1))) {
+    } else if (char === "," && closesAfterWhitespace(text, index + 1)) {
       continue;
     }
     result += char;
   }
   return result;
+}
+
+function closesAfterWhitespace(text: string, from: number): boolean {
+  let index = from;
+  while (index < text.length && /\s/.test(text[index])) index += 1;
+  return text[index] === "}" || text[index] === "]";
 }

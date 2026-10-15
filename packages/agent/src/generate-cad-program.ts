@@ -1,7 +1,7 @@
 import { Ajv2020 } from 'ajv/dist/2020.js'
 import programSchema from '../../domain/schemas/cad-program.v3.schema.json' with { type: 'json' }
 import { type CadProgramSpec, type CadProgramStep, validateCadProgram } from '../../domain/ts/src/cad-program.ts'
-import { ProviderRequestError, type AgentMessage, type LLMProvider } from './provider.ts'
+import { ProviderRequestError, StructuredOutputError, checkpointScope, isAbortError, type AgentMessage, type LLMProvider } from './provider.ts'
 import { CAD_FEATURES, CAD_FEATURE_GUIDANCE } from '../../domain/ts/src/cad-features.ts'
 import { cadResponseMetadataSchema } from './cad-response-metadata.ts'
 import { applyCadProgramPatch, cadStepRemovalRequested } from './cad-program-patch.ts'
@@ -352,7 +352,7 @@ const editGenerationSchema = {
   },
 }
 
-const programCheckpoints = new WeakMap<LLMProvider, Map<string, ProgramCheckpoint>>()
+const programCheckpoints = new WeakMap<object, Map<string, ProgramCheckpoint>>()
 
 interface CadProgramGenerationOptions {
   readonly maxOutputTokens?: number
@@ -370,8 +370,8 @@ export async function generateCadProgram(
   checkGeometry?: (spec: CadProgramSpec) => Promise<string | null>,
   options?: CadProgramGenerationOptions,
 ): Promise<CadProgramOutcome> {
-  let store = programCheckpoints.get(provider)
-  if (!store) { store = new Map(); programCheckpoints.set(provider, store) }
+  let store = programCheckpoints.get(checkpointScope(provider))
+  if (!store) { store = new Map(); programCheckpoints.set(checkpointScope(provider), store) }
   const key = cadIdentity([request, previous, options?.maxOutputTokens, options?.assemblyComponent, options?.noQuestions, options?.maxRepairAttempts, options?.prepareDesign])
   const resume = store.get(key)
   const remember = (checkpoint: ProgramCheckpoint) => {
@@ -393,7 +393,7 @@ export async function generateCadProgram(
     store.delete(key)
     return result
   } catch (error) {
-    if (!(error instanceof ProviderRequestError) && !(error instanceof DOMException && error.name === 'AbortError')) store.delete(key)
+    if (!(error instanceof ProviderRequestError) && !(error instanceof StructuredOutputError) && !isAbortError(error)) store.delete(key)
     throw error
   }
 }
@@ -823,9 +823,10 @@ async function generateOnce(provider: LLMProvider, request: string, previous?: C
     { role: 'user', content: previous ? `Current CAD program:\n${JSON.stringify(previous)}\n\nRequested change: ${request}` : request },
   ]
   const options = { temperature: 0, maxTokens: maxOutputTokens }
-  const first = await generateCadDecision(provider, messages, outputSchema, options, noQuestions)
-  let candidate = first
+  let candidate: unknown
   try {
+    const first = await generateCadDecision(provider, messages, outputSchema, options, noQuestions)
+    candidate = first
     const initial = parse(first)
     if (initial.kind !== 'clarify' || previous || provider.generationPolicy?.retryInvalidStructuredOutput === false) return initial
     candidate = await generateCadDecision(provider, [
@@ -835,15 +836,15 @@ async function generateOnce(provider: LLMProvider, request: string, previous?: C
     ], generationSchema, options, noQuestions)
     return parseOutcome(candidate, previous, request, allowCutRemoval)
   } catch (error) {
-    if (error instanceof ProviderRequestError || (error instanceof DOMException && error.name === 'AbortError')) throw error
+    if (error instanceof ProviderRequestError || isAbortError(error)) throw error
     if (provider.generationPolicy?.retryInvalidStructuredOutput === false && !allowFormatRepair) {
       throw new ProviderRequestError(`O cliente local devolveu um programa que não atende ao contrato CAD. Nenhuma nova chamada foi feita para corrigir o formato. Retome o mesmo pedido nesta aba. ${error instanceof Error ? error.message : 'Resposta inválida.'}`, { cause: error })
     }
     const issue = error instanceof Error ? error.message : 'Invalid CAD program response'
-    const serialized = JSON.stringify(candidate) ?? ''
+    const serialized = candidate === undefined ? '' : JSON.stringify(candidate) ?? ''
     const repairMessages: AgentMessage[] = [
       ...messages,
-      ...(serialized.length <= 20_000 ? [{ role: 'assistant' as const, content: serialized }] : []),
+      ...(serialized && serialized.length <= 20_000 ? [{ role: 'assistant' as const, content: serialized }] : []),
       { role: 'user', content: `Correct the complete CAD program. The previous response failed validation: ${issue}. Each step needs id, op, shape, position and rotation, and every field for its selected feature. The compact output has a height hint, ignored for features without height. Retain the feature definitions in the system instructions, including thread, hole, loft and finishing operations. Preserve every pattern and requested feature. ${allowCutRemoval ? 'Preserve existing base, union and finishing steps and real threads; remove an unrequested cut only if it prevents a valid connected solid.' : 'Preserve every existing step unless the user explicitly requested its removal.'} Return only the corrected JSON object.` },
     ]
     const repaired = await generateCadDecision(provider, repairMessages, generationSchema, options, noQuestions)

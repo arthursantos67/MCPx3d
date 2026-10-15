@@ -54,6 +54,7 @@ import type { ModelSpec } from "../../domain/ts/src/model-spec.ts";
 import {
   ProviderRequestError,
   StructuredOutputError,
+  isAbortError,
   type AgentMessage,
   type CompletionMetadata,
   type GenerationOptions,
@@ -164,7 +165,13 @@ export async function generateModelPlan(input: GenerateModelPlanInput): Promise<
 
   const second = await attempt(provider, [...messages, ...repairTurns(first, continuation)], options, modelSpec, continuation);
   if (second.ok) {
-    return requireRetained(second.plan, first.candidateOperations ?? input.rejectedPlan?.operations.length, input);
+    const rejectedOperations = first.candidateOperations ?? input.rejectedPlan?.operations.length;
+    const allowed = continuation?.maxOperations ?? MAX_SINGLE_PLAN_OPERATIONS;
+    return requireRetained(
+      second.plan,
+      first.failure === "batch-size" && rejectedOperations !== undefined ? Math.min(rejectedOperations, allowed) : rejectedOperations,
+      input,
+    );
   }
   input.onValidationFailure?.(second.failure);
   if (second.completion) throw new ModelPlanTruncatedError(second.completion);
@@ -306,10 +313,12 @@ async function attempt(
   continuation: ModelPlanContinuation | undefined,
 ): Promise<AttemptResult> {
   let raw: unknown;
+  options.signal?.throwIfAborted();
   try {
     raw = await provider.generateStructured<unknown>(messages, modelPlanJsonSchema, options);
   } catch (error) {
-    if (error instanceof ProviderRequestError) throw error;
+    if (error instanceof ProviderRequestError || isAbortError(error)) throw error;
+    options.signal?.throwIfAborted();
     if (error instanceof StructuredOutputError && error.completion.failure === "truncated") {
       return { ok: false, failure: "truncated", issues: [error.message], completion: error.completion };
     }

@@ -20,7 +20,7 @@ from api.routes.recipes import router as recipes_router
 settings = get_settings()
 
 app = FastAPI(title="AI Web3D Modeler API")
-app.add_middleware(CadWorkMiddleware)
+app.add_middleware(CadWorkMiddleware, queue_timeout=settings.cad_worker_queue_timeout_seconds)
 
 app.add_middleware(
     CORSMiddleware,

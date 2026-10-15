@@ -15,6 +15,8 @@ npm run build
 
 `npm test` executa testes do frontend, agentes, domínio TypeScript e relatórios golden. Os testes de agentes usam propostas programadas e verificam parsing, validação, reparos, cotas, retomada e cancelamento; não são um benchmark da IA.
 
+Para o gerador Three.js isolado, `node --test --test-concurrency=2 apps/web/tests/three/*.test.ts` verifica o núcleo e `npx playwright test --config playwright.three.config.ts` executa as 23 regressões de navegador iniciando apenas o frontend. A API e o modelo são simulados nessa configuração. O teste de ilha com exportação e captura usa 90 s porque a leitura de um quadro em janela inteira no SwiftShader pode consumir boa parte do prazo; os demais mantêm o prazo geral.
+
 ## Python
 
 Em `apps/api` e depois em `packages/domain/python`, instale e confira tipos/lint:
@@ -61,11 +63,11 @@ Playwright inicia API na porta 8011 e Vite na 5181, usa SQLite separado em `.cac
 Para verificar apenas o novo estúdio:
 
 ```bash
-npm run test:browser -- tests/browser/three-studio.spec.ts tests/browser/three-quality.spec.ts
+npm run test:browser -- tests/browser/three-studio.spec.ts tests/browser/three-quality.spec.ts tests/browser/three-game.spec.ts
 node --test apps/web/tests/three/*.test.ts
 ```
 
-Os testes de contrato Three.js cobrem árvores inválidas/cíclicas, limites, números não finitos, duplicação de subárvore, histórico, round trip JSON, compatibilidade de documentos estáticos, expansão procedural, amostragem de animações, reparo limitado e cancelamento. Os testes de navegador usam o renderer Three.js real (exceto o caso de WebGL2 indisponível), seleção por raycast, inspector, troca de área, reload, importação/exportação, viewport móvel e falhas de persistência. A geração usa respostas programadas do provedor, verifica animação no canvas, cancelamento, prazo configurável com relógio virtual, identificação da etapa interrompida/histórico de correção e conservação da cena anterior; não consome uma assinatura real. A suíte de qualidade também verifica tela cheia/fallback, cena procedural detalhada, diagnóstico em worker, reparo/edição de uma cena existente e importação GLB real com recusa de clipes/referências externas. Não são um benchmark de cenas complexas.
+Os testes de contrato Three.js cobrem árvores inválidas/cíclicas, limites, números não finitos, duplicação de subárvore, histórico, round trip JSON, compatibilidade de documentos estáticos, expansão procedural, amostragem de animações, reparo limitado e cancelamento. Os testes de navegador usam o renderer Three.js real (exceto o caso de WebGL2 indisponível), seleção por raycast, inspector, troca de área, reload, importação/exportação, viewport móvel e falhas de persistência. A geração usa respostas programadas do provedor, verifica animação no canvas, cancelamento, prazo configurável com relógio virtual, identificação da etapa interrompida/histórico de correção e conservação da cena anterior; não consome uma assinatura real. A suíte de qualidade também verifica tela cheia/fallback, cena procedural detalhada, diagnóstico em worker, reparo/edição de uma cena existente e importação GLB real com recusa de clipes/referências externas. Não são um benchmark de cenas complexas. A suíte `three-game.spec.ts` renderiza o exemplo jogável com céu, luzes e pós-processamento sem erros de shader, exporta GLB (cabeçalho, clipes e luzes) e PNG, entra no modo jogo por teclado, coleta por proximidade, abre uma porta com E, dispara gatilho de tecla, anda, alterna voo e confirma que o documento exportado não muda; também cobre gizmos/atalhos, deslocamento por setas, exclusão/desfazer, referência de atalhos, luz spot, céu noturno e bloom. Os testes unitários `sceneGame.test.ts` cobrem migração 1.2, validação de luzes/interações, novas primitivas e alturas do terreno, keyframes e animações disparadas, runtime de portas/coletáveis/teclas/proximidade, cápsula com BVH/caixas/voo, receitas em grade/dispersão/`onto`, patches de ambiente, mapas de teclado e a ilha jogável sem interferências. Testes também reproduzem receitas imperfeitas (segmentos fora do limite, `onto` entre grupos, geometria inválida, referências inexistentes), entrega da melhor cena com prazo esgotado ou falha do provedor na chamada de ajuste, descarte apenas no cancelamento do usuário e, no navegador, a cena aplicada com observações e diagnóstico. O renderer roda em SwiftShader: FPS e aparência não representam GPU real.
 
 Os casos cobrem:
 

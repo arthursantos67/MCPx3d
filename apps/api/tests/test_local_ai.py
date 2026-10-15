@@ -171,3 +171,15 @@ def test_local_route_returns_safe_provider_result(monkeypatch):
         response = client.post("/api/ai/local/generate", json={"client": "claude", "messages": [{"role": "user", "content": "test"}], "schema": {}})
         assert response.status_code == 200
         assert json.loads(response.json()["content"]) == {"ok": True}
+
+
+@pytest.mark.anyio
+async def test_pipes_held_open_after_exit_do_not_block_cleanup(tmp_path, monkeypatch):
+    async def never_closes(stream):
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(local_ai, "_drain", never_closes)
+    monkeypatch.setattr(local_ai, "_DRAIN_TIMEOUT_SECONDS", 0.1)
+    code, stdout, _ = await asyncio.wait_for(
+        local_ai.run_client([sys.executable, "-c", "print('ok')"], tmp_path), 10)
+    assert code == 0 and stdout.strip() == "ok"

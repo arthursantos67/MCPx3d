@@ -70,6 +70,9 @@ async def _kill(process: asyncio.subprocess.Process) -> None:
             pass
 
 
+_DRAIN_TIMEOUT_SECONDS = 5.0
+
+
 async def _drain(stream: asyncio.StreamReader | None) -> None:
     assert stream is not None
     while await stream.read(65536):
@@ -139,7 +142,10 @@ async def run_client(
         stderr_reader.cancel()
         await asyncio.gather(work, monitor, stdout_reader, stderr_reader, return_exceptions=True)
         await _kill(process)
-        await asyncio.gather(_drain(process.stdout), _drain(process.stderr))
+        try:
+            await asyncio.wait_for(asyncio.gather(_drain(process.stdout), _drain(process.stderr)), _DRAIN_TIMEOUT_SECONDS)
+        except TimeoutError:
+            pass
         await process.wait()
 
 

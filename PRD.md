@@ -1,6 +1,6 @@
 # Forma — requisitos atuais
 
-Baseline de 2026-10-02. Substitui o PRD histórico de Web3D v1, preservado em [docs/archive](docs/archive/README.md). Atualização de 2026-10-13: o produto tem dois agentes independentes, CAD e X3D, e uma terceira área de edição visual Three.js.
+Baseline de 2026-10-02. Substitui o PRD histórico de Web3D v1, preservado em [docs/archive](docs/archive/README.md). Atualização de 2026-10-13: o produto tem dois agentes independentes, CAD e X3D, e uma terceira área de edição visual Three.js, jogável em primeira pessoa desde 2026-10-14.
 
 ## Resultado esperado
 
@@ -79,13 +79,26 @@ Objetivo: construir cenas visuais detalhadas com objetos organizados, materiais 
 - Incremento solicitado em 2026-10-13: geração de cenas animadas por descrição usando o provedor configurado. Receita compacta com até 80 templates e repetições lineares/radiais (1–100 cópias), expandida em até 500 nós; aplicação atômica após validação. Até duas chamadas (uma correção de contrato), cancelamento e prazo total configurável de 2, 5 (padrão) ou 10 minutos; falhas preservam a cena anterior. Meta de segundos/minutos depende de medição real por provedor e não constitui garantia de zero erros.
 - Progresso apresenta etapas observáveis (preparação, espera pela IA, validação, construção e aplicação), relógio, chamada atual e histórico com diagnóstico de falha. A integração recebe um JSON completo e não transmite subetapas internas do planejamento nem percentual. O prazo local Codex/Claude Code continua sendo de 300 s por chamada, independente do prazo total escolhido. Timeout/cancelamento exigem nova tentativa, sem retomada da resposta interrompida.
 - Animações declarativas de rotação, flutuação e órbita por objeto/grupo, com eixo, período, amplitude e fase. Timeline reproduzível de 1–120 s, play/pause, busca e reinício; animação não modifica a pose base nem cria revisões por frame. Arquivos 1.0 anteriores recebem valores padrão ao importar.
-- Ainda fora desta entrega: importação CAD/X3D, glTF por URLs, exportação GLB, HDRI externo, mapas físicos completos de GLB, instanciamento, LOD, gizmos, animação esquelética/keyframes livres, pós-processamento, física, colaboração e persistência no servidor. [Plano, critérios e fases](docs/threejs-studio.md).
+- Ainda fora desta entrega: importação CAD/X3D, glTF por URLs, exportação GLB, HDRI externo, mapas físicos completos de GLB, instanciamento, LOD, gizmos, animação esquelética/keyframes livres, pós-processamento, física, colaboração e persistência no servidor. Exportação GLB, instanciamento, gizmos, keyframes e pós-processamento foram entregues na revisão jogável abaixo. [Plano, critérios e fases](docs/threejs-studio.md).
 
 ### Revisão de qualidade Three.js — 2026-10-14
 
 Adicionar tela cheia com Escape/fallback, geometria procedural de perfis/curvas/malhas e importação GLB estática, materiais físicos, texturas procedurais e iluminação com reflexões/sombras. Separar criar cena, editar a cena existente e reparar sobreposições. Edições são patches por ID com preservação dos nós não mencionados, sem reconstrução implícita nem exclusões silenciosas.
 
 A inspeção espacial deve ocorrer fora da thread da interface, refinar caixas por triângulos, informar contenções/cobertura/poses e reconhecer pares de contato intencional. Diagnóstico amostrado não equivale a solver físico ou prova contínua. Reparos devem reduzir problemas sem introduzir novos pares antes de substituir o documento. Critérios, migração e limites em [threejs-studio.md](docs/threejs-studio.md).
+
+### Estúdio jogável Three.js — 2026-10-14
+
+Elevar o gerador ao padrão atual de ferramentas Three.js: cenas mais detalhadas, iluminação e atmosfera realistas e interação por teclado como jogo, sem abandonar dados declarativos nem a inspeção espacial.
+
+- Contrato `ThreeSceneDocument` 1.2 (migra 1.0/1.1): plano, cápsula, poliedro, terreno procedural, texto e luzes pontuais/spot reais; keyframes, pulso, balanço e quique; animações disparadas por interação; interações de clique, proximidade e tecla (alternar animação/visibilidade, coletar, mensagem); `collidable`; céu físico/noite/espaço, sol orientável, neblina, bloom, mapeamento tonal e configuração do jogador. Limites: 2.000 nós, 32 luzes, 2 milhões de triângulos.
+- Modo jogo em primeira pessoa com WASD, mouse/pointer lock ou arrasto, corrida, pulo, voo, cápsula com colisão BVH para estáticos e caixas orientadas para objetos móveis, HUD com mira, ação, itens e mensagens. O jogo nunca modifica o documento.
+- Editor: gizmos mover/girar/escalar com encaixe, atalhos de teclado (gizmo, deslocamento, exclusão, duplicação, histórico, vistas, grade, captura, jogo), contorno de seleção, MSAA, instanciamento automático de superfícies estáticas repetidas, 17 texturas procedurais com relevo e exportação GLB (PBR, luzes, clipes) e PNG.
+- Receitas de IA com até 120 templates, repetições em grade e dispersão sem sobreposição, assentamento `onto` em terrenos/superfícies com contato declarado e prompt de direção de arte/level design. Exemplo jogável local (Ilha do Farol) verificado sem interferências inesperadas em todas as poses amostradas.
+- Geração tolerante: a IA nunca perde uma cena aproveitável por valores fora de limite ou referências quebradas. O motor ajusta ao contrato, aplica a melhor versão, informa cada ajuste e deixa sobreposições restantes para correção sobre a cena aplicada. Importações de arquivo permanecem estritas; cancelamento explícito descarta o resultado.
+- Qualidade espacial sem depender de coordenadas exatas da IA: biblioteca de 22 pré-fabricados paramétricos, grupos repetíveis com referências por cópia, inspeção que separa encaixes internos de montagens de erros e layout automático determinístico (assentar no terreno e afastar pares confirmados) antes de qualquer chamada adicional de IA.
+- Sistemas de jogo: câmera em primeira/terceira pessoa (V) com avatar, vida e dano, inimigos que patrulham e perseguem (derrotados com pulo ou golpe), obstáculos, pontos de controle, portal de chegada, objetivos com cronômetro e tela de vitória, escadas escaláveis e início sempre em terra firme. Terreno aplainado sob construções, estradas que seguem o relevo e dispersão que evita água, estradas e construções.
+- Fora desta entrega: física de corpos rígidos, áudio, personagens/animação esquelética, combate com armas/projéteis, multiplayer, exportação HTML jogável, LOD/streaming e persistência de assets no servidor. Colisão de objetos móveis é aproximada por caixas. Detalhes em [threejs-studio.md](docs/threejs-studio.md).
 
 ## Operação e limites
 

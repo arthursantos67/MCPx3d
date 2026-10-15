@@ -88,12 +88,20 @@ export async function importGlb(data: ArrayBuffer, name: string, doc: ThreeScene
           if (map.channel !== 0 || map.rotation || map.offset.lengthSq() || map.repeat.x !== 1 || map.repeat.y !== 1) warnings.add('Transformações especiais e canais UV alternativos do mapa de cor não foram importados.')
         }
         const node = { ...createNode('mesh', root.id), name: (object.name || 'Malha GLB').slice(0, 120), position: pos.toArray() as Vector3Tuple,
-          rotation: [rotation.x, rotation.y, rotation.z].map(THREE.MathUtils.radToDeg) as Vector3Tuple, scale: scale.toArray() as Vector3Tuple, dimensions, material,
+          rotation: [rotation.x, rotation.y, rotation.z].map(THREE.MathUtils.radToDeg) as Vector3Tuple, dimensions: dimensions.map((value, axis) => Math.max(0.01, value * scale.getComponent(axis))) as Vector3Tuple, material,
           geometry: { ...createNode('mesh').geometry, vertices, indices, normals, uvs } }
         nodes.push(node)
       }
     })
     if (nodes.length === 1) throw new Error('O GLB não contém malhas triangulares importáveis.')
+    // Node scale is folded into dimensions; files authored in millimetres or kilometres are rescaled uniformly into the studio limits.
+    const largest = Math.max(...nodes.slice(1).flatMap((node) => [...node.dimensions, ...node.position.map(Math.abs).map((value) => value / 10)]))
+    if (largest > 1000) {
+      const factor = 1000 / largest
+      for (const node of nodes.slice(1)) { node.dimensions = node.dimensions.map((value) => Math.max(0.01, value * factor)) as Vector3Tuple; node.position = node.position.map((value) => value * factor) as Vector3Tuple }
+      gltf.scene.scale.multiplyScalar(factor); gltf.scene.updateMatrixWorld(true)
+      warnings.add(`O modelo excedia 1.000 m e foi reduzido uniformemente (fator ${factor.toPrecision(3)}).`)
+    }
     const bounds = new THREE.Box3().setFromObject(gltf.scene)
     root.position = [0, -bounds.min.y, 0]
     root.position = insertionPosition(doc, root, nodes)

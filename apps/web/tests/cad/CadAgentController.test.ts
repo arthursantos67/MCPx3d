@@ -313,3 +313,25 @@ test('reordered JSON fields reuse a previously checked geometric candidate', asy
   assert.equal(checks, 1);
 });
 
+
+test("a cancelled run cannot call the provider again after its pending call fails", async () => {
+  const { provider } = makeFakeProvider([]);
+  let calls = 0;
+  let fail!: (error: unknown) => void;
+  provider.generateStructured = <T>() => {
+    calls++;
+    return new Promise<T>((_resolve, reject) => { fail = reject; });
+  };
+  const drafts: unknown[] = [];
+  const controller = new CadAgentController(provider, {
+    checkCadProgram: async () => null, checkCadAssembly: async () => null,
+  });
+  controller.setDraftListener((draft) => drafts.push(draft));
+  const pending = controller.planCadProgram('Crie um suporte');
+  controller.cancelGeneration();
+  await assert.rejects(pending, { name: 'AbortError' });
+  fail(new Error('the response was not valid JSON'));
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(calls, 1);
+  assert.deepEqual(drafts, []);
+});

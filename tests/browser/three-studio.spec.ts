@@ -1,3 +1,4 @@
+import { openAdvancedEditor, projectAction } from './threeHelpers.ts'
 import { expect, test, type Page } from '@playwright/test'
 import { readFile } from 'node:fs/promises'
 
@@ -12,10 +13,12 @@ async function setup(page: Page) {
   await page.goto('/')
   await page.getByRole('button', { name: 'Three.js Estúdio de cenas', exact: true }).click()
   await expect(page.getByRole('img', { name: 'Cena Three.js interativa' })).toBeVisible()
+  await openAdvancedEditor(page)
+  await projectAction(page, 'Abrir exemplo')
 }
 async function exported(page: Page) {
   const pending = page.waitForEvent('download')
-  await page.getByRole('button', { name: 'Exportar JSON', exact: true }).click()
+  await projectAction(page, 'Exportar JSON')
   const download = await pending
   return JSON.parse(await readFile((await download.path())!, 'utf8'))
 }
@@ -27,7 +30,7 @@ test('Three.js renders the local pavilion and edits, restores and round trips a 
   await expect(page.getByLabel('Estatísticas do renderer')).toContainText(/[1-9][\d.]* triângulos/)
   await expect(page.getByText('Pavilhão Aurora', { exact: true })).toBeVisible()
   await page.screenshot({ path: '.cache/browser/three-pavilion.png' })
-  await page.getByRole('button', { name: 'Cena vazia', exact: true }).click()
+  await projectAction(page, 'Cena vazia')
   await page.getByRole('button', { name: 'Adicionar', exact: true }).click()
   const name = page.getByRole('textbox', { name: 'Nome do objeto', exact: true })
   await name.fill('Peça de exposição')
@@ -40,9 +43,10 @@ test('Three.js renders the local pavilion and edits, restores and round trips a 
   await metalness.press('Enter')
   await page.getByRole('button', { name: 'Duplicar', exact: true }).click()
   await expect(name).toHaveValue('Peça de exposição (cópia)')
-  await page.getByRole('button', { name: 'Desfazer', exact: true }).click()
+  await projectAction(page, 'Desfazer')
+  await page.getByRole('button', { name: 'Projeto ▾', exact: true }).click()
   await expect(page.getByRole('button', { name: 'Refazer', exact: true })).toBeEnabled()
-  await page.getByRole('button', { name: 'Refazer', exact: true }).click()
+  await projectAction(page, 'Refazer')
   await expect(name).toHaveValue('Peça de exposição (cópia)')
   const doc = await exported(page)
   expect(doc.nodes).toHaveLength(2)
@@ -56,7 +60,7 @@ test('Three.js renders the local pavilion and edits, restores and round trips a 
   await page.reload()
   await expect(page.getByRole('button', { name: 'Three.js Estúdio de cenas', exact: true })).toHaveAttribute('aria-pressed', 'true')
   expect(await exported(page)).toEqual(doc)
-  await page.getByRole('button', { name: 'Cena vazia', exact: true }).click()
+  await projectAction(page, 'Cena vazia')
   await page.getByLabel('Importar projeto Three.js').setInputFiles({ name: 'cena.three.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(doc)) })
   expect(await exported(page)).toEqual(doc)
   await page.getByLabel('Importar projeto Three.js').setInputFiles({ name: 'invalido.json', mimeType: 'application/json', buffer: Buffer.from('{"version":"9"}') })
@@ -67,7 +71,7 @@ test('Three.js renders the local pavilion and edits, restores and round trips a 
 
 test('viewport picking, local group transforms and subtree operations remain coherent', async ({ page }) => {
   await setup(page)
-  await page.getByRole('button', { name: 'Cena vazia', exact: true }).click()
+  await projectAction(page, 'Cena vazia')
   await page.getByRole('combobox', { name: 'Tipo de objeto' }).selectOption('group')
   await page.getByRole('button', { name: 'Adicionar', exact: true }).click()
   const x = page.getByRole('spinbutton', { name: 'Posição (m) X', exact: true })
@@ -88,7 +92,7 @@ test('viewport picking, local group transforms and subtree operations remain coh
   expect((await exported(page)).nodes).toHaveLength(4)
   await page.getByRole('button', { name: 'Excluir grupo', exact: true }).click()
   expect((await exported(page)).nodes).toHaveLength(2)
-  await page.getByRole('button', { name: 'Desfazer', exact: true }).click()
+  await projectAction(page, 'Desfazer')
   expect((await exported(page)).nodes).toHaveLength(4)
 })
 
@@ -96,7 +100,7 @@ test('invalid numeric edits keep the valid document and mobile layout fits', asy
   await page.setViewportSize({ width: 390, height: 844 })
   await setup(page)
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390)
-  await page.getByRole('button', { name: 'Cena vazia', exact: true }).click()
+  await projectAction(page, 'Cena vazia')
   await page.getByRole('button', { name: 'Adicionar', exact: true }).click()
   const scale = page.getByRole('spinbutton', { name: 'Escala X', exact: true })
   await scale.fill('0')
@@ -113,7 +117,7 @@ test('invalid numeric edits keep the valid document and mobile layout fits', asy
 test('storage failure is reported while JSON export remains available', async ({ page }) => {
   await setup(page)
   await page.evaluate(() => { Storage.prototype.setItem = () => { throw new DOMException('Quota exceeded', 'QuotaExceededError') } })
-  await page.getByRole('button', { name: 'Cena vazia', exact: true }).click()
+  await projectAction(page, 'Cena vazia')
   await expect(page.getByRole('alert').filter({ hasText: 'Não foi possível salvar' })).toBeVisible()
   expect((await exported(page)).nodes).toEqual([])
 })
@@ -127,8 +131,8 @@ test('a corrupt local draft is preserved until an intentional edit', async ({ pa
   await page.goto('/')
   await expect(page.getByRole('alert').filter({ hasText: 'Não foi possível recuperar' })).toBeVisible()
   expect(await page.evaluate(() => localStorage.getItem('modeler:three-scene:v1'))).toBe('{corrupt')
-  await page.getByRole('button', { name: 'Cena vazia', exact: true }).click()
-  await expect(page.getByText('Salvo neste navegador', { exact: true })).toBeVisible()
+  await projectAction(page, 'Cena vazia')
+  await expect(page.locator('.three-save-indicator')).toHaveAttribute('title', 'Salvo neste navegador')
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem('modeler:three-scene:v1')!).nodes)).toEqual([])
 })
 
@@ -146,7 +150,8 @@ test('WebGL2 failure leaves the scene editable and exportable', async ({ page })
   })
   await page.goto('/')
   await expect(page.getByRole('alert').filter({ hasText: 'WebGL2 indisponível' })).toBeVisible()
-  await page.getByRole('button', { name: 'Cena vazia', exact: true }).click()
+  await openAdvancedEditor(page)
+  await projectAction(page, 'Cena vazia')
   await page.getByRole('button', { name: 'Adicionar', exact: true }).click()
   expect((await exported(page)).nodes).toHaveLength(1)
 })
@@ -230,12 +235,14 @@ test('cancelling AI keeps the current scene and releases the editor', async ({ p
   await page.getByRole('textbox', { name: 'Descreva a cena Three.js', exact: true }).fill('Cena demorada.')
   await page.getByRole('button', { name: 'Criar cena com IA', exact: true }).click()
   await requestStarted
+  await page.getByRole('button', { name: 'Projeto ▾', exact: true }).click()
   await expect(page.getByRole('button', { name: 'Cena vazia', exact: true })).toBeDisabled()
   await expect(page.getByRole('button', { name: 'CAD STEP · STL', exact: true })).toBeDisabled()
   await page.getByRole('button', { name: 'Cancelar geração', exact: true }).click()
   await expect(page.getByRole('alert').filter({ hasText: 'Geração cancelada' })).toBeVisible()
   release()
   expect(await exported(page)).toEqual(original)
+  await page.getByRole('button', { name: 'Projeto ▾', exact: true }).click()
   await expect(page.getByRole('button', { name: 'Cena vazia', exact: true })).toBeEnabled()
 })
 
@@ -302,7 +309,30 @@ test('progress preserves the contract diagnosis and identifies the correction ca
   await expect(progress).toContainText('precisa de correção')
   release()
   await expect(progress.getByRole('status')).toHaveText('Cena concluída')
-  await expect(progress.locator('[data-state="complete"]')).toHaveCount(6)
+  await expect(progress.getByRole('list', { name: 'Etapas da geração' })).toBeHidden()
   await expect(progress).toContainText('24 objetos')
   expect(calls).toBe(2)
+})
+
+test('AI output outside the contract is adjusted and applied with visible notes instead of an error', async ({ page }) => {
+  await setup(page)
+  const recipe = { ...animatedRecipe, name: 'Receita imperfeita', nodes: [
+    { ...animatedRecipe.nodes[0], id: 'ring', kind: 'sphere', geometry: { segments: 300 }, repeat: { mode: 'linear', count: 1, offset: [0, 0, 0], radius: 0, axis: 'y' } },
+    { ...animatedRecipe.nodes[0], id: 'twin', name: 'Gêmeo', animation: { kind: 'none', axis: 'y', duration: 8, amplitude: 0, phase: 0 }, position: [0.2, 1, 0], repeat: { mode: 'linear', count: 1, offset: [0, 0, 0], radius: 0, axis: 'y', onto: 'missing' } }] }
+  let calls = 0
+  await page.route('http://provider.test/v1/chat/completions', async (route) => {
+    calls++
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ choices: [{ message: { content: JSON.stringify(recipe) }, finish_reason: 'stop' }] }) })
+  })
+  await page.getByRole('textbox', { name: 'Descreva a cena Three.js', exact: true }).fill('Duas esferas.')
+  await page.getByRole('button', { name: 'Criar cena com IA', exact: true }).click()
+  await expect(page.getByText('Receita imperfeita', { exact: true })).toBeVisible()
+  const notes = page.locator('.three-generation-notes')
+  await expect(notes).toContainText('Segmentos')
+  await expect(notes).toContainText('Correção automática')
+  await expect(page.locator('.three-spatial summary')).toContainText('0 pares')
+  expect(calls).toBe(1)
+  const doc = await exported(page)
+  expect(doc.nodes).toHaveLength(2)
+  expect(doc.nodes[0].geometry.segments).toBe(20)
 })

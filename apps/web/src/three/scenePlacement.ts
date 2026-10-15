@@ -18,7 +18,7 @@ export function insertionPosition(doc: ThreeSceneDocument, node: SceneNode, ownN
   const oldBounds = new THREE.Box3(), unit = new THREE.Box3(new THREE.Vector3(-0.5, -0.5, -0.5), new THREE.Vector3(0.5, 0.5, 0.5))
   const byId = new Map(doc.nodes.map((item) => [item.id, item]))
   for (const item of doc.nodes) {
-    if (item.kind === 'group' || !item.visible) continue
+    if (item.kind === 'group' || item.kind === 'light' || !item.visible) continue
     let parent = item.parentId, belongs = node.parentId === null
     while (parent) { if (parent === node.parentId) belongs = true; parent = byId.get(parent)!.parentId }
     if (!belongs) continue
@@ -28,7 +28,7 @@ export function insertionPosition(doc: ThreeSceneDocument, node: SceneNode, ownN
   if (oldBounds.isEmpty()) return [...node.position]
   const subtreeDoc = { ...doc, nodes: ownNodes.map((item) => item.id === node.id ? { ...item, parentId: null, position: [0, 0, 0] as Vector3Tuple } : item) }
   const ownMatrices = sceneMatrices(subtreeDoc), bounds = new THREE.Box3()
-  for (const item of subtreeDoc.nodes) if (item.kind !== 'group') bounds.union(unit.clone().applyMatrix4(ownMatrices.get(item.id)!.clone().scale(new THREE.Vector3(...item.dimensions))))
+  for (const item of subtreeDoc.nodes) if (item.kind !== 'group' && item.kind !== 'light') bounds.union(unit.clone().applyMatrix4(ownMatrices.get(item.id)!.clone().scale(new THREE.Vector3(...item.dimensions))))
   const localMin = bounds.isEmpty() ? -0.5 : bounds.min.x
   return [oldBounds.max.x + 0.25 - localMin, node.position[1], node.position[2]]
 }

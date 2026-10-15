@@ -1,7 +1,7 @@
 import { type CadAssemblySpec, type CadMotion, validateCadAssembly } from '../../domain/ts/src/cad-assembly.ts'
 import type { CadProgramSpec } from '../../domain/ts/src/cad-program.ts'
 import { generateCadProgram, CadProgramValidationError } from './generate-cad-program.ts'
-import { ProviderRequestError, type LLMProvider } from './provider.ts'
+import { ProviderRequestError, StructuredOutputError, checkpointScope, isAbortError, type LLMProvider } from './provider.ts'
 import { assemblyIssueMessage, type CadAssemblyCheckResult } from '../../domain/ts/src/cad-assembly-diagnostics.ts'
 import { reducesInterference, repairAssemblyLocally } from './assembly-repair.ts'
 import { cylindricalFitStrategy } from './assembly-fits.ts'
@@ -116,11 +116,11 @@ interface AssemblyCheckpoint {
   readonly needsDesignReview?: boolean
 }
 
-const checkpoints = new WeakMap<LLMProvider, Map<string, AssemblyCheckpoint>>()
+const checkpoints = new WeakMap<object, Map<string, AssemblyCheckpoint>>()
 
 function checkpointStore(provider: LLMProvider): Map<string, AssemblyCheckpoint> {
-  let store = checkpoints.get(provider)
-  if (!store) { store = new Map(); checkpoints.set(provider, store) }
+  let store = checkpoints.get(checkpointScope(provider))
+  if (!store) { store = new Map(); checkpoints.set(checkpointScope(provider), store) }
   return store
 }
 
@@ -505,12 +505,13 @@ export async function generateCadAssembly(
         } })) }
   }
   else {
-    const rawPlan = await generateCadDecision(provider, [
-      { role: 'system', content: instructions }, { role: 'user', content: userRequest },
-    ], schema, { temperature: 0, maxTokens: planMaxTokens }, options?.noQuestions)
     try {
+      const rawPlan = await generateCadDecision(provider, [
+        { role: 'system', content: instructions }, { role: 'user', content: userRequest },
+      ], schema, { temperature: 0, maxTokens: planMaxTokens }, options?.noQuestions)
       plan = parsePlan(rawPlan, previous, options?.requireMechanics, requestedCadComponentCount(request), options?.allowUnverifiedDrafts)
     } catch (error) {
+      if (error instanceof ProviderRequestError || isAbortError(error)) throw error
       const issue = error instanceof Error ? error.message : String(error)
       if (provider.generationPolicy?.retryInvalidStructuredOutput === false && !(options?.maxRepairAttempts && options.maxRepairAttempts > 0)) {
         throw new ProviderRequestError(`O cliente local devolveu um plano de conjunto inválido. Nenhuma retentativa automática foi feita. ${issue}`, { cause: error })
@@ -625,6 +626,8 @@ export async function generateCadAssembly(
           result = { kind: 'create', spec: error.spec, assumptions: ['Geometria pendente de correção; conservada apenas como rascunho.'] }
         } else if (error instanceof ProviderRequestError) {
           throw new ProviderRequestError(`Componente ${component.id}: ${detail}`, { cause: error })
+        } else if (error instanceof StructuredOutputError) {
+          throw error
         } else if (repairAttempt === 0 && /CAD step [A-Za-z0-9_-]+/.test(detail)) {
           store.delete(key)
           return await generateCadAssembly(provider,
@@ -671,7 +674,7 @@ export async function generateCadAssembly(
     emit('checking-assembly')
     issue = await checkAssembly?.(spec) ?? null
   } catch (error) {
-    if (!(error instanceof ProviderRequestError) && !(error instanceof DOMException && error.name === 'AbortError')) store.delete(key)
+    if (!(error instanceof ProviderRequestError) && !(error instanceof StructuredOutputError) && !isAbortError(error)) store.delete(key)
     if (provider.generationPolicy && error instanceof ProviderRequestError) throw new CadAssemblyPausedError(error.message, spec, error)
     throw error
   }

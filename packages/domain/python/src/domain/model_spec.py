@@ -45,7 +45,7 @@ class Scene(BaseModel):
     @field_validator("background")
     @classmethod
     def _background_color(cls, value: str | None) -> str | None:
-        if value is not None and not _COLOR_PATTERN.match(value):
+        if value is not None and not _COLOR_PATTERN.fullmatch(value):
             raise ValueError("background must be a normalized lowercase 6-digit hex color")
         return value
 
@@ -81,7 +81,7 @@ class Material(BaseModel):
     @field_validator("color")
     @classmethod
     def _color_normalized(cls, value: str) -> str:
-        if not _COLOR_PATTERN.match(value):
+        if not _COLOR_PATTERN.fullmatch(value):
             raise ValueError("color must be a normalized lowercase 6-digit hex value, e.g. #ff0000")
         return value
 
@@ -100,7 +100,7 @@ class ModelObject(BaseModel):
     @field_validator("id")
     @classmethod
     def _id_format(cls, value: str) -> str:
-        if not _ID_PATTERN.match(value):
+        if not _ID_PATTERN.fullmatch(value):
             raise ValueError("id must match ^[A-Za-z0-9_-]+$")
         return value
 

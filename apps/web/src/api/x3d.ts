@@ -123,7 +123,7 @@ export async function applyPlan(
   body: ApplyPlanRequestBody,
   signal?: AbortSignal,
 ): Promise<ApplyPlanResponse> {
-  const response = await fetch(`${baseUrl()}/api/projects/${projectId}/plans`, {
+  const response = await fetch(`${baseUrl()}/api/projects/${encodeURIComponent(projectId)}/plans`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
@@ -135,7 +135,7 @@ export async function applyPlan(
 }
 
 export async function importManifest(projectId: string, expectedRevision: number, contents: string): Promise<ApplyPlanResponse> {
-  const response = await fetch(`${baseUrl()}/api/projects/${projectId}/import?expectedRevision=${expectedRevision}`, {
+  const response = await fetch(`${baseUrl()}/api/projects/${encodeURIComponent(projectId)}/import?expectedRevision=${expectedRevision}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: contents,
@@ -147,7 +147,7 @@ export async function importManifest(projectId: string, expectedRevision: number
 
 export async function deleteProject(projectId: string): Promise<void> {
   try {
-    const response = await fetch(`${baseUrl()}/api/projects/${projectId}`, { method: "DELETE" });
+    const response = await fetch(`${baseUrl()}/api/projects/${encodeURIComponent(projectId)}`, { method: "DELETE" });
     if (!response.ok) return throwApiError(response);
   } finally {
     forgetProjectId(projectId);
@@ -155,7 +155,7 @@ export async function deleteProject(projectId: string): Promise<void> {
 }
 
 export async function updateSceneTitle(projectId: string, expectedRevision: number, title: string): Promise<ModelSpec> {
-  const response = await fetch(`${baseUrl()}/api/projects/${projectId}/scene/title`, {
+  const response = await fetch(`${baseUrl()}/api/projects/${encodeURIComponent(projectId)}/scene/title`, {
     method: "PATCH",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ expectedRevision, title }),
@@ -165,7 +165,7 @@ export async function updateSceneTitle(projectId: string, expectedRevision: numb
 }
 
 export function artifactUrl(projectId: string, format: ArtifactFormat | "manifest", revision: number): string {
-  return `${baseUrl()}/api/projects/${projectId}/artifacts/${format}?revision=${revision}&download=true`;
+  return `${baseUrl()}/api/projects/${encodeURIComponent(projectId)}/artifacts/${format}?revision=${revision}&download=true`;
 }
 
 export function resolveArtifactUrl(relativeUrl: string): string {

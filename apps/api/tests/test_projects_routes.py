@@ -112,3 +112,34 @@ def test_create_project_ids_are_distinct(
     second = client.post("/api/projects").json()
 
     assert first["projectId"] != second["projectId"]
+
+
+@pytest.mark.parametrize("title", ["   ", "\t\n"])
+def test_blank_scene_title_is_rejected_and_not_saved(
+    client: TestClient, project_service: ProjectSessionService, title: str
+) -> None:
+    created = client.post("/api/projects").json()
+
+    response = client.patch(
+        f"/api/projects/{created['projectId']}/scene/title", json={"expectedRevision": 0, "title": title}
+    )
+
+    assert response.status_code == 400
+    assert project_service.get_project(created["projectId"]).model_spec.scene.title == "Novo modelo"
+
+
+def test_scene_title_is_stripped_and_exported_manifest_remains_importable(
+    client: TestClient, project_service: ProjectSessionService
+) -> None:
+    from domain.model_spec import ModelSpec
+
+    created = client.post("/api/projects").json()
+
+    response = client.patch(
+        f"/api/projects/{created['projectId']}/scene/title", json={"expectedRevision": 0, "title": "  Mesa  "}
+    )
+
+    assert response.status_code == 200
+    assert response.json()["scene"]["title"] == "Mesa"
+    assert response.json()["revision"] == 1
+    ModelSpec.model_validate(response.json())

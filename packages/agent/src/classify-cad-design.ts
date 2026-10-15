@@ -1,4 +1,4 @@
-import type { LLMProvider } from './provider.ts'
+import { checkpointScope, type LLMProvider } from './provider.ts'
 import type { CadProgramOutcome } from './generate-cad-program.ts'
 import type { CadAssemblyOutcome } from './generate-cad-assembly.ts'
 import { requestedCadComponentCount } from './cad-component-count.ts'
@@ -16,11 +16,11 @@ const schema = {
   properties: { kind: { enum: ['part', 'assembly'] }, reason: { type: 'string' } },
 }
 
-const decisions = new WeakMap<LLMProvider, Map<string, 'part' | 'assembly'>>()
+const decisions = new WeakMap<object, Map<string, 'part' | 'assembly'>>()
 
 /** Choose a modeling representation before constructing geometry. */
 export async function classifyCadDesign(provider: LLMProvider, request: string): Promise<'part' | 'assembly'> {
-  const cached = decisions.get(provider)?.get(request)
+  const cached = decisions.get(checkpointScope(provider))?.get(request)
   if (cached) return cached
   const response = await provider.generateStructured<unknown>([
     { role: 'system', content: [
@@ -37,8 +37,8 @@ export async function classifyCadDesign(provider: LLMProvider, request: string):
     throw new Error('O agente não conseguiu escolher a representação CAD. Tente novamente.')
   }
   const kind = requestedCadComponentCount(request) ? 'assembly' : (response as { kind: 'part' | 'assembly' }).kind
-  let store = decisions.get(provider)
-  if (!store) { store = new Map(); decisions.set(provider, store) }
+  let store = decisions.get(checkpointScope(provider))
+  if (!store) { store = new Map(); decisions.set(checkpointScope(provider), store) }
   if (store.size >= 20) store.delete(store.keys().next().value!)
   store.set(request, kind)
   return kind

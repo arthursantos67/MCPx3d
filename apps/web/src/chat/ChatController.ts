@@ -1,6 +1,6 @@
 import type { ApplyPlanRequestBody, ApplyPlanResponse, Recipe } from "../api/client.ts";
 import { ApiError } from "../api/client.ts";
-import type { AgentMessage } from "../../../../packages/agent/src/provider.ts";
+import { ProviderRequestError, type AgentMessage } from "../../../../packages/agent/src/provider.ts";
 import type { AgentProvider } from "../ai/types.ts";
 import { ModelPlanGenerationError } from "../../../../packages/agent/src/generate-model-plan.ts";
 import {
@@ -102,7 +102,7 @@ const EMPTY_GENERATION_STATS: GenerationStats = {
 };
 
 function failureSource(error: unknown): "provider" | "modeling" | "mcp" | "session" {
-  if (error instanceof ModelPlanGenerationError) return "provider";
+  if (error instanceof ModelPlanGenerationError || error instanceof ProviderRequestError) return "provider";
   if (error instanceof ApiError && error.code === "MCP_UNAVAILABLE") return "mcp";
   if (error instanceof ApiError && error.code === "PROJECT_NOT_FOUND") return "session";
   return "modeling";
@@ -463,7 +463,7 @@ export class ChatController {
         }
       }
       if (this.state.agentPhase !== "ready") {
-        this.patch({ requestStatus: "failed", failureSource: "provider", pipelineStage: "failed" });
+        this.patch({ isBusy: false, requestStatus: "failed", failureSource: "provider", pipelineStage: "failed", pipelineStartedAt: null });
         this.appendMessage("error", "No matching recipe was found. Configure an AI provider to create this model.");
         return;
       }
@@ -501,6 +501,7 @@ export class ChatController {
               overlapPolicy: strictNoOverlap ? 'strict' : 'visual',
               ...(resolveOverlaps ? { resolveOverlaps } : {}),
             }, cancellation.signal);
+            if (this.state.projectId !== projectId) return response.modelSpec;
             lastResponse = response;
             separatedParts += separatedPartCount(response);
             this.commitApplyResponse(response, current);

@@ -399,3 +399,60 @@ test("a single plan that reaches the per-plan limit continues with the remaining
   assert.equal(counters.continued, true);
   assert.match(provider.calls[1]?.messages[0]?.content ?? "", /cabinet_100/);
 });
+
+test("a provider abort is rethrown without a format-repair call", async () => {
+  const provider = new MockLLMProvider([
+    () => { throw new DOMException("aborted", "AbortError"); },
+    batchPlan(1, 2),
+  ]);
+
+  await assert.rejects(
+    () => generateModelPlan({ provider, request: "a full kitchen", modelSpec: EMPTY_SPEC }),
+    (error: unknown) => error instanceof DOMException && error.name === "AbortError",
+  );
+  assert.equal(provider.calls.length, 1);
+});
+
+test("an already aborted signal stops before any provider call", async () => {
+  const provider = new MockLLMProvider([batchPlan(1, 2)]);
+  const controller = new AbortController();
+  controller.abort();
+
+  await assert.rejects(() => generateModelPlan({ provider, request: "a kitchen", modelSpec: EMPTY_SPEC, options: { signal: controller.signal } }));
+  assert.equal(provider.calls.length, 0);
+});
+
+test("a batch-size correction is held only to the operations the batch may contain", async () => {
+  const provider = new MockLLMProvider([batchPlan(1, 60), batchPlan(1, SCENE_BATCH_OPERATIONS)]);
+
+  const plan = await generateModelPlan({
+    provider,
+    request: "a full kitchen",
+    modelSpec: EMPTY_SPEC,
+    continuation: { batch: 1, maxOperations: SCENE_BATCH_OPERATIONS },
+  });
+
+  assert.equal(plan.operations.length, SCENE_BATCH_OPERATIONS);
+  assert.equal(provider.calls.length, 2);
+});
+
+test("cancellation during a truncated first attempt does not switch to batch mode", async () => {
+  const controller = new AbortController();
+  const provider = new MockLLMProvider([
+    () => { controller.abort(); return TRUNCATED_KITCHEN; },
+    batchPlan(1, 2),
+  ]);
+  const applied: ModelPlan[] = [];
+
+  const outcome = await generateScene({
+    provider,
+    request: "a full kitchen",
+    modelSpec: EMPTY_SPEC,
+    signal: controller.signal,
+    applyPlan: fakeCommit(applied),
+  });
+
+  assert.equal(outcome.status, "cancelled");
+  assert.equal(provider.calls.length, 1);
+  assert.equal(applied.length, 0);
+});

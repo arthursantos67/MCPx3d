@@ -44,9 +44,9 @@ function isByokConfig(value: unknown): value is Extract<ProviderConfig, { mode: 
   );
 }
 
-export function loadProviderConfig(storage: KeyValueStore = defaultStorage()): ProviderConfig {
+export function loadProviderConfig(storage?: KeyValueStore): ProviderConfig {
   try {
-    const raw = storage.getItem(STORAGE_KEY);
+    const raw = (storage ?? defaultStorage()).getItem(STORAGE_KEY);
     if (!raw) return LOCAL_CONFIG;
     const parsed: unknown = JSON.parse(raw);
     return isByokConfig(parsed) || isCliConfig(parsed) ? parsed : LOCAL_CONFIG;
@@ -61,18 +61,18 @@ function isCliConfig(value: unknown): value is Extract<ProviderConfig, { mode: "
   return record.mode === "cli" && (record.client === "codex" || record.client === "claude") && typeof record.model === "string";
 }
 
-export function saveProviderConfig(config: ProviderConfig, storage: KeyValueStore = defaultStorage()): void {
+export function saveProviderConfig(config: ProviderConfig, storage?: KeyValueStore): void {
   try {
-    storage.setItem(STORAGE_KEY, JSON.stringify(config));
+    (storage ?? defaultStorage()).setItem(STORAGE_KEY, JSON.stringify(config));
   } catch {
     // Storage unavailable (private browsing, quota, blocked) -- the config
     // simply won't persist across reloads; not fatal.
   }
 }
 
-export function clearProviderConfig(storage: KeyValueStore = defaultStorage()): void {
+export function clearProviderConfig(storage?: KeyValueStore): void {
   try {
-    storage.removeItem(STORAGE_KEY);
+    (storage ?? defaultStorage()).removeItem(STORAGE_KEY);
   } catch {
     // See saveProviderConfig: best-effort only.
   }

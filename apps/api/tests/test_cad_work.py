@@ -137,3 +137,48 @@ def test_a_busy_queue_times_out_without_starting_another_cad_job():
         await first
 
     asyncio.run(run())
+
+
+def test_pure_cad_reads_bypass_the_worker_queue():
+    async def run():
+        entered = asyncio.Event()
+        release = asyncio.Event()
+        completed = []
+
+        async def application(scope, receive, send):
+            if scope["method"] == "POST":
+                entered.set()
+                await release.wait()
+            completed.append((scope["method"], scope["path"]))
+
+        async def receive():
+            return {"type": "http.request", "body": b""}
+
+        async def send(message):
+            pass
+
+        middleware = CadWorkMiddleware(application, queue_timeout=.01)
+        first = asyncio.create_task(middleware({"type": "http", "path": "/api/cad/projects", "method": "POST"}, receive, send))
+        await entered.wait()
+        for path in ("/api/cad/projects/p1", "/api/cad/projects/p1/revisions/0", "/api/cad/projects/p1/revisions/0/step"):
+            await middleware({"type": "http", "path": path, "method": "GET"}, receive, send)
+        assert len(completed) == 3
+        release.set()
+        await first
+
+    asyncio.run(run())
+
+
+def test_worker_routes_are_gated():
+    from api.cad_work import runs_cad_worker
+
+    def scope(method, path):
+        return {"type": "http", "method": method, "path": path}
+
+    assert runs_cad_worker(scope("POST", "/api/cad/programs/inspect"))
+    assert runs_cad_worker(scope("GET", "/api/cad/projects/p1/revisions/0/stl"))
+    assert runs_cad_worker(scope("GET", "/api/cad/projects/p1/revisions/0/components/a/step"))
+    assert not runs_cad_worker(scope("GET", "/api/cad/projects/p1/revisions/0/step"))
+    assert not runs_cad_worker(scope("GET", "/api/cad/projects/p1"))
+    assert not runs_cad_worker(scope("OPTIONS", "/api/cad/projects"))
+    assert not runs_cad_worker(scope("POST", "/api/projects"))

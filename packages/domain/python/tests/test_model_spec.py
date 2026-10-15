@@ -89,3 +89,16 @@ def test_named_background_is_rejected_before_rendering(fixtures_dir: Path) -> No
     payload["scene"]["background"] = "blue"
     with pytest.raises(ValidationError):
         ModelSpec.model_validate(payload)
+
+
+@pytest.mark.parametrize("field", ["id", "color"])
+def test_trailing_newline_is_rejected_in_ids_and_colors(fixtures_dir: Path, field: str) -> None:
+    payload = _load(fixtures_dir / "model-spec" / "valid.json")
+    target = payload["objects"][0]
+    if field == "id":
+        target["id"] = f"{target['id']}\n"
+    else:
+        target["material"]["color"] = f"{target['material']['color']}\n"
+
+    with pytest.raises(ValidationError):
+        ModelSpec.model_validate(payload)

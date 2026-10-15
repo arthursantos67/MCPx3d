@@ -22,17 +22,18 @@ export default function ThreeGenerationProgress({ run, model }: { run: SceneGene
   const elapsed = Math.max(0, ((run.finishedAt ?? now) - run.startedAt) / 1000)
   const last = run.events.at(-1)
   const current = last?.stage ?? 'prepare'
-  const currentIndex = stages.indexOf(current)
+  const planned=run.events.some(event=>event.stage==='planning'),visibleStages:SceneGenerationStage[]=planned?['prepare','planning',...stages.slice(1)]:stages
+  const currentIndex = visibleStages.indexOf(current)
   return <section className="three-generation" aria-label="Progresso da geração Three.js">
     <div className="three-generation__heading"><strong role="status">{outcomes[run.outcome]}</strong>
       <span>Tempo <output role="timer" aria-live="off" aria-label="Tempo decorrido">{clock(elapsed)}</output> / limite {clock(run.budgetSeconds)}</span>
-      <span>{model} · {last?.attempt === 0 ? 'sem chamada de IA nesta etapa' : `chamada ${last?.attempt ?? 1} de até 2`}</span></div>
-    <ol className="three-generation__steps" aria-label="Etapas da geração">{stages.map((stage, index) => {
+      <span>{model} · {last?.attempt === 0 ? 'sem chamada de IA nesta etapa' : `chamada ${last?.attempt ?? 1} de até ${last?.maxAttempts??2}`}</span></div>
+    {run.outcome !== 'success' && <ol className="three-generation__steps" aria-label="Etapas da geração">{visibleStages.map((stage, index) => {
       const state = run.outcome === 'success' || index < currentIndex ? 'complete' : index > currentIndex ? 'pending' : run.outcome === 'running' ? 'active' : 'stopped'
       return <li key={stage} data-state={state} aria-current={stage === current && run.outcome === 'running' ? 'step' : undefined}>
-        <span aria-hidden="true">{state === 'complete' ? '✓' : index + 1}</span>{stage === 'waiting' && (last?.attempt ?? 1) > 1 ? 'Correção pela IA' : generationStageLabels[stage]}
+        <span aria-hidden="true">{state === 'complete' ? '✓' : index + 1}</span>{stage === 'waiting' && !planned && (last?.attempt ?? 1) > 1 ? 'Correção pela IA' : generationStageLabels[stage]}
         {state === 'stopped' && <small>Interrompida</small>}</li>
-    })}</ol>
+    })}</ol>}
     <p>{last?.detail ?? 'Preparando o pedido…'}</p>
     {current === 'waiting' && <p className="three-generation__hint">O provedor não transmite as etapas internas do planejamento. Aguardamos a resposta JSON completa; não há percentual de conclusão disponível.</p>}
     {run.outcome === 'running' && current === 'waiting' && elapsed >= 60 && <p className="three-generation__hint">A espera continua na IA. Você pode aguardar até o limite escolhido ou cancelar; a cena atual permanece preservada.</p>}

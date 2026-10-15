@@ -179,6 +179,7 @@ def test_no_change_does_not_call_mcp_or_create_a_revision(
     assert response.status_code == 200
     assert response.json()["revision"] == 0
     assert response.json()["preview"] is None
+    assert response.json()["artifacts"] == []
     assert project_service.get_project(session.project_id).revision == 0
 
 
@@ -470,3 +471,53 @@ def test_invalid_x3d_does_not_commit(
 
     assert project_service.get_project(session.project_id).revision == 0
     assert project_service.get_project(session.project_id).model_spec.objects == []
+
+
+_NO_CHANGE_PLAN = {"intent": "answer", "operations": [{"op": "no_change", "reason": "already correct"}]}
+
+
+def test_safe_request_id_is_echoed_as_the_correlation_header(
+    client_unreachable_mcp: TestClient, project_service: ProjectSessionService
+) -> None:
+    session = project_service.create_project()
+    response = client_unreachable_mcp.post(
+        f"/api/projects/{session.project_id}/plans",
+        json={"expectedRevision": 0, "requestId": "req-1.a:b_c", "plan": _NO_CHANGE_PLAN},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["X-Correlation-Id"] == "req-1.a:b_c"
+
+
+@pytest.mark.parametrize("request_id", ["requisição", "a\nb", "x" * 129, ""])
+def test_unsafe_request_id_is_rejected_without_reaching_a_header(
+    client_unreachable_mcp: TestClient, project_service: ProjectSessionService, request_id: str
+) -> None:
+    session = project_service.create_project()
+    response = client_unreachable_mcp.post(
+        f"/api/projects/{session.project_id}/plans",
+        json={"expectedRevision": 0, "requestId": request_id, "plan": _NO_CHANGE_PLAN},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["code"] == "INVALID_PLAN"
+    assert response.json()["correlationId"] != request_id
+
+
+def test_invalid_mutation_output_is_a_domain_failure_not_an_invalid_request(
+    client_unreachable_mcp: TestClient, project_service: ProjectSessionService
+) -> None:
+    session = project_service.create_project()
+    plan = {"intent": "create_model", "operations": [
+        {"op": "create_object", "id": "a", "name": "A", "kind": "box",
+         "dimensions": {"width": 1, "height": 1, "depth": 1}, "position": [1.5e308, 0, 0]},
+        {"op": "translate_object", "target": "a", "delta": [1.5e308, 0, 0]},
+    ]}
+
+    response = client_unreachable_mcp.post(
+        f"/api/projects/{session.project_id}/plans", json={"expectedRevision": 0, "plan": plan}
+    )
+
+    assert response.status_code == 422
+    assert response.json()["code"] == "DOMAIN_VALIDATION_FAILED"
+    assert project_service.get_project(session.project_id).revision == 0

@@ -60,6 +60,7 @@ function ProviderSettings({ open, onClose, onApply, disabled }: ProviderSettings
     const sequence = ++operation.current
     setBusy(true); setDiagnostic(null)
     const started = performance.now()
+    let tested: AgentProvider | null = null
     try {
       if (loginOnly && form.mode === 'cli') {
         const status = await new LocalCliProvider({ apiBaseUrl: baseUrl(), client: form.client, model: form.model }).checkStatus()
@@ -67,6 +68,7 @@ function ProviderSettings({ open, onClose, onApply, disabled }: ProviderSettings
         setDiagnostic({ kind: status.installed && status.authenticated ? 'success' : 'error', text: `${status.message}${status.plan ? ` Plano identificado: ${status.plan}.` : ''}` })
       } else {
         const provider = createConfiguredProvider(toConfig(form))
+        tested = provider
         testing.current = provider
         await provider.initialize()
         if (operation.current !== sequence) return
@@ -82,6 +84,7 @@ function ProviderSettings({ open, onClose, onApply, disabled }: ProviderSettings
       if (operation.current === sequence) setDiagnostic({ kind: 'error', text: error instanceof Error ? error.message : 'Falha no teste de conexão.' })
     } finally {
       if (operation.current === sequence) { setBusy(false); testing.current = null }
+      void tested?.dispose?.()
     }
   }
   return (

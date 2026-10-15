@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import { MockLLMProvider, mockCompletion, type MockResponse } from "../../../../packages/agent/src/mock-provider.ts";
 import type { ModelSpec } from "../../../../packages/domain/ts/src/model-spec.ts";
+import { ProviderRequestError } from "../../../../packages/agent/src/provider.ts";
 
 import { ApiError, type ApplyPlanRequestBody, type ApplyPlanResponse, type Recipe } from "../../src/api/client.ts";
 import { ChatController, type AgentProvider, type ChatApi } from "../../src/chat/ChatController.ts";
@@ -707,4 +708,67 @@ test("cancelling during a later batch keeps the committed batch as the active sc
   assert.equal(state.previewUrl, "http://test/api/projects/prj_test/artifacts/html?revision=1");
   assert.equal(state.requestStatus, "cancelled");
   assert.equal(state.sceneBatch, null);
+});
+
+test("a recipe miss without a ready provider releases the busy state", async () => {
+  const spec = emptySpec();
+  const { provider, mock } = makeFakeProvider([], { phase: "unsupported", reason: "No WebGPU adapter." });
+  const { api } = makeFakeApi(spec);
+  api.matchRecipe = async () => null;
+  const controller = new ChatController(provider, api);
+  await controller.initialize();
+
+  await controller.sendMessage("uma nave espacial");
+
+  const state = controller.getState();
+  assert.equal(mock.calls.length, 0);
+  assert.equal(state.isBusy, false);
+  assert.equal(state.pipelineStartedAt, null);
+  assert.equal(state.requestStatus, "failed");
+  assert.equal(controller.canSend().canSend, true);
+});
+
+test("a provider request error is attributed to the provider", async () => {
+  const spec = emptySpec();
+  const { provider } = makeFakeProvider([() => { throw new ProviderRequestError("status 401"); }]);
+  const { api } = makeFakeApi(spec);
+  const controller = new ChatController(provider, api);
+  await controller.initialize();
+
+  await controller.sendMessage("um cubo");
+
+  assert.equal(controller.getState().failureSource, "provider");
+});
+
+test("an apply that completes after the project was replaced does not overwrite the new project", async () => {
+  const spec = emptySpec();
+  const { provider } = makeFakeProvider([CREATE_CUBE_PLAN]);
+  let finishApply!: () => void;
+  const applied = new Promise<void>((resolve) => { finishApply = resolve; });
+  let projects = 0;
+  const { api } = makeFakeApi(spec);
+  api.createProject = async () => ({ ...spec, projectId: projects++ === 0 ? "prj_test" : "prj_new" });
+  api.applyPlan = async () => {
+    await applied;
+    return {
+      projectId: "prj_test", revision: 1, modelSpec: { ...spec, revision: 1, scene: { displayScale: 1, title: "Old" } },
+      validation: { schemaValid: true, semanticValid: true, warnings: [], autofixes: [] },
+      preview: { url: "/old.html" }, artifacts: [], correlationId: "old",
+    } as unknown as ApplyPlanResponse;
+  };
+  const controller = new ChatController(provider, api);
+  await controller.initialize();
+
+  const sending = controller.sendMessage("um cubo");
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  controller.cancelGeneration();
+  await controller.resetProject();
+  finishApply();
+  await sending;
+
+  const state = controller.getState();
+  assert.equal(state.projectId, "prj_new");
+  assert.equal(state.modelSpec?.revision, 0);
+  assert.equal(state.previewUrl, null);
+  assert.notEqual(state.correlationId, "old");
 });

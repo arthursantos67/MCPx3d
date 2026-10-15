@@ -50,7 +50,7 @@ function WorkspaceShell() {
       <div className="workspace-runtime" role="status"><span className={`workspace-runtime__dot${agent.phase === 'ready' ? ' workspace-runtime__dot--ready' : ''}`} />
         {agent.phase === 'ready' ? 'IA pronta' : agent.phase === 'loading' ? 'Carregando IA' : 'Configure sua IA'}</div>
       <button type="button" className="workspace-topbar__settings-button" onClick={() => setSettingsOpen(true)}>Configurar IA</button>
-      <ProviderSettings open={settingsOpen} disabled={busy} onApply={() => setProvider(createConfiguredProvider())} onClose={() => setSettingsOpen(false)} />
+      <ProviderSettings open={settingsOpen} disabled={busy} onApply={() => { const previous = provider; setProvider(createConfiguredProvider()); void previous.dispose?.() }} onClose={() => setSettingsOpen(false)} />
     </header>
     <div className="workspace-context"><span>{mode === 'cad' ? 'Agente CAD' : mode === 'x3d' ? 'Agente X3D' : 'Motor Three.js'}</span>
       <p>{mode === 'cad' ? 'Peças e conjuntos compostos, com geometria validada e arquivos para baixar.' : mode === 'x3d' ? 'Crie e edite cenas 3D por conversa. Visualize e baixe o X3D validado.' : 'Componha cenas com hierarquia, materiais e iluminação. Edição visual no navegador.'}</p>

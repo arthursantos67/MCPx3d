@@ -85,3 +85,13 @@ def test_imported_model_is_revalidated_and_committed(x3d_mcp_server: str, import
     assert body["validation"]["schemaValid"] is True
     assert body["validation"]["semanticValid"] is True
     assert projects.get_project(project.project_id).validated_x3d[1]
+
+
+def test_deeply_nested_manifest_is_rejected_as_invalid(import_client: tuple[TestClient, ProjectSessionService]) -> None:
+    client, projects = import_client
+    project = projects.create_project()
+    response = client.post(f"/api/projects/{project.project_id}/import?expectedRevision=0",
+                           content=b"[" * 100_000 + b"]" * 100_000, headers={"content-type": "application/json"})
+    assert response.status_code == 400
+    assert response.json()["code"] == "INVALID_MANIFEST"
+    assert projects.get_project(project.project_id).revision == 0

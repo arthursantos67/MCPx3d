@@ -592,3 +592,86 @@ test("the requested completion budget never exceeds the provider's declared outp
   assert.equal(sentBudget, 8192);
   assert.equal(provider.model, "test-model");
 });
+
+test("only the description annotation is stripped; a real property named description is kept", async () => {
+  let sent: { response_format: { json_schema: { schema: Record<string, unknown> } } } | undefined;
+  const provider = new OpenAICompatibleProvider(CONFIG, fakeFetch(async (_url, init) => {
+    sent = JSON.parse(String(init.body));
+    return { status: 200, body: { choices: [{ message: { content: "{}" } }] } };
+  }));
+  await provider.initialize();
+
+  await provider.generateStructured([], {
+    type: "object",
+    description: "annotation",
+    properties: { description: { type: "string", description: "annotation" }, name: { type: "string" } },
+    required: ["description"],
+  });
+
+  assert.deepEqual(sent?.response_format.json_schema.schema, {
+    type: "object",
+    properties: { description: { type: "string" }, name: { type: "string" } },
+    required: ["description"],
+  });
+});
+
+test("a transient Retry-After wait is capped", async () => {
+  const waits: number[] = [];
+  let calls = 0;
+  const provider = new OpenAICompatibleProvider(
+    CONFIG,
+    fakeFetch(async () => {
+      calls += 1;
+      return calls === 1
+        ? { status: 503, body: {}, headers: { "retry-after": "3600" } }
+        : { status: 200, body: { choices: [{ message: { content: "{}" } }] } };
+    }),
+    async (milliseconds) => { waits.push(milliseconds); },
+  );
+  await provider.initialize();
+
+  await provider.generateStructured([], {});
+
+  assert.deepEqual(waits, [15_000]);
+});
+
+test("a stalled request times out as a provider request error", async () => {
+  const stalledFetch: FetchLike = ((_url: string | URL | Request, init?: RequestInit) =>
+    new Promise((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => reject(init.signal?.reason));
+    })) as FetchLike;
+  const provider = new OpenAICompatibleProvider(CONFIG, stalledFetch, undefined, undefined, 20);
+  await provider.initialize();
+
+  await assert.rejects(() => provider.generateStructured([], {}), (error: unknown) =>
+    error instanceof ProviderRequestError && /tempo limite/.test(error.message));
+  assert.deepEqual(provider.getState(), { phase: "ready" });
+});
+
+test("an aborted caller signal still surfaces as AbortError", async () => {
+  const controller = new AbortController();
+  const stalledFetch: FetchLike = ((_url: string | URL | Request, init?: RequestInit) =>
+    new Promise((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+      controller.abort();
+    })) as FetchLike;
+  const provider = new OpenAICompatibleProvider(CONFIG, stalledFetch);
+  await provider.initialize();
+
+  await assert.rejects(() => provider.generateStructured([], {}, { signal: controller.signal }), (error: unknown) =>
+    error instanceof DOMException && error.name === "AbortError");
+});
+
+test("a successful status with a non-JSON body is a provider request error", async () => {
+  const provider = new OpenAICompatibleProvider(CONFIG, (async () => ({
+    ok: true,
+    status: 200,
+    headers: new Headers(),
+    json: async () => { throw new SyntaxError("Unexpected token <"); },
+    text: async () => "<html>",
+  }) as unknown as Response) as FetchLike);
+  await provider.initialize();
+
+  await assert.rejects(() => provider.generateStructured([], {}), (error: unknown) =>
+    error instanceof ProviderRequestError && /não é JSON válido/.test(error.message));
+});

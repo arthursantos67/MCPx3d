@@ -148,3 +148,17 @@ def test_cancelled_request_never_launches_a_worker(monkeypatch):
         assert caught.value.status_code == 499
     finally:
         cad_cancellation.reset(token)
+
+
+def test_unexpected_worker_exception_becomes_a_structured_engine_failure(tmp_path, monkeypatch):
+    import json
+
+    from api import cad_worker
+
+    (tmp_path / "input.json").write_text(json.dumps({"operation": "unknown", "payload": {}, "memoryMb": 2048}), encoding="utf-8")
+    monkeypatch.setattr(cad_worker, "limit_process_memory", lambda _limit: None)
+    monkeypatch.setattr(sys, "argv", ["cad_worker", str(tmp_path)])
+    assert cad_worker.main() == 0
+    error = json.loads((tmp_path / "result.json").read_text(encoding="utf-8"))["error"]
+    assert error["status"] == 500
+    assert error["code"] == "CAD_ENGINE_FAILURE"
