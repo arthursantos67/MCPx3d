@@ -47,8 +47,8 @@ function WorkspaceShell() {
         <button type="button" aria-pressed={mode === 'x3d'} disabled={busy} onClick={() => { setMode('x3d'); setX3dVisited(true) }}>X3D <small>Cenas 3D</small></button>
         <button type="button" aria-pressed={mode === 'three'} disabled={busy} onClick={() => { setMode('three'); setThreeVisited(true) }}>Three.js <small>Estúdio de cenas</small></button>
       </nav>
-      <div className="workspace-runtime" role="status"><span className={`workspace-runtime__dot${agent.phase === 'ready' ? ' workspace-runtime__dot--ready' : ''}`} />
-        {agent.phase === 'ready' ? 'IA pronta' : agent.phase === 'loading' ? 'Carregando IA' : 'Configure sua IA'}</div>
+      <div className="workspace-runtime" role="status"><span className={`workspace-runtime__dot${agent.phase === 'ready' || agent.phase === 'generating' ? ' workspace-runtime__dot--ready' : ''}`} />
+        {agent.phase === 'ready' ? 'IA pronta' : agent.phase === 'generating' ? 'IA gerando' : agent.phase === 'loading' ? 'Carregando IA' : 'Configure sua IA'}</div>
       <button type="button" className="workspace-topbar__settings-button" onClick={() => setSettingsOpen(true)}>Configurar IA</button>
       <ProviderSettings open={settingsOpen} disabled={busy} onApply={() => { const previous = provider; setProvider(createConfiguredProvider()); void previous.dispose?.() }} onClose={() => setSettingsOpen(false)} />
     </header>

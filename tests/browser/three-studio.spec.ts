@@ -223,6 +223,8 @@ test('AI contract failure is bounded and preserves the previous scene', async ({
 
 test('cancelling AI keeps the current scene and releases the editor', async ({ page }) => {
   await setup(page)
+  const runtime = page.locator('.workspace-topbar').getByRole('status')
+  await expect(runtime).toHaveText('IA pronta')
   const original = await exported(page)
   let resolveRequest: () => void = () => {}
   const requestStarted = new Promise<void>((resolve) => { resolveRequest = resolve })
@@ -236,11 +238,14 @@ test('cancelling AI keeps the current scene and releases the editor', async ({ p
   await page.getByRole('textbox', { name: 'Descreva a cena Three.js', exact: true }).fill('Cena demorada.')
   await page.getByRole('button', { name: 'Criar cena com IA', exact: true }).click()
   await requestStarted
+  await expect(runtime).toHaveText('IA gerando')
+  await expect(runtime.locator('.workspace-runtime__dot')).toHaveClass(/workspace-runtime__dot--ready/)
   await page.getByRole('button', { name: 'Projeto ▾', exact: true }).click()
   await expect(page.getByRole('button', { name: 'Cena vazia', exact: true })).toBeDisabled()
   await expect(page.getByRole('button', { name: 'CAD STEP · STL', exact: true })).toBeDisabled()
   await page.getByRole('button', { name: 'Cancelar geração', exact: true }).click()
   await expect(page.getByRole('alert').filter({ hasText: 'Geração cancelada' })).toBeVisible()
+  await expect(runtime).toHaveText('IA pronta')
   release()
   expect(await exported(page)).toEqual(original)
   await page.getByRole('button', { name: 'Projeto ▾', exact: true }).click()
