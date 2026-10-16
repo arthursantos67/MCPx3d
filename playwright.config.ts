@@ -8,6 +8,11 @@ mkdirSync(data, { recursive: true })
 export default defineConfig({
   testDir: './tests/browser',
   timeout: 60_000,
+  projects: [
+    { name: 'cad-x3d', testIgnore: 'three-*.spec.{ts,mts}' },
+    // Match the standalone Three.js budget for software WebGL readbacks.
+    { name: 'three', testMatch: 'three-*.spec.{ts,mts}', timeout: 90_000 },
+  ],
   expect: { timeout: 30_000 },
   workers: 1,
   reporter: 'list',

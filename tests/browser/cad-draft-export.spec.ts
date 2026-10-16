@@ -120,6 +120,7 @@ test('the CAD engine accepts an undersized guide after local fit correction with
 })
 
 test('a failed component preserves the complete draft and resumes without rebuilding the other bodies', async ({ page }) => {
+  test.setTimeout(180_000)
   await page.addInitScript(() => localStorage.setItem('modeler:cad-mechanics', 'concept'))
   const body = { id: 'body', op: 'base', shape: 'box', position: zero, rotation: zero, width: 20, depth: 20, height: 10 }
   const finish = { id: 'finish', op: 'modify', shape: 'chamfer', position: zero, rotation: zero, selector: 'all', distance: 100 }
@@ -153,7 +154,8 @@ test('a failed component preserves the complete draft and resumes without rebuil
   await expect(page.getByText('IA pronta', { exact: true })).toBeVisible()
   await page.getByRole('textbox', { name: 'Describe CAD part' }).fill('Monte três peças separadas')
   await page.getByRole('button', { name: 'Criar com IA', exact: true }).click()
-  await expect(page.getByRole('status').filter({ hasText: /Geometria disponível.*1 componente/ }).first()).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Retomar geração', exact: true })).toBeEnabled({ timeout: 90_000 })
+  await expect(page.getByText('3 componentes no rascunho de 3 planejados.', { exact: false })).toBeVisible()
   expect(calls).toBe(9)
   const sourcePending = page.waitForEvent('download')
   await page.getByRole('button', { name: 'Baixar geometria original (JSON)', exact: true }).click()

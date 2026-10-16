@@ -95,11 +95,14 @@ async def run_client(
     command: list[str], cwd: Path, *, prompt: str = "", timeout: float = 20,
     disconnected: Callable[[], Awaitable[bool]] | None = None,
 ) -> tuple[int, str, str]:
+    creationflags = 0
+    if sys.platform == "win32":
+        creationflags = subprocess.CREATE_NO_WINDOW
     try:
         process = await asyncio.create_subprocess_exec(
             *command, cwd=cwd, env=client_environment(), stdin=subprocess.PIPE,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
+            creationflags=creationflags,
             start_new_session=sys.platform != "win32",
         )
     except OSError as exc:

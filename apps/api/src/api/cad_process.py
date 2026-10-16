@@ -62,10 +62,13 @@ def _run_cad_process(operation: str, payload: dict[str, Any], settings: Settings
         (directory / "input.json").write_text(json.dumps(request), encoding="utf-8")
         if source_step is not None:
             (directory / "source.step").write_bytes(source_step)
+        creationflags = 0
+        if sys.platform == "win32":
+            creationflags = subprocess.CREATE_NO_WINDOW
         process = subprocess.Popen([sys.executable, "-m", "api.cad_worker", str(directory)], env=env,
                                    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                    start_new_session=sys.platform != "win32",
-                                   creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0)
+                                   creationflags=creationflags)
         memory_job = None
         try:
             memory_job = limit_process_memory(settings.cad_worker_memory_mb, process.pid)

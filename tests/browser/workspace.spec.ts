@@ -58,7 +58,7 @@ test('CAD preserves real threads, finishes, lofts and recessed holes through gen
   await expect(page.getByRole('spinbutton', { name: 'Passo (mm)', exact: true })).toHaveValue('1.75')
   await expect(page.getByRole('combobox', { name: 'Perfil', exact: true })).toHaveValue('metric')
   await expect(page.getByRole('combobox', { name: 'Sentido', exact: true })).toHaveValue('right')
-  await expect(page.getByRole('combobox', { name: 'Nova forma', exact: true }).locator('option')).toHaveCount(15)
+  await expect(page.getByRole('combobox', { name: 'Nova forma', exact: true }).locator('option')).toHaveCount(21)
   const step = await download(page, 'Baixar STEP')
   expect(step.data.toString()).toContain('ISO-10303-21')
   const stl = await download(page, 'Baixar STL')

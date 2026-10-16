@@ -7,5 +7,6 @@ export default defineConfig({
   // Software WebGL readbacks and multiple captures need more than the product's generic timeout.
   timeout: 90_000,
   testMatch: 'three-*.spec.{ts,mts}',
+  projects: [{ name: 'three' }],
   webServer: Array.isArray(base.webServer) ? base.webServer.slice(1) : base.webServer,
 })

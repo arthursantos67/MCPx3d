@@ -63,6 +63,7 @@ test('a conversational request rebuilds a cottage into a furnished two-storey ho
   let calls=0
   await page.route('http://provider.test/v1/chat/completions',route=>{
     calls++
+    if(calls===2) expect(route.request().postDataJSON().messages.at(-1).content).toContain('Corrija o patch a partir da cena ORIGINAL')
     const reward={...createNode('sphere','casa'),id:'reward',name:'Recompensa no quarto',position:[0,4.67,-2.8],dimensions:[0.3,0.3,0.3],color:'#d8bc65',metalness:0.6,roughness:0.3,collidable:false,
       repeat:{mode:'linear',count:1,offset:[0,0,0],radius:0,axis:'y'},interaction:{trigger:'proximity',key:'',radius:1.4,action:'collect',targetId:null,message:''}}
     return route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({choices:[{message:{role:'assistant',content:JSON.stringify({updates:[],additions:[reward],removals:[],environment:null,rebuilds:[{id:'casa',prefab:asset}]})}}]})})
@@ -75,6 +76,6 @@ test('a conversational request rebuilds a cottage into a furnished two-storey ho
   expect(edited.nodes.some((n:{id:string})=>n.id==='casa.balcony-door')).toBe(true)
   expect(edited.nodes.find((n:{id:string})=>n.id==='casa').position).toEqual(original.nodes.find(n=>n.id==='casa')!.position)
   expect(edited.nodes.find((n:{id:string})=>n.id==='reward').position).toEqual([0,4.67,-2.8])
-  expect(calls).toBe(1)
+  expect(calls).toBe(2)
   expect(errors).toEqual([])
 })

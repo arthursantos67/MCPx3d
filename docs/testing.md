@@ -15,7 +15,7 @@ npm run build
 
 `npm test` executa testes do frontend, agentes, domínio TypeScript e relatórios golden. Os testes de agentes usam propostas programadas e verificam parsing, validação, reparos, cotas, retomada e cancelamento; não são um benchmark da IA.
 
-Para o gerador Three.js isolado, `node --test --test-concurrency=2 apps/web/tests/three/*.test.ts` verifica o núcleo e `npx playwright test --config playwright.three.config.ts` executa as 23 regressões de navegador iniciando apenas o frontend. A API e o modelo são simulados nessa configuração. O teste de ilha com exportação e captura usa 90 s porque a leitura de um quadro em janela inteira no SwiftShader pode consumir boa parte do prazo; os demais mantêm o prazo geral.
+Para o gerador Three.js isolado, `node --test --test-concurrency=2 apps/web/tests/three/*.test.ts` verifica o núcleo e `npx playwright test --config playwright.three.config.ts` executa as regressões de navegador iniciando apenas o frontend. A API e o modelo são simulados nessa configuração. Tanto a configuração isolada quanto o projeto `three` da suíte completa usam 90 s por teste, pois capturas e leituras de quadros no SwiftShader podem consumir boa parte do prazo. O projeto `cad-x3d` mantém o prazo geral de 60 s, com limites maiores nos casos nativos complexos.
 
 ## Python
 
