@@ -78,7 +78,8 @@ export function sceneIntent(request: string) {
 /** Explicit requests about time passing, wind and wildlife; only these words change dayCycle or motion deterministically. */
 function worldMotionIntent(text: string) {
   return {
-    dayCycle: /\b(dia e noite|noite e dia|dia\/noite|ciclos? (?:de |do )?(?:dia|noite)|passagem do tempo|o tempo passa|tempo passando|(?:ate|do|ao|quando) (?:o )?(?:amanhecer|anoitecer)|(?:amanhece|anoitece)(?:r)? durante|o sol (?:nasce|se poe)|day.?night|night.?day|day and night|passage of time|time passes|(?:until|from) (?:dawn|dusk)|sunrise to sunset)\b/.test(text),
+    dayCycle: /\b(dia e noite|noite e dia|dia\/noite|ciclos? (?:de |do )?(?:dia|noite)|passagem do tempo|o tempo passa|tempo passando|(?:ate|do|quando) (?:o )?(?:amanhecer|anoitecer)|(?:amanhece|anoitece)(?:r)? durante|o sol (?:nasce|se poe)|day.?night|night.?day|day and night|passage of time|time passes|(?:until|from) (?:dawn|dusk)|sunrise to sunset)\b/.test(text),
+    untilDawn: /\b(ate (?:o )?amanhecer|until dawn|ate o sol nascer)\b/.test(text),
     dawn: /\b(amanhecer|amanhece|nascer do sol|alvorada|dawn|sunrise)\b/.test(text),
     strongWind: /\b(ventania|vendavais?|ventos? fortes?|ventos? intensos?|tempestades?|temporal|furacao|furacoes|tornados?|nevasca|blizzard|windstorm|gales?|strong winds?|storms?|stormy|hurricanes?)\b/.test(text),
     still: /\b(sem vento|calmaria|ar parado|vento parado|no wind|windless)\b/.test(text),
@@ -154,7 +155,7 @@ export function applyThemeDefaults(scene: ThreeSceneDocument, request: string): 
   else if (intent.denseGrass && motion.grass === 'auto') { motion.grass = 'dense'; motionNotes.push('grama densa') }
   if (motionNotes.length) { environment.motion = motion; notes.push(`O movimento do mundo segue o pedido: ${motionNotes.join(', ')}.`) }
   if (intent.dayCycle && !environment.dayCycle?.enabled && intent.topology !== 'space') {
-    const start = environment.dayCycle?.start ?? (intent.night ? 20 : intent.dawn ? 5 : 9)
+    const start = environment.dayCycle?.start ?? (intent.untilDawn ? 20 : intent.dawn ? 5 : 9)
     environment.dayCycle = { enabled: true, duration: environment.dayCycle?.duration ?? 600, start }
     notes.push(`O ciclo dia/noite pedido foi ativado (um dia a cada ${environment.dayCycle.duration / 60} min, começando às ${start} h).`)
   }

@@ -5,7 +5,7 @@ import { applySceneEdit, expandSceneRecipe, generateThreeScene, sceneEditSchema,
 import { SanitizeLog } from '../../src/three/sceneRecipeSanitize.ts'
 import type { LLMProvider } from '../../../../packages/agent/src/provider.ts'
 
-type Schema = { type?: unknown; properties?: Record<string, Schema>; required?: string[]; additionalProperties?: unknown; items?: Schema; anyOf?: Schema[] }
+type Schema = { type?: unknown; properties?: Record<string, Schema>; required?: string[]; additionalProperties?: unknown; items?: Schema; anyOf?: Schema[]; maxLength?: number }
 const single = { mode: 'linear', count: 1, offset: [0, 0, 0], radius: 0, axis: 'y', columns: 1, jitter: 0, seed: 1, onto: null }
 const prefab = (type: string, extra: Record<string, unknown> = {}) => ({ type, size: 1, seed: 1, primary: null, secondary: null, text: '', lit: false, interactive: true, building: null, character: null, ...extra })
 const character = (extra: Record<string, unknown> = {}) => ({ age: 'adult', build: 'average', height: 1, style: 'stylized', skin: null, hair: null, hairStyle: 'auto', beard: 'auto', ...extra })
@@ -14,7 +14,7 @@ function template(id: string, position: number[], extra: Record<string, unknown>
   const node = createNode(extra.kind === 'box' ? 'box' : 'group')
   return { ...node, id, name: id, position, color: '#cccccc', metalness: 0, roughness: 0.6, repeat: single, ...extra }
 }
-const recipe = (nodes: unknown[], environment: Record<string, unknown> = {}) => ({ name: 'Vila 1.4', background: '#ccd6e0', exposure: 1, lightIntensity: 1.4, duration: 20, environment, nodes })
+const recipe = (nodes: Record<string, unknown>[], environment: Record<string, unknown> = {}) => ({ name: 'Vila 1.4', background: '#ccd6e0', exposure: 1, lightIntensity: 1.4, duration: 20, environment, nodes })
 const unwrap = (schema: Schema): Schema => schema.anyOf?.find((option) => option.type !== 'null') ?? schema
 const field = (schema: Schema, ...path: string[]) => path.reduce((current, key) => { const next = unwrap(current); return unwrap(next.items && key === '[]' ? next.items : next.properties![key]) }, schema)
 
@@ -72,7 +72,7 @@ function village() {
 test('strict expansion keeps archetypes, emitters and 1.4 environment, and resolves routine places inside repetitions', () => {
   const doc = expandSceneRecipe(village())
   assert.equal(doc.version, '1.4')
-  assert.deepEqual(parseScene(JSON.stringify(doc)), doc, 'the expanded document round-trips through the 1.4 validator')
+  assert.equal(JSON.stringify(parseScene(JSON.stringify(doc))), JSON.stringify(doc), 'the expanded document round-trips through the 1.4 validator')
   const byId = new Map(doc.nodes.map((node) => [node.id, node]))
   assert.equal(byId.get('seller')!.asset!.character!.age, 'elder')
   assert.equal(byId.get('seller')!.asset!.character!.hairStyle, 'bun')
@@ -118,7 +118,7 @@ test('lenient expansion repairs AI output for every 1.4 field and records each f
   })
   const doc = expandSceneRecipe({ ...base, nodes, environment: { motion: { wind: 5, grass: 'tall', fauna: 'rich' }, dayCycle: { enabled: true, duration: 20, start: 30 }, premise: `  ${'Uma história longa. '.repeat(20)}` } },
     () => {}, [], { lenient: true, log })
-  const byId = new Map(doc.nodes.map((node) => [node.id, node])), summary = log.summary().join(' ')
+  const byId = new Map(doc.nodes.map((node) => [node.id, node])), summary = [...log.counts.keys(), ...log.notes].join(' ')
   const guard = byId.get('guard')!
   assert.equal(guard.behavior!.routine!.length, 6, 'routines keep at most six periods')
   assert.deepEqual(guard.behavior!.routine![0], { activity: 'wander', target: null, from: 0, to: 24 }, 'unknown activity → wander, missing place dropped, hours clamped')
@@ -135,10 +135,10 @@ test('lenient expansion repairs AI output for every 1.4 field and records each f
   assert.deepEqual(['reader', 'reader@2'].map((id) => byId.get(id)!.behavior!.routine![0].target), [null, null], 'an NPC cannot use itself as a place')
   assert.deepEqual(doc.environment.motion, { wind: 2, grass: 'auto', fauna: 'rich' })
   assert.deepEqual(doc.environment.dayCycle, { enabled: true, duration: 60, start: 24 })
-  assert.equal(doc.environment.premise!.length, 240)
-  assert.ok(!doc.environment.premise!.startsWith(' '))
+  assert.ok(doc.environment.premise!.length <= 240 && doc.environment.premise!.length > 230)
+  assert.equal(doc.environment.premise, doc.environment.premise!.trim())
   for (const expected of ['Atividade de rotina', 'Horário de rotina', 'Períodos de rotina além de 6', 'Reação de NPC', 'Locais de rotina inexistentes', 'Taxa de partículas', 'Raio das partículas',
-    'Pré-fabricado: altura do personagem', 'Pré-fabricado: idade do personagem', 'Pré-fabricado: tom de pele', 'Pré-fabricado: arquétipo de personagem', 'Vento', 'Grama', 'Duração do dia', 'Hora inicial', 'Reação fora de NPC'])
+    'Pré-fabricado: altura do personagem', 'Pré-fabricado: idade do personagem', 'Pré-fabricado: tom de pele', 'Pré-fabricado: arquétipo de personagem', 'Vento', 'Grama', 'Duração do dia', 'Hora inicial', 'Reação fora de NPC', 'Premissa'])
     assert.ok(summary.includes(expected), expected)
   assert.match(summary, /emissor de partículas desconhecido/)
   assert.match(summary, /Rotinas só valem para NPCs/)

@@ -2,7 +2,7 @@ import { expect, test, type Page } from '@playwright/test'
 import { readFile } from 'node:fs/promises'
 import { createCombatArenaScene } from '../../apps/web/src/three/sceneExperiences.ts'
 import { subtreeIds } from '../../apps/web/src/three/sceneDocument.ts'
-import { projectAction } from './threeHelpers.ts'
+import { projectAction, leaveGame } from './threeHelpers.ts'
 
 async function open(page: Page) {
   const errors: string[] = []
@@ -36,7 +36,7 @@ test('the neutral workspace offers a combat game with actual enemies instead of 
   await play(page)
   await expect(hud(page)).toContainText('Inimigos 0/3')
   await page.screenshot({ path: '.cache/browser/genre-arena.png' })
-  await page.keyboard.press('Escape')
+  await leaveGame(page)
   await expect(hud(page)).toBeHidden()
   expect(await exported(page)).toEqual(doc)
   expect(errors).toEqual([])
@@ -54,7 +54,7 @@ test('platform game starts with a portal objective, physical raised platforms an
   await page.keyboard.press('f')
   await expect(hud(page)).not.toContainText('Voo livre')
   await page.screenshot({ path: '.cache/browser/genre-platforms.png' })
-  await page.keyboard.press('Escape')
+  await leaveGame(page)
   expect(errors).toEqual([])
 })
 
@@ -68,7 +68,7 @@ test('laboratory console activates the bridge in play mode and preserves the aut
   await expect(hud(page).getByRole('status')).toContainText('Ponte acionada')
   await page.waitForTimeout(1800)
   await page.screenshot({ path: '.cache/browser/genre-laboratory.png' })
-  await page.keyboard.press('Escape')
+  await leaveGame(page)
   await expect(hud(page)).toBeHidden()
   expect(await exported(page)).toEqual(doc)
   expect(errors).toEqual([])
@@ -90,7 +90,7 @@ test('a robot can be defeated with the real melee action and completes the comba
   await page.keyboard.press('e')
   await expect(page.getByRole('dialog', { name: 'Vitória' })).toBeVisible()
   await expect(hud(page)).toContainText('Inimigos 1/1')
-  await page.keyboard.press('Escape')
+  await leaveGame(page)
   expect(await exported(page)).toEqual(original)
   expect(errors).toEqual([])
 })

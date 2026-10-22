@@ -173,12 +173,29 @@ export function stepEnemyMotion(state: EnemyMotion, settings: EnemySettings, pla
   const attack = settings.attack ?? 'touch', speed = Math.max(0, settings.speed)
   state.clock += dt
   state.cooldown = Math.max(0, state.cooldown - dt)
-  let moved = false
+  let moved = false, leash = settings.range * 1.8 + 1
+  const crowd = settings.neighbors?.length ? settings.neighbors : null, personal = radius * 2 + NPC_LIFE.separation
+  // Soft separation plus a lateral sidestep around an agent standing in the way; walls still validate every candidate below.
+  const steer = (wish: THREE.Vector3) => {
+    const side = new THREE.Vector3(-wish.z, 0, wish.x), result = wish.clone()
+    let lateral = 0
+    for (const other of crowd!) {
+      const dx = state.position.x - other.x, dz = state.position.z - other.z, d = Math.hypot(dx, dz)
+      if (d < 1e-4 || d > personal + 1.2 || Math.abs(other.y - state.position.y) > 2) continue
+      if (d < personal) result.add(new THREE.Vector3(dx / d, 0, dz / d).multiplyScalar(1.5 * (personal - d) / personal))
+      const ahead = -(dx * wish.x + dz * wish.z), offset = -(dx * side.x + dz * side.z)
+      if (ahead > 0 && ahead < personal + 1 && Math.abs(offset) < personal) lateral -= (Math.sign(offset) || state.turnSide) * (1 - ahead / (personal + 1))
+    }
+    result.addScaledVector(side, 0.8 * Math.max(-1, Math.min(1, lateral))).setY(0)
+    return result.lengthSq() > 1e-6 ? result.normalize() : wish
+  }
   const travel = (wish: THREE.Vector3, distance: number, angles: readonly number[], turn = true) => {
+    const desired = crowd ? steer(wish) : wish
     for (const angle of angles) {
-      const direction = wish.clone().applyAxisAngle(UP, angle * state.turnSide)
+      const direction = desired.clone().applyAxisAngle(UP, angle * state.turnSide)
       const candidate = flying ? flyCandidate(state.position, direction, distance, collider, radius, height) : moveCandidate(state.position, direction, distance, state.hover, collider, radius, height)
-      if (!candidate || Math.hypot(candidate.x - state.base.x, candidate.z - state.base.z) > settings.range * 1.8 + 1) continue
+      if (!candidate || Math.hypot(candidate.x - state.base.x, candidate.z - state.base.z) > leash) continue
+      if (crowd && crowd.some((other) => { const after = flatDistance(candidate, other); return after < radius * 2 && after < flatDistance(state.position, other) - 1e-4 && Math.abs(other.y - state.position.y) <= 2 })) continue
       state.position.copy(candidate)
       if (turn) state.heading = Math.atan2(direction.x, direction.z)
       moved = true
@@ -186,7 +203,18 @@ export function stepEnemyMotion(state: EnemyMotion, settings: EnemySettings, pla
     }
     return false
   }
-  const step = (extra: Partial<EnemyStep> = {}): EnemyStep => ({ moved, seesPlayer: state.seesPlayer, mode: state.mode, ...extra })
+  const nudge = () => {
+    if (!crowd || moved || state.action === 'dash' || flying) return
+    const push = new THREE.Vector3()
+    for (const other of crowd) {
+      const dx = state.position.x - other.x, dz = state.position.z - other.z, d = Math.hypot(dx, dz), overlap = radius * 2 + 0.05 - d
+      if (overlap <= 0 || Math.abs(other.y - state.position.y) > 2) continue
+      push.add(d > 1e-4 ? new THREE.Vector3(dx / d, 0, dz / d).multiplyScalar(overlap) : new THREE.Vector3(Math.cos(state.phase), 0, Math.sin(state.phase)).multiplyScalar(overlap))
+    }
+    const length = push.length()
+    if (length > 1e-3) travel(push.divideScalar(length), Math.min(length, 0.8 * dt), [0, 0.55, -0.55], false)
+  }
+  const step = (extra: Partial<EnemyStep> = {}): EnemyStep => { nudge(); return { moved, seesPlayer: state.seesPlayer, mode: state.mode, ...extra } }
   if (flying) {
     // Hover at the base altitude with a slight bob; chasing flyers rise or dip toward the player's chest within limits.
     const wanted = state.mode === 'chase' && !settings.npc ? Math.min(ENEMY_COMBAT.flyRise, Math.max(-ENEMY_COMBAT.flyDrop, playerFeet.y + 1.2 - state.base.y)) : 0
@@ -198,13 +226,106 @@ export function stepEnemyMotion(state: EnemyMotion, settings: EnemySettings, pla
     // NPCs wander between deterministic points around their base, pause, and stop to face a nearby player.
     state.mode = 'patrol'
     state.seesPlayer = Math.hypot(playerFeet.x - state.position.x, playerFeet.z - state.position.z) <= ENEMY_COMBAT.npcNear && Math.abs(playerFeet.y - (state.position.y - state.hover)) < 3
-    if (state.seesPlayer) { state.action = 'talk'; state.heading = facing(state.position, playerFeet, state.heading); return step() }
+    const reaction = settings.reaction ?? 'greet', task = settings.task ?? null, walk = Math.min(1.5, speed * 0.5), run = Math.min(4.5, Math.max(walk * 1.8, speed * 1.2))
+    const head = (feet: THREE.Vector3) => new THREE.Vector3(feet.x, feet.y + 1.5, feet.z)
+    // Routine spots, guards and threats may lie beyond the wandering leash; the leash then stretches to include them.
+    const goTo = (point: THREE.Vector3, pace: number, stopAt: number) => {
+      const remaining = flatDistance(point, state.position)
+      if (remaining < stopAt || !pace) return remaining
+      leash = Math.max(settings.range * 1.8 + 1, flatDistance(point, state.base) + 3, flatDistance(state.position, state.base) + 0.5)
+      const wish = (settings.route && !flying ? settings.route(state.position.clone(), point.clone()) : point.clone()).sub(state.position).setY(0)
+      if (wish.lengthSq() < 1e-6) wish.copy(point).sub(state.position).setY(0)
+      if (wish.lengthSq() > 1e-9) travel(wish.normalize(), Math.min(remaining, pace * dt), ANGLES)
+      return remaining
+    }
+    // Detours around walls may lengthen the straight-line distance; only standing still, or dithering near the goal, counts as stuck.
+    const progress = (distance: number) => {
+      if (distance < state.best - 0.05) { state.best = distance; state.stall = 0 } else if (!moved || distance < NPC_LIFE.settle) state.stall += dt
+    }
+    if (reaction !== 'ignore') {
+      const danger = nearest(settings.threats, state.position, NPC_LIFE.fearRadius)
+      if (danger) { state.fear = Math.max(state.fear, NPC_LIFE.fearTime); state.threat = danger.clone(); state.threatIsPlayer = false }
+    }
+    if (state.fear > 0 && state.threat) {
+      state.fear = Math.max(0, state.fear - dt)
+      if (state.threatIsPlayer) state.threat.copy(playerFeet)
+      const threat = state.threat.clone()
+      state.action = 'idle'; state.settled = false; state.taskKey = ''
+      if (!state.fear) { state.threat = null; state.threatIsPlayer = false }
+      if (settings.guard) {
+        if (goTo(threat, run, NPC_LIFE.guardStop) < NPC_LIFE.guardStop + 0.1) state.heading = facing(state.position, threat, state.heading)
+        return step({ activity: 'alert', face: head(threat) })
+      }
+      const guard = reaction === 'alert' ? nearest(settings.guards, state.position, Infinity) : null
+      if (guard) {
+        if (goTo(guard, run, NPC_LIFE.report) > NPC_LIFE.report + 0.05) return step({ activity: 'alert', face: head(guard) })
+        state.heading = facing(state.position, guard, state.heading)
+        return step({ activity: 'alert', face: head(guard), alarm: threat })
+      }
+      const away = state.position.clone().sub(threat).setY(0)
+      if (away.lengthSq() < 1e-6) away.set(Math.sin(state.heading), 0, Math.cos(state.heading))
+      goTo(state.position.clone().addScaledVector(away.normalize(), 5), run, 0)
+      return step({ activity: 'flee' })
+    }
+    if (state.alarm) {
+      const threat = state.alarm
+      state.alarmTime -= dt
+      if (state.alarmTime <= 0) state.alarm = null
+      if (goTo(threat, run, NPC_LIFE.guardStop) < NPC_LIFE.guardStop + 0.1) state.heading = facing(state.position, threat, state.heading)
+      state.settled = false; state.taskKey = ''
+      return step({ activity: 'alert', face: head(threat) })
+    }
+    const settledPose = task && state.settled && state.taskKey === task.key ? routinePose[task.activity] : null
+    if (state.seesPlayer && reaction !== 'ignore' && settledPose !== 'sleep') {
+      if (state.action !== 'talk') state.greet = NPC_LIFE.greet
+      state.action = 'talk'
+      state.greet = Math.max(0, state.greet - dt)
+      // Seated NPCs only turn their head; everyone else turns to the player and waves for a moment.
+      if (settledPose === 'sit' && task!.spot) return step({ activity: 'sit', face: head(playerFeet), anchor: task!.spot.position.clone() })
+      state.heading = facing(state.position, playerFeet, state.heading)
+      return step({ activity: state.greet > 0 ? 'greet' : null, face: head(playerFeet) })
+    }
     if (state.action === 'talk') state.action = 'idle'
+    if (task && task.activity !== 'wander') {
+      if (state.taskKey !== task.key) { state.taskKey = task.key; state.settled = false; state.best = Infinity; state.stall = 0; state.leg = 1; state.action = 'idle' }
+      if (task.activity === 'patrol') {
+        const ends = task.patrol ?? [state.base, task.spot?.position ?? state.base], end = ends[state.leg ? 1 : 0]
+        if (state.action === 'pause') {
+          state.actionTime -= dt
+          if (state.actionTime > 0) return step({ activity: 'guard', face: head(state.position.clone().add(new THREE.Vector3(Math.sin(state.heading) * 3, 0, Math.cos(state.heading) * 3))) })
+          state.action = 'idle'; state.leg = 1 - state.leg; state.best = Infinity; state.stall = 0
+          return step({ activity: 'guard' })
+        }
+        const distance = goTo(end, walk, 0.3)
+        progress(distance)
+        if (distance < 0.35 || state.stall > NPC_LIFE.stall * 2) { state.action = 'pause'; state.actionTime = NPC_LIFE.patrolPause + hash(state.phase + state.leg) * 1.5 }
+        return step()
+      }
+      const spot = task.spot, pose = routinePose[task.activity]
+      if (spot && !state.settled) {
+        const distance = goTo(spot.position, walk, NPC_LIFE.arrive)
+        progress(distance)
+        if (distance >= NPC_LIFE.arrive && !(state.stall > NPC_LIFE.stall && distance < NPC_LIFE.settle) && state.stall <= NPC_LIFE.giveUp) return step()
+      }
+      state.settled = true
+      let face = spot?.face.clone()
+      if (task.activity === 'chat' && spot?.kind === 'point') {
+        const partner = nearest(settings.neighbors, state.position, 3)
+        if (partner) face = head(partner)
+      }
+      // Conversations face the partner or the circle center from where the NPC actually stopped, not the ideal slot.
+      if (face && task.activity === 'chat' && (spot?.kind === 'point' || spot?.kind === 'ring')) state.heading = facing(state.position, face, state.heading)
+      else if (spot) state.heading = spot.facing
+      const close = !!spot && flatDistance(spot.position, state.position) < NPC_LIFE.settle
+      return step({ activity: pose, ...(face ? { face } : {}), ...(close ? { anchor: spot!.position.clone() } : {}), ...(close && spot!.indoors ? { indoors: true } : {}) })
+    }
     if (state.action === 'pause') { state.actionTime -= dt; if (state.actionTime > 0) return step(); state.action = 'idle' }
     const reach = Math.min(4, settings.range) * (0.35 + 0.65 * hash(state.phase))
-    const wish = state.base.clone().add(new THREE.Vector3(Math.cos(state.phase) * reach, 0, Math.sin(state.phase) * reach)).sub(state.position).setY(0), remaining = wish.length()
+    const goal = state.base.clone().add(new THREE.Vector3(Math.cos(state.phase) * reach, 0, Math.sin(state.phase) * reach))
+    const wish = goal.clone().sub(state.position).setY(0), remaining = wish.length()
     const rest = (seconds: number) => { state.phase += 2.39996; state.action = 'pause'; state.actionTime = seconds; return step() }
     if (remaining < 0.2 || !speed) return rest(1.5 + hash(state.phase + 1))
+    if (settings.route && !flying) { const way = settings.route(state.position.clone(), goal).sub(state.position).setY(0); if (way.lengthSq() > 1e-6) wish.copy(way).setLength(remaining) }
     return travel(wish.divideScalar(remaining), Math.min(remaining, Math.min(1.5, speed * 0.5) * dt), ANGLES.slice(0, 4)) ? step() : rest(1)
   }
   state.perceptionIn -= dt
@@ -268,11 +389,13 @@ export function stepEnemyMotion(state: EnemyMotion, settings: EnemySettings, pla
     target = state.base.clone().add(new THREE.Vector3(Math.cos(state.phase) * patrol, 0, Math.sin(state.phase) * patrol))
     if (Math.hypot(target.x - state.position.x, target.z - state.position.z) < 0.4) state.phase += Math.PI * 0.6
   }
+  const goal = settings.route && !flying ? target.clone() : null
   const wish = target.sub(state.position).setY(0), remaining = wish.length()
   const stop = state.mode !== 'chase' ? 0.12 : ranged ? 0.25 : attack === 'melee' ? ENEMY_COMBAT.meleeReach - 0.2 : 0.65
   if (ranged) state.heading = facing(state.position, state.lastSeen!, state.heading)
   if (remaining < stop || speed <= 0) return step(shot)
   wish.divideScalar(remaining)
+  if (goal) { const way = settings.route!(state.position.clone(), goal).sub(state.position).setY(0); if (way.lengthSq() > 1e-6) wish.copy(way.normalize()) }
   // A stable preferred side prevents alternating left/right at the same obstacle every frame.
   travel(wish, Math.min(attack === 'melee' && state.mode === 'chase' ? remaining - stop + 0.05 : remaining, speed * (ranged ? 0.75 : 1) * dt), ANGLES, !ranged)
   return step(shot)

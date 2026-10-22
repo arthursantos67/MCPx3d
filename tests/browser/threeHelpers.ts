@@ -12,3 +12,11 @@ export async function openAdvancedEditor(page: Page) {
   if (await toggle.getAttribute('aria-pressed') !== 'true') await toggle.click()
   await page.getByText('Opções de criação', { exact: true }).click()
 }
+
+/** Esc opens the pause menu (or does nothing over an outcome screen); leaving goes through its exit button. */
+export async function leaveGame(page: Page) {
+  const hud = page.getByRole('region', { name: 'Modo jogo' })
+  await page.keyboard.press('Escape')
+  await hud.getByRole('button', { name: /^Sair( do jogo)?$/ }).first().click()
+  await hud.waitFor({ state: 'hidden' })
+}

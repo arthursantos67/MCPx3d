@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import * as THREE from 'three'
-import { createEnemyMotion, enemyCanSee, stepEnemyMotion } from '../../src/three/sceneEnemies.ts'
+import { alertGuard, createEnemyMotion, enemyCanSee, NPC_LIFE, provokeNpc, stepEnemyMotion, type EnemyStep } from '../../src/three/sceneEnemies.ts'
+import { buildNavigation, createRouter } from '../../src/three/sceneNavigation.ts'
+import { chatSpot, type ActivitySpot, type NpcTask } from '../../src/three/sceneRoutines.ts'
 import { boxFromMatrix, buildStaticCollider, type PlayerCollider } from '../../src/three/scenePlayer.ts'
 
 function obstacle(x: number, y: number, z: number, width: number, height: number, depth: number, angle = 0) {
@@ -192,4 +194,167 @@ test('NPCs wander near their base, pause, face a nearby player and never chase o
   assert.ok(villager.position.distanceTo(still) < 1e-9, 'stops while the player is near')
   assert.ok(Math.abs(villager.heading - Math.PI / 2) < 1e-6, 'faces the player')
   assert.equal(villager.action, 'talk')
+})
+
+const wallBox = (width: number, depth: number, x: number, z: number) => ({ geometry: new THREE.BoxGeometry(width, 3, depth), matrix: new THREE.Matrix4().makeTranslation(x, 1.5, z) })
+/** A floor with a cup open to -x: back wall at x = 2 and two wings, so steering straight to +x from inside is a dead end. */
+function cupArena() {
+  const entries = [{ geometry: new THREE.BoxGeometry(30, 0.2, 30), matrix: new THREE.Matrix4().makeTranslation(0, -0.1, 0) }, wallBox(0.2, 6.2, 2, 0), wallBox(3.6, 0.2, 0.3, 3), wallBox(3.6, 0.2, 0.3, -3)]
+  const { bvh } = buildStaticCollider(entries)
+  const insideWall = (p: THREE.Vector3) => (Math.abs(p.x - 2) < 0.1 && Math.abs(p.z) < 3.1) || (p.x > -1.5 && p.x < 2.1 && Math.abs(Math.abs(p.z) - 3) < 0.1)
+  return { entries, collider: { bvh, boxes: [], floor: -10 } as PlayerCollider, insideWall, dispose: () => { for (const entry of entries) entry.geometry.dispose(); bvh!.geometry.dispose() } }
+}
+const far = new THREE.Vector3(60, 0, 60)
+const forwardOf = (heading: number) => new THREE.Vector3(Math.sin(heading), 0, Math.cos(heading))
+const task = (activity: NpcTask['activity'], position: THREE.Vector3 | null, facing = 0, patrol: [THREE.Vector3, THREE.Vector3] | null = null, kind: ActivitySpot['kind'] = 'point'): NpcTask => ({
+  key: `${activity}:${position?.toArray()}`, activity, patrol, spot: position ? { position, facing, face: position.clone().add(forwardOf(facing).multiplyScalar(3)).setY(1.5), kind } : null })
+const arenaFocus = new THREE.Box3(new THREE.Vector3(-15, -1, -15), new THREE.Vector3(15, 3, 15))
+
+test('a routed enemy leaves a dead-end cup that traps direct steering, without crossing its walls', async () => {
+  const arena = cupArena(), nav = await buildNavigation(arena.entries, arenaFocus, { radius: 0.43, height: 1.1, climb: 0.27 })
+  assert.ok(nav, 'navmesh available')
+  const router = createRouter(nav), base = new THREE.Vector3(7, 0, 0)
+  let closest = Infinity
+  const run = (routed: boolean) => {
+    const enemy = createEnemyMotion(base, 0)
+    closest = Infinity
+    enemy.position.set(0, 0, 0); enemy.mode = 'return'
+    for (let i = 0; i < 300; i++) {
+      stepEnemyMotion(enemy, { ...settings, ...(routed ? { route: (from: THREE.Vector3, to: THREE.Vector3) => router.next('e', from, to, i * 0.1) } : {}) }, far, arena.collider, 0.1)
+      assert.ok(!arena.insideWall(enemy.position), `crossed a wall at ${enemy.position.toArray()}`)
+      closest = Math.min(closest, Math.hypot(enemy.position.x - base.x, enemy.position.z - base.z))
+    }
+    return { enemy, closest }
+  }
+  const direct = run(false).closest, routed = run(true)
+  assert.ok(direct > 3, `direct steering is expected to stay trapped: ${direct}`)
+  assert.ok(routed.closest < 0.5, `routed enemy reaches its base: ${routed.closest}`)
+  assert.equal(routed.enemy.mode, 'patrol', 'then resumes patrolling around it')
+  nav.dispose(); arena.dispose()
+})
+
+test('crowds keep their distance while chasing, never overlap or cross walls', () => {
+  const geometry = new THREE.BoxGeometry(0.2, 3, 30), { bvh } = buildStaticCollider([{ geometry, matrix: new THREE.Matrix4().makeTranslation(3, 1.5, 0) }])
+  const collider = { ...empty(), bvh }, player = new THREE.Vector3(2, 0, 0), melee = { ...settings, attack: 'melee' as const }
+  const pack = (avoid: boolean) => {
+    const enemies = [-2.5, -1.5, -0.5, 0.5, 1.5, 2.5].map((z, i) => createEnemyMotion(new THREE.Vector3(-6, 0, z), 0, i * 1.7))
+    let closest = Infinity
+    for (let frame = 0; frame < 150; frame++) {
+      for (const enemy of enemies) {
+        stepEnemyMotion(enemy, { ...melee, ...(avoid ? { neighbors: enemies.filter((other) => other !== enemy).map((other) => other.position) } : {}) }, player, collider, 0.1)
+        assert.ok(enemy.position.x <= 3 - 0.1 - 0.43 + 0.005, `crossed the wall: ${enemy.position.toArray()}`)
+      }
+      if (frame > 20) for (let i = 0; i < enemies.length; i++) for (let j = i + 1; j < enemies.length; j++) closest = Math.min(closest, Math.hypot(enemies[i].position.x - enemies[j].position.x, enemies[i].position.z - enemies[j].position.z))
+    }
+    return { closest, nearPlayer: enemies.filter((enemy) => enemy.position.distanceTo(player) < 2.2).length }
+  }
+  const plain = pack(false), crowd = pack(true)
+  assert.ok(plain.closest < 0.5, `without neighbors they pile up: ${plain.closest}`)
+  assert.ok(crowd.closest >= 0.86 - 0.05, `minimum spacing kept: ${crowd.closest}`)
+  assert.ok(crowd.nearPlayer >= 3, `the pack still surrounds the player: ${crowd.nearPlayer}`)
+  geometry.dispose(); bvh!.geometry.dispose()
+})
+
+test('NPC routines walk to a spot, settle facing its direction and expose pose, look target and anchor', async () => {
+  const arena = cupArena(), nav = await buildNavigation(arena.entries, arenaFocus, { radius: 0.3, height: 1.7, climb: 0.27 })
+  assert.ok(nav)
+  const router = createRouter(nav), seat = new THREE.Vector3(5, 0, 0.5), npc = { speed: 2, range: 6, npc: true, radius: 0.3, height: 1.7 }
+  const villager = createEnemyMotion(new THREE.Vector3(0, 0, 0), 0, 0.4), sitting = task('sit', seat, Math.PI / 2, null, 'seat')
+  let result: EnemyStep | null = null
+  for (let i = 0; i < 400 && result?.activity !== 'sit'; i++) result = stepEnemyMotion(villager, { ...npc, task: sitting, route: (from, to) => router.next('v', from, to, i * 0.1) }, far, arena.collider, 0.1)
+  assert.equal(result!.activity, 'sit', 'sat down after routing out of the cup')
+  assert.ok(villager.position.distanceTo(seat) < 0.4 && Math.abs(villager.heading - Math.PI / 2) < 1e-9)
+  assert.ok(result!.anchor!.equals(seat) && result!.face!.y > 1)
+  const settled = villager.position.clone()
+  for (let i = 0; i < 20; i++) result = stepEnemyMotion(villager, { ...npc, task: sitting }, far, arena.collider, 0.1)
+  assert.ok(villager.position.equals(settled) && result!.activity === 'sit', 'stays seated')
+  // A seated NPC only turns its head toward a nearby player; it keeps sitting.
+  const visitor = villager.position.clone().add(new THREE.Vector3(0, 0, 2))
+  result = stepEnemyMotion(villager, { ...npc, task: sitting }, visitor, arena.collider, 0.1)
+  assert.equal(result.activity, 'sit'); assert.ok(result.face!.distanceTo(visitor.clone().setY(visitor.y + 1.5)) < 1e-6); assert.ok(Math.abs(villager.heading - Math.PI / 2) < 1e-9)
+  // Furniture in the way: the NPC settles close by instead of jittering forever.
+  const blocked = createEnemyMotion(new THREE.Vector3(0, 0, 0), 0, 0.4), behind = new THREE.Vector3(2.6, 0, 0)
+  for (let i = 0; i < 120; i++) result = stepEnemyMotion(blocked, { ...npc, task: task('work', behind) }, far, arena.collider, 0.1)
+  assert.equal(result!.activity, 'work')
+  assert.ok(blocked.position.distanceTo(behind) < 1.8 && blocked.position.x < 2 - 0.1)
+  nav.dispose(); arena.dispose()
+})
+
+test('chatting NPCs face each other; patrols go back and forth with guard pauses', () => {
+  const center = new THREE.Vector3(0, 0, 0), npc = { speed: 2, range: 6, npc: true }
+  const a = createEnemyMotion(new THREE.Vector3(-3, 0, 1), 0, 0.2), b = createEnemyMotion(new THREE.Vector3(3, 0, -1), 0, 1.3)
+  const tasks = [chatSpot(center, 1.2, 2, 0), chatSpot(center, 1.2, 2, 1)].map((spot): NpcTask => ({ key: 'chat', activity: 'chat', spot, patrol: null }))
+  let steps: EnemyStep[] = []
+  for (let i = 0; i < 100; i++) steps = [stepEnemyMotion(a, { ...npc, task: tasks[0], neighbors: [b.position] }, far, empty(), 0.1), stepEnemyMotion(b, { ...npc, task: tasks[1], neighbors: [a.position] }, far, empty(), 0.1)]
+  assert.deepEqual(steps.map((step) => step.activity), ['chat', 'chat'])
+  const ab = b.position.clone().sub(a.position).setY(0).normalize()
+  assert.ok(forwardOf(a.heading).dot(ab) > 0.99 && forwardOf(b.heading).dot(ab) < -0.99, 'they look at each other')
+  const guard = createEnemyMotion(new THREE.Vector3(0, 0, 0), 0, 0.5), end = new THREE.Vector3(6, 0, 0), patrol = task('patrol', end, 0, [new THREE.Vector3(0, 0, 0), end])
+  const visits = { base: 0, end: 0 }
+  let guarding = 0, wasPaused = false
+  for (let i = 0; i < 600; i++) {
+    const step = stepEnemyMotion(guard, { ...npc, range: 4, task: patrol }, far, empty(), 0.1)
+    if (step.activity === 'guard') guarding++
+    const paused = guard.action === 'pause'
+    if (paused && !wasPaused) { if (guard.position.distanceTo(end) < 0.5) visits.end++; else if (guard.position.length() < 0.5) visits.base++ }
+    wasPaused = paused
+  }
+  assert.ok(visits.end >= 2 && visits.base >= 2, `back and forth: ${JSON.stringify(visits)}`)
+  assert.ok(guarding > 50, 'stands guard at each end')
+})
+
+test('NPCs greet the player for a moment; ignoring NPCs carry on', () => {
+  const npc = { speed: 2, range: 6, npc: true }
+  const friendly = createEnemyMotion(new THREE.Vector3(), 0, 0.7), player = new THREE.Vector3(2, 0, 0)
+  const activities = Array.from({ length: 20 }, () => stepEnemyMotion(friendly, npc, player, empty(), 0.1).activity)
+  assert.equal(activities[0], 'greet')
+  assert.ok(activities.filter((activity) => activity === 'greet').length >= 10 && activities.at(-1) === null, `${activities}`)
+  assert.equal(friendly.action, 'talk')
+  const busy = createEnemyMotion(new THREE.Vector3(), 0, 0.7), start = busy.position.clone()
+  for (let i = 0; i < 20; i++) assert.notEqual(stepEnemyMotion(busy, { ...npc, reaction: 'ignore' }, player, empty(), 0.1).activity, 'greet')
+  assert.ok(busy.position.distanceTo(start) > 0.3 && busy.action !== 'talk', 'keeps wandering')
+})
+
+test('NPCs flee from chasing enemies and from a player who attacked them', () => {
+  const npc = { speed: 2, range: 8, npc: true }, threat = new THREE.Vector3(1.5, 0, 0)
+  const scared = createEnemyMotion(new THREE.Vector3(), 0, 0.7)
+  let result = stepEnemyMotion(scared, { ...npc, reaction: 'flee', threats: [threat] }, far, empty(), 0.1)
+  assert.equal(result.activity, 'flee')
+  for (let i = 0; i < 20; i++) result = stepEnemyMotion(scared, { ...npc, reaction: 'flee', threats: [threat] }, far, empty(), 0.1)
+  assert.ok(scared.position.distanceTo(threat) > 4, `ran away: ${scared.position.toArray()}`)
+  let calm = 0
+  for (let i = 0; i < 60 && result.activity === 'flee'; i++) { result = stepEnemyMotion(scared, { ...npc, reaction: 'flee' }, far, empty(), 0.1); calm++ }
+  assert.ok(calm >= 25 && calm <= 40 && result.activity !== 'flee', `fear fades after ~3 s: ${calm}`)
+  const brave = createEnemyMotion(new THREE.Vector3(), 0, 0.7)
+  assert.notEqual(stepEnemyMotion(brave, { ...npc, reaction: 'ignore', threats: [threat] }, far, empty(), 0.1).activity, 'flee')
+  const victim = createEnemyMotion(new THREE.Vector3(), 0, 0.7), attacker = new THREE.Vector3(1, 0, 0)
+  provokeNpc(victim, attacker)
+  for (let i = 0; i < 15; i++) result = stepEnemyMotion(victim, npc, attacker, empty(), 0.1)
+  assert.equal(result.activity, 'flee')
+  assert.ok(victim.position.distanceTo(attacker) > 3, 'flees from the attacker instead of greeting')
+  const stoic = createEnemyMotion(new THREE.Vector3(), 0, 0.7)
+  provokeNpc(stoic, attacker, 'ignore')
+  assert.equal(stoic.fear, 0)
+})
+
+test('alerting NPCs run to the nearest guard, who then heads to the threat', () => {
+  const npc = { speed: 2, range: 8, npc: true }, threat = new THREE.Vector3(-2, 0, 0)
+  const herald = createEnemyMotion(new THREE.Vector3(), 0, 0.7), guardBase = new THREE.Vector3(9, 0, 0), farGuard = new THREE.Vector3(-30, 0, 0)
+  let alarm: THREE.Vector3 | undefined, result: EnemyStep | null = null
+  for (let i = 0; i < 80 && !alarm; i++) {
+    result = stepEnemyMotion(herald, { ...npc, reaction: 'alert', threats: herald.position.distanceTo(threat) < 7 ? [threat] : [], guards: [farGuard, guardBase] }, far, empty(), 0.1)
+    assert.equal(result.activity, 'alert')
+    alarm = result.alarm
+  }
+  assert.ok(alarm && alarm.equals(threat), 'reports the threat')
+  assert.ok(herald.position.distanceTo(guardBase) <= NPC_LIFE.report + 0.1, 'reached the nearest guard')
+  const guard = createEnemyMotion(guardBase, 0, 0.3)
+  alertGuard(guard, alarm!)
+  for (let i = 0; i < 80; i++) result = stepEnemyMotion(guard, { ...npc, guard: true, task: task('guard', guardBase) }, far, empty(), 0.1)
+  assert.equal(result!.activity, 'alert')
+  assert.ok(guard.position.distanceTo(threat) < NPC_LIFE.guardStop + 0.3, `guard went to the threat: ${guard.position.toArray()}`)
+  assert.ok(forwardOf(guard.heading).dot(threat.clone().sub(guard.position).normalize()) > 0.99)
+  for (let i = 0; i < 200; i++) result = stepEnemyMotion(guard, { ...npc, guard: true, task: task('guard', guardBase) }, far, empty(), 0.1)
+  assert.equal(result!.activity, 'guard', 'returns to its post once the alarm expires')
+  assert.ok(guard.position.distanceTo(guardBase) < 0.4)
 })

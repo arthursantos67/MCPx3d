@@ -185,6 +185,29 @@ test('the builder system prompt documents the new catalogue, mechanics, audio an
     'dragon','movingPlatform','jumpPad','powerOrb','requires','dialogue','survive','delay','flying','node.sound','weather none|rain','grade none|warm','music calm','castleWall','turret'])
     assert.ok(system.includes(expected),expected)
   assert.ok(!system.includes('disparos/projéteis'),'weapons are no longer described as missing')
+  for (const expected of ['prefab.character={age child|young|adult|elder','hairStyle auto|bald','beard auto|none|short|long','nunca repita o mesmo modelo','behavior.routine (só npc',
+    'activity wander|work|sit|chat|patrol|guard|sleep|perform','marketStall, bench, well','reaction greet','node.emitter={preset fire|smoke|sparks','smoke em chaminés','sparks na bigorna',
+    'motion={wind 0–2','fauna auto|none|rich','dayCycle={enabled,duration 60–7200','environment.premise ≤240'])
+    assert.ok(system.includes(expected),expected)
+  assert.ok(system.length<17000,`the builder prompt stays compact (${system.length} chars)`)
+})
+
+test('the edit prompt lists the 1.4 fields it can change', async () => {
+  let system=''
+  const provider={generateStructured:async(messages:{role:string;content:string}[])=>{system||=messages[0].content;throw new Error('parar')}} as unknown as LLMProvider
+  const { editThreeScene }=await import('../../src/three/sceneGeneration.ts')
+  await editThreeScene(provider,scene([]),'Adicione fumaça na chaminé',new AbortController().signal,{mode:'edit'}).catch(()=>{})
+  for (const expected of ['updates aceitam emitter','routine/reaction','prefab.character','motion, dayCycle e premise']) assert.ok(system.includes(expected),expected)
+})
+
+test('the 1.4 life heuristics stay silent on the curated example scenes, including the inhabited market', async () => {
+  const { createCryptScene, createMarketTownScene }=await import('../../src/three/sceneExperiences.ts')
+  const markers=['só passeiam','local inexistente ou oculto','sem lugar','cópias idênticas','passagem do dia','vento está fraco']
+  const examples:[ThreeSceneDocument,string][]=[
+    [createMarketTownScene(),'Crie uma vila medieval em dia de feira com aldeões comerciantes e missões'],[createCryptScene(),'Crie uma cripta com esqueletos e um portão trancado'],
+    [createCombatArenaScene(),creationIdeas[0][1]],[createEnchantedForestScene(),creationIdeas[4][1]],[createValleyScene(),'Vila em um vale para explorar e coletar cristais'],
+  ]
+  for (const [example,request] of examples) assert.deepEqual(reviewSceneDirection(example,request).filter(issue=>markers.some(marker=>issue.includes(marker))),[],example.name)
 })
 
 test('creative ideas are varied, rich prompts that exercise the new mechanics', () => {

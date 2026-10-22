@@ -2,7 +2,7 @@ import { expect, test, type Page } from '@playwright/test'
 import { readFile } from 'node:fs/promises'
 import { createArchitectureScene,createValleyScene } from '../../apps/web/src/three/sceneShowcase.ts'
 import { serializeSceneDraft } from '../../apps/web/src/three/sceneDraft.ts'
-import { projectAction } from './threeHelpers.ts'
+import { projectAction, leaveGame } from './threeHelpers.ts'
 
 async function boot(page:Page) {
   const errors:string[]=[]
@@ -46,6 +46,6 @@ test('a legacy indoor floor is repaired on opening, rendered and persisted witho
   await page.getByRole('button',{name:'▶ Jogar',exact:true}).click()
   await expect(page.getByRole('region',{name:'Modo jogo'})).toBeVisible()
   await page.screenshot({path:'.cache/browser/architecture-ground-floor-fixed.png'})
-  await page.keyboard.press('Escape')
+  await leaveGame(page)
   expect(errors).toEqual([])
 })

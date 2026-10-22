@@ -188,3 +188,6 @@ export function routineTask(plan: RoutinePlan | undefined, hour: number | null, 
 
 /** Guards answer alarms: NPCs whose routine includes guarding or patrolling. */
 export const isGuardPlan = (plan: RoutinePlan | undefined) => !!plan?.steps.some(({ step }) => step.activity === 'guard' || step.activity === 'patrol')
+
+/** Every place a routine sends an NPC, so the navmesh focus box can include it. */
+export const routinePoints = (plans: Map<string, RoutinePlan>) => [...plans.values()].flatMap((plan) => plan.steps.flatMap(({ spot, patrol }) => [...(spot ? [spot.position] : []), ...(patrol ?? [])]))

@@ -4,7 +4,7 @@ import { createNode, createEmptyScene, validateScene, type ThreeSceneDocument } 
 import { expandSceneRecipe } from '../../apps/web/src/three/sceneGeneration.ts'
 import { terrainHeightAt } from '../../apps/web/src/three/sceneGeometrySpec.ts'
 import { inspectGroundQuality } from '../../apps/web/src/three/sceneGroundQuality.ts'
-import { projectAction } from './threeHelpers.ts'
+import { projectAction, leaveGame } from './threeHelpers.ts'
 
 const single={mode:'linear',count:1,offset:[0,0,0],radius:0,axis:'y'}
 const node=(id:string,kind:Parameters<typeof createNode>[0],position:number[],patch={})=>({...createNode(kind),id,name:id,position,color:'#ffffff',metalness:0,roughness:0.9,repeat:single,...patch})
@@ -44,7 +44,7 @@ for(const biome of ['meadow','alpine']) test(`physical ${biome} terrain layers r
   await page.getByRole('button',{name:'▶ Jogar',exact:true}).click()
   await expect(page.getByRole('region',{name:'Modo jogo'})).toContainText('Itens 0/7')
   await page.screenshot({path:`.cache/browser/terrain-${biome}-paths.png`})
-  await page.keyboard.press('Escape')
+  await leaveGame(page)
   const saved=await exported(page)
   expect(inspectGroundQuality(saved)).toEqual([])
   expect(saved.nodes.find(n=>n.id==='ground')!.geometry.biome).toBe(biome)

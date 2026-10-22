@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises'
 import { createArchitectureScene } from '../../apps/web/src/three/sceneShowcase.ts'
 import { applySceneEdit } from '../../apps/web/src/three/sceneGeneration.ts'
 import { createNode, type ThreeSceneDocument } from '../../apps/web/src/three/sceneDocument.ts'
-import { projectAction } from './threeHelpers.ts'
+import { projectAction, leaveGame } from './threeHelpers.ts'
 
 async function open(page: Page, scene: ThreeSceneDocument) {
   const errors: string[]=[]
@@ -38,7 +38,7 @@ test('a two-storey house renders, opens its entry and preserves the authored pro
   await expect(hud.getByRole('status')).toContainText('Abrir / fechar porta')
   await page.waitForTimeout(1200)
   await page.screenshot({path:'.cache/browser/architecture-entry.png'})
-  await page.keyboard.press('Escape')
+  await leaveGame(page)
   expect(await exported(page)).toEqual(JSON.parse(JSON.stringify(original)))
   expect(errors).toEqual([])
 })
@@ -52,7 +52,7 @@ test('upper-floor interior, windows, stairs and balcony render with contact shad
   await page.getByRole('button',{name:'▶ Jogar',exact:true}).click()
   await expect(page.getByRole('region',{name:'Modo jogo'})).toBeVisible()
   await page.screenshot({path:'.cache/browser/architecture-upper-interior.png'})
-  await page.keyboard.press('Escape')
+  await leaveGame(page)
   expect(errors).toEqual([])
 })
 

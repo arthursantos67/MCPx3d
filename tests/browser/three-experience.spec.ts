@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { readFile } from 'node:fs/promises'
-import { projectAction } from './threeHelpers.ts'
+import { projectAction, leaveGame } from './threeHelpers.ts'
 
 async function open(page: Page) {
   await page.addInitScript(() => {
@@ -43,7 +43,7 @@ test('creation gives the scene the main area, keeps technical controls optional 
   await expect(page.getByRole('textbox', { name: 'Descreva a cena Three.js' })).toBeHidden()
   expect((await page.locator('.three-stage').boundingBox())!.height).toBeGreaterThan(initial.height + 80)
   await page.screenshot({ path: '.cache/browser/three-valley-game.png' })
-  await page.keyboard.press('Escape')
+  await leaveGame(page)
   await expect(hud).toBeHidden()
   await page.getByRole('button', { name: 'Editor avançado', exact: true }).click()
   await expect(page.getByLabel('Hierarquia da cena')).toBeVisible()

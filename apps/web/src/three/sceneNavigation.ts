@@ -1,5 +1,4 @@
 import * as THREE from 'three'
-import type { NavMesh, NavMeshQuery } from 'recast-navigation'
 
 export interface NavigationAgent { radius: number; height: number; climb: number }
 export interface NavigationMesh {
@@ -26,7 +25,7 @@ export function navigationConfig(focus: THREE.Box3, agent: NavigationAgent): Rec
   const ch = clamp(agent.climb / 3, 0.05, cs)
   return { cs, ch, walkableSlopeAngle: 56, walkableHeight: Math.max(3, Math.ceil(agent.height / ch)), walkableClimb: Math.max(1, Math.floor(agent.climb / ch)),
     walkableRadius: Math.max(1, Math.ceil(agent.radius / cs)), maxEdgeLen: Math.round(12 / cs), maxSimplificationError: 1.3, minRegionArea: 8, mergeRegionArea: 20,
-    maxVertsPerPoly: 6, detailSampleDist: cs * 6, detailSampleMaxError: ch, borderSize: 0 }
+    maxVertsPerPoly: 6, detailSampleDist: Math.max(1.2, cs * 6), detailSampleMaxError: ch, borderSize: 0 }
 }
 
 /** World-space triangles touching the focus box (plus an optional safety floor), ready for Recast. Pure and worker-transferable. */
@@ -67,11 +66,29 @@ export function navigationInput(entries: { geometry: THREE.BufferGeometry; matri
     bounds: [[clip.min.x, clip.min.y, clip.min.z], [clip.max.x, clip.max.y, clip.max.z]] }
 }
 
-type Recast = typeof import('recast-navigation') & typeof import('recast-navigation/generators')
+// The package's declarations re-export extensionless paths that `nodenext` (the test project) cannot follow, so the few calls used
+// here are typed locally and the dynamic modules are narrowed to them.
+interface Point { x: number; y: number; z: number }
+interface NavMesh { destroy(): void }
+interface NavMeshQuery {
+  findClosestPoint(position: Point, options?: { halfExtents?: Point }): { success: boolean; polyRef: number; point: Point; isPointOverPoly: boolean }
+  computePath(start: Point, end: Point, options?: { halfExtents?: Point; maxPathPolys?: number; maxStraightPathPoints?: number }): { success: boolean; path: Point[] }
+  raycast(startRef: number, start: Point, end: Point): { t: number }
+  destroy(): void
+}
+interface Recast {
+  NavMeshQuery: new (navMesh: NavMesh) => NavMeshQuery
+  generateSoloNavMesh(positions: ArrayLike<number>, indices: ArrayLike<number>, config: Record<string, unknown>): { success: boolean; navMesh?: NavMesh }
+  getNavMeshPositionsAndIndices(navMesh: NavMesh): [number[], number[]]
+}
 let recast: Promise<Recast> | null = null
 /** The WASM module ships inside the bundle (wasm-compat build), loaded lazily in its own chunk and initialised once. */
 export function loadRecast(): Promise<Recast> {
-  recast ??= Promise.all([import('recast-navigation'), import('recast-navigation/generators')]).then(async ([core, generators]) => { await core.init(); return { ...core, ...generators } })
+  recast ??= Promise.all([import('recast-navigation'), import('recast-navigation/generators')]).then(async ([coreModule, generatorModule]) => {
+    const core = coreModule as unknown as Omit<Recast, 'generateSoloNavMesh'> & { init(): Promise<void> }, generators = generatorModule as unknown as Pick<Recast, 'generateSoloNavMesh'>
+    await core.init()
+    return { NavMeshQuery: core.NavMeshQuery, generateSoloNavMesh: generators.generateSoloNavMesh, getNavMeshPositionsAndIndices: core.getNavMeshPositionsAndIndices }
+  })
   return recast
 }
 
@@ -79,10 +96,14 @@ function wrap(module: Recast, navMesh: NavMesh, bounds: THREE.Box3, milliseconds
   const query: NavMeshQuery = new module.NavMeshQuery(navMesh), reach = { x: NAVIGATION_LIMITS.queryReach[0], y: NAVIGATION_LIMITS.queryReach[1], z: NAVIGATION_LIMITS.queryReach[2] }
   let disposed = false
   const [, indices] = module.getNavMeshPositionsAndIndices(navMesh)
+  // Widening searches keep the common case cheap while still snapping far off-mesh goals to the nearest walkable point.
   const closest = (point: THREE.Vector3) => {
     if (disposed) return null
-    const result = query.findClosestPoint(point, { halfExtents: reach })
-    return result.success && result.polyRef ? new THREE.Vector3(result.point.x, result.point.y, result.point.z) : null
+    for (const scale of [1, 4, 16]) {
+      const result = query.findClosestPoint(point, { halfExtents: { x: reach.x * scale, y: reach.y * Math.min(scale, 4), z: reach.z * scale } })
+      if (result.success && result.polyRef) return new THREE.Vector3(result.point.x, result.point.y, result.point.z)
+    }
+    return null
   }
   return {
     triangles: indices.length / 3, bounds, milliseconds,
@@ -96,7 +117,8 @@ function wrap(module: Recast, navMesh: NavMesh, bounds: THREE.Box3, milliseconds
     clear(from, to) {
       if (disposed) return false
       const start = query.findClosestPoint(from, { halfExtents: reach })
-      if (!start.success || !start.polyRef) return false
+      // Off the mesh (an agent hugging a corner), the snapped start may sit across a thin wall: never shortcut from there.
+      if (!start.success || !start.polyRef || Math.hypot(start.point.x - from.x, start.point.z - from.z) > 0.05) return false
       return query.raycast(start.polyRef, start.point, to).t >= 1
     },
     dispose() { if (disposed) return; disposed = true; query.destroy(); navMesh.destroy() },
@@ -107,7 +129,7 @@ export async function navigationFromInput(input: NavigationInput): Promise<Navig
   try {
     const module = await loadRecast(), started = performance.now()
     const result = module.generateSoloNavMesh(input.positions, input.indices, { ...input.config, bounds: input.bounds })
-    if (!result.success) return null
+    if (!result.success || !result.navMesh) return null
     const bounds = new THREE.Box3(new THREE.Vector3(...input.bounds[0]), new THREE.Vector3(...input.bounds[1]))
     return wrap(module, result.navMesh, bounds, performance.now() - started)
   } catch { return null }
@@ -124,13 +146,14 @@ export async function buildNavigation(entries: { geometry: THREE.BufferGeometry;
   } catch { return null }
 }
 
-/** Focus box around every agent's base, widened by its roaming range (bases ± range). */
-export function navigationFocus(agents: { base: THREE.Vector3; range: number }[], limit = 160): THREE.Box3 {
+/** Focus box around every agent's base widened by its roaming range (bases ± range), plus routine destinations with a margin. */
+export function navigationFocus(agents: { base: THREE.Vector3; range: number }[], points: THREE.Vector3[] = [], limit = 160): THREE.Box3 {
   const box = new THREE.Box3()
   for (const { base, range } of agents) {
     const reach = clamp(range * 1.8 + 2, 6, limit / 2)
     box.union(new THREE.Box3(base.clone().addScalar(-reach), base.clone().addScalar(reach)))
   }
+  for (const point of points) box.union(new THREE.Box3(point.clone().addScalar(-4), point.clone().addScalar(4)))
   return box
 }
 

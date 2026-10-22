@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { createEmptyScene, createNode, DEFAULT_MOTION, parseScene, validateScene, type ThreeSceneDocument } from '../../src/three/sceneDocument.ts'
+import { createEmptyScene, createNode, DEFAULT_MOTION, duplicateSubtree, parseScene, removeSubtree, validateScene, type ThreeSceneDocument } from '../../src/three/sceneDocument.ts'
 import { prefabSpec } from '../../src/three/scenePrefabs.ts'
 import { defaultCharacterSpec } from '../../src/three/sceneCharacterArchetype.ts'
 
@@ -46,6 +46,7 @@ test('invalid 1.4 data is rejected', () => {
   assert.throws(() => withRoutine([{ activity: 'work', target: null, from: 8, to: 25 }]), /Fim do período/)
   assert.throws(() => withRoutine(Array.from({ length: 7 }, () => ({ activity: 'wander', target: null, from: 0, to: 24 }))), /até 6/)
   assert.throws(() => withRoutine([{ activity: 'guard', target: null, from: 0, to: 24 }], 'enemy'), /pertencem a NPCs/)
+  assert.equal(removeSubtree(doc, 'stall').nodes.find((node) => node.id === 'npc')!.behavior!.routine![0].target, null)
   assert.throws(() => validateScene({ ...doc, nodes: [{ ...createNode('box'), emitter: { preset: 'lava', rate: 1, spread: 0 } }] }), /Partícula/)
   assert.throws(() => validateScene({ ...doc, nodes: [{ ...createNode('box'), emitter: { preset: 'fire', rate: 9, spread: 0 } }] }), /Taxa/)
   assert.throws(() => validateScene({ ...doc, environment: { ...doc.environment, motion: { wind: 3, grass: 'auto', fauna: 'auto' } } }), /Vento/)
@@ -64,4 +65,13 @@ test('character archetypes are read strictly or adjusted leniently, and only for
   const lenient = prefabSpec({ type: 'knight', character: { age: 'ancient', height: 3, skin: 'pink' } }, (label) => notes.push(label))!
   assert.deepEqual(lenient.character, { ...defaultCharacterSpec(), height: 1.15 })
   assert.deepEqual(notes, ['idade do personagem', 'altura do personagem', 'tom de pele'])
+})
+
+test('duplicating a group remaps routine places inside the copy', () => {
+  const doc = village(), group = { ...createNode('group'), id: 'block', name: 'Quarteirão' }
+  const nodes = doc.nodes.map((node) => ['stall', 'npc'].includes(node.id) ? { ...node, parentId: 'block' } : node)
+  const { document } = duplicateSubtree(validateScene({ ...doc, nodes: [group, ...nodes] }), 'block')
+  const copies = document.nodes.slice(-3), stall = copies.find((node) => node.name === 'Barraca')!, npc = copies.find((node) => node.name === 'Mercadora')!
+  assert.equal(npc.behavior!.routine![0].target, stall.id)
+  assert.equal(npc.behavior!.routine![1].target, 'bench')
 })

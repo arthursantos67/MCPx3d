@@ -1,4 +1,4 @@
-import { openAdvancedEditor, projectAction } from './threeHelpers.ts'
+import { openAdvancedEditor, projectAction, leaveGame } from './threeHelpers.ts'
 import { expect, test, type Page } from '@playwright/test'
 import { readFile } from 'node:fs/promises'
 import { createEmptyScene, createNode, validateScene } from '../../apps/web/src/three/sceneDocument.ts'
@@ -65,7 +65,7 @@ test('the playable island renders with sky, lights and post-processing, and expo
   await page.waitForTimeout(700)
   await page.keyboard.up('w')
   await page.screenshot({ path: '.cache/browser/three-island-game.png' })
-  await page.keyboard.press('Escape')
+  await leaveGame(page)
   await expect(hud).toBeHidden()
   expect(errors).toEqual([])
 })
@@ -95,7 +95,7 @@ test('play mode walks, collects, opens doors with E, fires key triggers and neve
   expect((await canvas.screenshot()).equals(before)).toBe(false)
   await page.keyboard.press('f')
   await expect(hud).toContainText('Voo livre')
-  await page.keyboard.press('Escape')
+  await leaveGame(page)
   await expect(hud).toBeHidden()
   expect(await exported(page)).toEqual(original)
   expect(errors).toEqual([])

@@ -206,7 +206,7 @@ export function sanitizeEnvironment(log: SanitizeLog, value: unknown): Json {
       fauna: choice(log, value.motion.fauna, faunaDensities, 'auto', 'Fauna') } } : {}),
     ...(isRecord(value.dayCycle) ? { dayCycle: { enabled: typeof value.dayCycle.enabled === 'boolean' ? value.dayCycle.enabled : true,
       duration: number(log, value.dayCycle.duration, 60, 7200, 600, 'Duração do dia'), start: number(log, value.dayCycle.start, 0, 24, 9, 'Hora inicial') } } : {}),
-    ...(typeof value.premise === 'string' && value.premise.trim() ? { premise: value.premise.trim().slice(0, MAX_PREMISE) } : {}) }
+    ...(typeof value.premise === 'string' && value.premise.trim() ? { premise: (value.premise.trim().length > MAX_PREMISE ? (log.adjust('Premissa'), value.premise.trim().slice(0, MAX_PREMISE)) : value.premise).trim() } : {}) }
 }
 
 /** Clears routine places that do not exist (or are the NPC itself or one of its parts); `drop` reports each one. */

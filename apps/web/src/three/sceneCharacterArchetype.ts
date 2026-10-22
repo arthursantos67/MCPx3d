@@ -36,3 +36,40 @@ export function readCharacter(source: Record<string, unknown>, fix: (label: stri
   }
   return out
 }
+
+/** Proportions accepted by the biped skeleton (sceneCharacters.ts bipedFrame). */
+export interface FrameShape { L?: number; A?: number; bulk?: number; head?: number; hunch?: number }
+const AGE: Record<CharacterSpec['age'], { scale: number; L: number; A: number; bulk: number; head: number; hunch: number }> = {
+  child: { scale: 0.64, L: 0.9, A: 0.92, bulk: 0.9, head: 1.24, hunch: 0 }, young: { scale: 0.97, L: 1, A: 1, bulk: 0.94, head: 1.02, hunch: 0 },
+  adult: { scale: 1, L: 1, A: 1, bulk: 1, head: 1, hunch: 0 }, elder: { scale: 0.96, L: 0.97, A: 1, bulk: 0.95, head: 1, hunch: 12 },
+}
+const BUILD: Record<CharacterSpec['build'], number> = { slim: 0.86, average: 1, athletic: 1.1, heavy: 1.3 }
+/**
+ * Applies an archetype to the base proportions of a biped type. Without an archetype (or with the default one) the shape is
+ * returned unchanged and `scale` is 1, so documents from 1.3 rebuild the very same parts.
+ */
+export function archetypeShape(character: CharacterSpec | undefined, base: FrameShape): { shape: FrameShape; scale: number } {
+  if (!character) return { shape: base, scale: 1 }
+  const age = AGE[character.age], realistic = character.style === 'realistic', bulk = BUILD[character.build] * age.bulk
+  const shape: FrameShape = { ...base }
+  const times = (key: keyof FrameShape, factor: number) => { if (factor !== 1) shape[key] = (base[key] ?? 1) * factor }
+  times('L', age.L * (realistic ? 1.04 : 1)); times('A', age.A * (character.build === 'athletic' ? 1.02 : 1)); times('bulk', bulk); times('head', age.head * (realistic ? 0.88 : 1))
+  if (age.hunch) shape.hunch = (base.hunch ?? 0) + age.hunch
+  return { shape, scale: age.scale * character.height }
+}
+const mixHex = (a: string, b: string, t: number) => {
+  const pa = parseInt(a.slice(1), 16), pb = parseInt(b.slice(1), 16)
+  return '#' + [16, 8, 0].map((shift) => Math.round(((pa >> shift) & 255) * (1 - t) + ((pb >> shift) & 255) * t).toString(16).padStart(2, '0')).join('')
+}
+/** Skin tone of the archetype, or the seeded fallback. */
+export const archetypeSkin = (character: CharacterSpec | undefined, fallback: string) => character?.skin ?? fallback
+/** Hair colour of the archetype: explicit colour, otherwise the seeded one (greyed for elders). */
+export const archetypeHair = (character: CharacterSpec | undefined, fallback: string) => character?.hair ?? (character?.age === 'elder' ? mixHex(fallback, '#c4c0ba', 0.72) : fallback)
+const HAIR_INDEX: readonly string[] = ['bald', 'short', 'bun', 'long', 'quiff', 'ponytail', 'braids', 'mohawk']
+/** Index of the hair proxy style (0 bald, 1 short, 2 bun, 3 long, 4 tuft, 5 ponytail, 6 braids, 7 mohawk); `auto` keeps the seeded index. */
+export function archetypeHairIndex(character: CharacterSpec | undefined, seeded: number): number {
+  const style = character?.hairStyle ?? 'auto'
+  return style === 'auto' ? seeded : HAIR_INDEX.indexOf(style)
+}
+/** Beard: `auto` keeps the seeded decision. */
+export const archetypeBeard = (character: CharacterSpec | undefined, seeded: 'none' | 'short' | 'long') => !character || character.beard === 'auto' ? seeded : character.beard

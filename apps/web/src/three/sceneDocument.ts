@@ -326,7 +326,7 @@ export function validateScene(value: unknown): ThreeSceneDocument {
     if (typeof node.kind !== 'string' || !Object.hasOwn(nodeLabels, node.kind)) throw new Error('Tipo de objeto desconhecido.')
     if (node.parentId !== null && typeof node.parentId !== 'string') throw new Error('Referência de grupo inválida.')
     const interaction = validateInteraction(node.interaction), behavior = validateBehavior(node.behavior), sound = validateSound(node.sound), emitter = validateEmitter(node.emitter)
-    if (behavior?.routine && behavior.type !== 'npc') throw new Error('Rotinas pertencem a NPCs.')
+    if ((behavior?.routine || behavior?.reaction) && behavior.type !== 'npc') throw new Error('Rotinas e reações pertencem a NPCs.')
     return {
       id: text(node.id, 'ID'), parentId: node.parentId as string | null, name: text(node.name, 'Nome'), kind: node.kind as NodeKind,
       visible: boolean(node.visible, 'Visibilidade'), position: vector(node.position, 'Posição', -10000, 10000),
@@ -410,6 +410,7 @@ export function removeSubtree(doc: ThreeSceneDocument, id: string): ThreeSceneDo
   }
   return { ...doc, nodes: remaining.map((node) => {
     const next = { ...node, overlapWith: node.overlapWith.filter((key) => !ids.has(key)) }
+    if (next.behavior?.routine?.some((step) => step.target && ids.has(step.target))) next.behavior = { ...next.behavior, routine: next.behavior.routine.map((step) => step.target && ids.has(step.target) ? { ...step, target: null } : step) }
     if (next.interaction && ((next.interaction.targetId && ids.has(next.interaction.targetId)) ||
       (next.interaction.action === 'toggleAnimation' && !animatedTargets.has(next.interaction.targetId ?? next.id)))) delete next.interaction
     return next
@@ -424,6 +425,7 @@ export function duplicateSubtree(doc: ThreeSceneDocument, id: string): { documen
     id: replacements.get(node.id)!, overlapWith: node.overlapWith.map((key) => replacements.get(key) ?? key), parentId: replacements.get(node.parentId ?? '') ?? node.parentId,
     name: node.id === id ? `${node.name.slice(0, 110)} (cópia)` : node.name,
     ...(node.interaction ? { interaction: { ...node.interaction, targetId: node.interaction.targetId === null ? null : replacements.get(node.interaction.targetId) ?? node.interaction.targetId } } : {}),
+    ...(node.behavior?.routine ? { behavior: { ...node.behavior, routine: node.behavior.routine.map((step) => ({ ...step, target: step.target === null ? null : replacements.get(step.target) ?? step.target })) } } : {}),
     position: node.id === id ? insertionPosition(doc, root, doc.nodes.filter((item) => ids.has(item.id))) : [...node.position] }))
   return { document: validateScene({ ...doc, nodes: [...doc.nodes, ...copies] }), selectedId: replacements.get(id)! }
 }

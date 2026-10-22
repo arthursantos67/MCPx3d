@@ -33,7 +33,8 @@ export function replaceAssetNodes(document:ThreeSceneDocument,root:SceneNode,reb
   const result=combined.map(node=>{
     const target=node.interaction?.targetId?resolve(node.interaction.targetId):null
     return {...node,parentId:node.parentId?resolve(node.parentId):null,overlapWith:[...new Set(node.overlapWith.map(resolve).filter(id=>ids.has(id)&&id!==node.id))],
-      ...(node.interaction?{interaction:target&&!ids.has(target)?undefined:{...node.interaction,targetId:target}}:{})}
+      ...(node.interaction?{interaction:target&&!ids.has(target)?undefined:{...node.interaction,targetId:target}}:{}),
+      ...(node.behavior?.routine?{behavior:{...node.behavior,routine:node.behavior.routine.map(step=>{const place=step.target?resolve(step.target):null;return {...step,target:place&&ids.has(place)&&place!==node.id?place:null}})}}:{})}
   })
   for(const node of result) if(node.interaction?.action==='toggleAnimation') {
     const target=node.interaction.targetId??node.id,scope=subtreeIds(result,target)

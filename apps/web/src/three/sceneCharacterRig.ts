@@ -9,7 +9,10 @@ import type { PrefabPart } from './scenePrefabs.ts'
  * `cycle` is the optional accumulated stride phase (cycles); integrating `strideRate` keeps the gait continuous when the speed changes.
  */
 export interface LocomotionState { time: number; speed: number; airborne: boolean; attack: number; hurt: number; dead: number; talk?: boolean; cycle?: number }
-export interface RigBinding { rootId: string; kind: RigKind; phase: number; size: number; joints: { nodeId: string; joint: string; base: Vector3Tuple; basePosition: Vector3Tuple }[] }
+/** One leg for foot IK: `hip` and `knee` are joint names; `offset` is the sole contact point in the knee frame (derived from sole/foot/hoof/paw parts). */
+export interface RigFoot { hip: string; knee: string; offset: Vector3Tuple }
+/** `feet` and `height` (rest height of the root joint) are filled by bindRigs/bindParts; bindings built elsewhere may omit them. */
+export interface RigBinding { rootId: string; kind: RigKind; phase: number; size: number; joints: { nodeId: string; joint: string; base: Vector3Tuple; basePosition: Vector3Tuple }[]; feet?: RigFoot[]; height?: number }
 
 export const rigJoints: Record<RigKind, readonly string[]> = {
   biped: ['j_hips', 'j_spine', 'j_neck', 'j_head', 'j_shoulderL', 'j_shoulderR', 'j_elbowL', 'j_elbowR', 'j_hipL', 'j_hipR', 'j_kneeL', 'j_kneeR'],
@@ -18,20 +21,27 @@ export const rigJoints: Record<RigKind, readonly string[]> = {
   flyer: ['j_body', 'j_neck', 'j_head', 'j_jaw', 'j_wingL', 'j_wingR', 'j_tail'],
   hover: ['j_body'],
 }
-const rootJoint: Record<RigKind, string> = { biped: 'j_hips', quadruped: 'j_body', arachnid: 'j_body', flyer: 'j_body', hover: 'j_body' }
+export const rigRootJoint: Record<RigKind, string> = { biped: 'j_hips', quadruped: 'j_body', arachnid: 'j_body', flyer: 'j_body', hover: 'j_body' }
+const rootJoint = rigRootJoint
 /** Fraction of the root height lost when the character collapses. */
-const collapse: Record<RigKind, number> = { biped: 0.86, quadruped: 0.65, arachnid: 0.45, flyer: 0.58, hover: 0.8 }
+export const rigCollapse: Record<RigKind, number> = { biped: 0.86, quadruped: 0.65, arachnid: 0.45, flyer: 0.58, hover: 0.8 }
+const collapse = rigCollapse
+/** Metres per unit of authored bob: bipeds follow their real hip height (goblins, golems), the rest their size. */
+export function rigUnit(binding: RigBinding): number {
+  const root = binding.height ?? binding.joints.find((joint) => joint.joint === rootJoint[binding.kind])?.basePosition[1] ?? 0
+  return binding.kind === 'biped' && root > 0 ? root / 0.95 : binding.size
+}
 const TAU = Math.PI * 2
 const clamp01 = (v: number) => Math.min(1, Math.max(0, Number.isFinite(v) ? v : 0))
 const smooth = (a: number, b: number, x: number) => { const t = clamp01((x - a) / (b - a)); return t * t * (3 - 2 * t) }
 const BOUND = 179
 
-/** Stride cycles per second for a gait at `speed` (m/s); wings use their own fixed beat. */
+/** Stride cycles per second for a gait at `speed` (m/s); flyers beat their wings once per cycle. */
 export function strideRate(kind: RigKind, speed: number): number {
   const s = Math.max(0, Number.isFinite(speed) ? speed : 0)
   if (kind === 'arachnid') return Math.min(4, 0.9 + s * 0.6)
   if (kind === 'quadruped') return Math.min(3.2, 0.6 + s * 0.34)
-  if (kind === 'flyer') return Math.min(2.4, 0.5 + s * 0.3)
+  if (kind === 'flyer') return Math.min(1.6, 0.8 + s * 0.15)
   if (kind === 'hover') return 0.6
   return Math.min(2.6, 0.55 + s * 0.3)
 }
@@ -97,7 +107,7 @@ function arachnid(joint: string, e: Envelopes): Vector3Tuple {
 }
 function flyer(joint: string, e: Envelopes): Vector3Tuple {
   const { c, w, run, idle, breath, look, air, wind, strike, hurt, dead, t } = e
-  const flight = Math.max(air, smooth(0.5, 3, w * 4)), beat = Math.sin(TAU * t * (0.8 + 0.4 * run)), side = joint.endsWith('L') ? 1 : -1
+  const flight = Math.max(air, smooth(0.5, 3, w * 4)), beat = Math.sin(c), side = joint.endsWith('L') ? 1 : -1
   const flap = beat * (14 + 24 * Math.max(run, 0.4 * air)) * flight
   switch (joint) {
     case 'j_body': return [-6 * wind + 8 * strike + 4 * hurt + 8 * run * air, 0, Math.sin(TAU * t / 7) * 4 * air + 22 * dead]
@@ -130,12 +140,31 @@ export function rigBob(kind: RigKind, state: LocomotionState, phase = 0): number
   const value = kind === 'biped' ? (0.015 + 0.03 * run) * w * Math.cos(2 * c) + 0.004 * breath * idle + 0.05 * air
     : kind === 'quadruped' ? (0.02 + 0.05 * run) * w * Math.cos(2 * c) + 0.006 * breath * idle
       : kind === 'arachnid' ? 0.015 * w * Math.cos(2 * c) + 0.008 * breath * idle
-        : kind === 'flyer' ? (0.12 * Math.sin(TAU * t * (0.8 + 0.4 * run) - 1.2) * Math.max(air, w) + 0.02 * breath * idle) * alive
+        : kind === 'flyer' ? (0.12 * Math.sin(c - 1.2) * Math.max(air, w) + 0.02 * breath * idle) * alive
           : (0.06 * Math.sin(TAU * t * 0.6) + 0.015 * Math.sin(TAU * t * 1.7)) * alive
   return Number.isFinite(value) ? Math.max(-0.5, Math.min(0.5, value)) : 0
 }
 
 const seedPhase = (id: string, seed: number) => { let h = seed | 0; for (let i = 0; i < id.length; i++) h = Math.imul(h ^ id.charCodeAt(i), 16777619); return hashNoise(h, seed, 811) }
+interface RigPiece { id: string; parentId: string | null; part: string; group: boolean; position: Vector3Tuple; rotation: Vector3Tuple; dimensions: Vector3Tuple }
+const FOOT_PART = /^(sole|foot|hoof|paw)/
+/** Lowest point of a part's rotated unit box, in its parent's frame (Euler XYZ, degrees). */
+function bottom(piece: RigPiece): Vector3Tuple {
+  const [x, y, z] = piece.rotation.map((v) => v * Math.PI / 180), [s1, c1, s2, c2, s3, c3] = [Math.sin(x), Math.cos(x), Math.sin(y), Math.cos(y), Math.sin(z), Math.cos(z)]
+  const row = [s1 * s2 * c3 + c1 * s3, c1 * c3 - s1 * s2 * s3, -s1 * c2], [w, h, d] = piece.dimensions
+  return [piece.position[0], piece.position[1] - (Math.abs(row[0]) * w + Math.abs(row[1]) * h + Math.abs(row[2]) * d) / 2, piece.position[2]]
+}
+function rigBinding(rootId: string, kind: RigKind, phase: number, size: number, pieces: RigPiece[]): RigBinding {
+  const joints: RigBinding['joints'] = pieces.filter((piece) => piece.group && piece.part.startsWith('j_')).map((piece) => ({ nodeId: piece.id, joint: piece.part, base: [...piece.rotation], basePosition: [...piece.position] }))
+  const byNode = new Map(joints.map((joint) => [joint.nodeId, joint])), feet: RigFoot[] = []
+  if (kind !== 'arachnid' && kind !== 'hover') for (const knee of joints) {
+    const leg = /^j_knee(.*)$/.exec(knee.joint)?.[1]
+    if (!leg) continue
+    const hip = joints.find((joint) => joint.joint === (kind === 'biped' ? `j_hip${leg}` : `j_leg${leg}`)), points = pieces.filter((piece) => piece.parentId === knee.nodeId && !byNode.has(piece.id) && FOOT_PART.test(piece.part)).map(bottom)
+    if (hip && points.length) feet.push({ hip: hip.joint, knee: knee.joint, offset: points.reduce((low, point) => point[1] < low[1] ? point : low) })
+  }
+  return { rootId, kind, phase, size, joints, feet, height: joints.find((joint) => joint.joint === rootJoint[kind])?.basePosition[1] ?? 0 }
+}
 /** Finds character prefab groups (node.asset?.type is a character) and their descendant joint nodes (assetPart starting with 'j_'). */
 export function bindRigs(doc: ThreeSceneDocument): RigBinding[] {
   const children = new Map<string, SceneNode[]>()
@@ -143,21 +172,21 @@ export function bindRigs(doc: ThreeSceneDocument): RigBinding[] {
   const bindings: RigBinding[] = []
   for (const root of doc.nodes) {
     if (!root.asset || !isCharacterType(root.asset.type)) continue
-    const joints: RigBinding['joints'] = [], stack = [...children.get(root.id) ?? []]
+    const pieces: RigPiece[] = [], stack = [...children.get(root.id) ?? []]
     while (stack.length) {
       const node = stack.pop()!
       if (node.asset && isCharacterType(node.asset.type)) continue
-      if (node.kind === 'group' && node.assetPart?.startsWith('j_')) joints.push({ nodeId: node.id, joint: node.assetPart, base: [...node.rotation], basePosition: [...node.position] })
+      if (node.assetPart) pieces.push({ id: node.id, parentId: node.parentId, part: node.assetPart, group: node.kind === 'group', position: node.position, rotation: node.rotation, dimensions: node.dimensions })
       stack.push(...children.get(node.id) ?? [])
     }
-    bindings.push({ rootId: root.id, kind: characterRig[root.asset.type], phase: seedPhase(root.id, root.asset.seed), size: root.asset.size, joints })
+    bindings.push(rigBinding(root.id, characterRig[root.asset.type], seedPhase(root.id, root.asset.seed), root.asset.size, pieces))
   }
   return bindings
 }
 /** Binding for parts that are not in a document (the player avatar); `nodeId` maps a part id to its holder id. */
 export function bindParts(rootId: string, kind: RigKind, parts: PrefabPart[], size = 1, nodeId = (id: string) => id): RigBinding {
-  return { rootId, kind, phase: 0, size, joints: parts.filter((part) => part.kind === 'group' && part.id.startsWith('j_'))
-    .map((part) => ({ nodeId: nodeId(part.id), joint: part.id, base: [...part.rotation ?? [0, 0, 0]] as Vector3Tuple, basePosition: [...part.position] as Vector3Tuple })) }
+  return rigBinding(rootId, kind, 0, size, parts.map((part) => ({ id: nodeId(part.id), parentId: part.parentId ? nodeId(part.parentId) : null, part: part.id, group: part.kind === 'group',
+    position: part.position, rotation: part.rotation ?? [0, 0, 0], dimensions: part.dimensions })))
 }
 const RAD = Math.PI / 180
 /** Applies the pose to holders (rotation in radians, XYZ order); never mutates the document. */

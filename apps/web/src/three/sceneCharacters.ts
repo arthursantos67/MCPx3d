@@ -1,6 +1,7 @@
 import type { PrefabPart, PrefabSpec } from './scenePrefabs.ts'
 import type { NodeKind, SceneBehavior, SceneMaterial, Vector3Tuple, avatarKinds } from './sceneDocument.ts'
 import { hashNoise, type Point2 } from './sceneGeometrySpec.ts'
+import { archetypeBeard, archetypeHair, archetypeHairIndex, archetypeShape, archetypeSkin } from './sceneCharacterArchetype.ts'
 
 export const characterTypes = ['villager', 'knight', 'wizard', 'astronaut', 'goblin', 'skeleton', 'orc', 'wolf', 'deer', 'spider', 'drone', 'golem', 'dragon'] as const
 export type CharacterType = typeof characterTypes[number]
@@ -99,6 +100,7 @@ function kit(seed: number): Kit {
   }
   return { parts, rnd, pick, mesh, joint, bone }
 }
+const finish = (k: Kit, scale: number) => scale === 1 ? k.parts : scaled(k.parts, scale)
 function scaled(parts: PrefabPart[], f: number): PrefabPart[] {
   return parts.map((part) => ({ ...part, position: part.position.map((v) => round(v * f)) as V, dimensions: part.dimensions.map((v) => round(Math.max(0.01, v * f))) as V, ...(part.light ? { light: { ...part.light, distance: part.light.distance * f } } : {}) }))
 }
@@ -171,10 +173,13 @@ function face(k: Kit, f: Frame, o: FaceOpts) {
 }
 function hair(k: Kit, f: Frame, color: string, style: number) {
   const { hs, hc } = f, [, y, z] = hc, m = hairMat(color)
-  if (style === 0) return
+  if (style <= 0) return
+  if (style === 7) { k.mesh('hairTuft', 'j_head', 'Moicano', 'polyhedron', [0, y + 0.1 * hs, z - 0.01 * hs], [0.06 * hs, 0.12 * hs, 0.24 * hs], { ...m, flatShading: true }, { geometry: { detail: 1, bevel: 0.1, seed: 5 }, collidable: false }); return }
   k.mesh('hair', 'j_head', 'Cabelo', 'sphere', [0, y + 0.05 * hs, z - 0.02 * hs], [0.228 * hs, 0.2 * hs, 0.256 * hs], m, { geometry: { segments: 16 }, collidable: false })
   if (style === 2) k.mesh('hairBun', 'j_head', 'Coque', 'sphere', [0, y + 0.08 * hs, z - 0.13 * hs], [0.1 * hs, 0.1 * hs, 0.09 * hs], m, { geometry: { segments: 12 }, collidable: false })
   if (style === 3) k.mesh('hairLong', 'j_head', 'Cabelo comprido', 'capsule', [0, y - 0.1 * hs, z - 0.095 * hs], [0.2 * hs, 0.28 * hs, 0.075 * hs], m, { rotation: [8, 0, 0], collidable: false })
+  if (style === 5) k.mesh('hairTail', 'j_head', 'Rabo de cavalo', 'capsule', [0, y - 0.04 * hs, z - 0.15 * hs], [0.07 * hs, 0.26 * hs, 0.07 * hs], m, { rotation: [18, 0, 0], collidable: false })
+  if (style === 6) for (const [side, s] of sides) k.mesh(`braid${s}`, 'j_head', 'Trança', 'capsule', [side * 0.085 * hs, y - 0.13 * hs, z - 0.06 * hs], [0.045 * hs, 0.26 * hs, 0.045 * hs], m, { rotation: [10, 0, 0], collidable: false })
   if (style === 4) k.mesh('hairTuft', 'j_head', 'Topete', 'polyhedron', [0, y + 0.105 * hs, z + 0.03 * hs], [0.2 * hs, 0.09 * hs, 0.19 * hs], { ...m, flatShading: true }, { geometry: { detail: 1, bevel: 0.1, seed: 3 }, collidable: false })
 }
 function beard(k: Kit, f: Frame, color: string, long: boolean) {
@@ -193,13 +198,13 @@ function sword(k: Kit, parent: string, position: V, rotation: V, blade: Mat, hil
 }
 
 function villager(k: Kit, spec: PrefabSpec, avatar = false) {
-  const skin = skinMat(k.pick(SKINS, 1)), shirt = spec.primary ?? (avatar ? '#7a6a4a' : k.pick(CLOTHS, 2)), pants = spec.secondary ?? (avatar ? '#4d5560' : k.pick(PANTS, 3)), hairColor = k.pick(HAIRS, 4)
-  const f = bipedFrame(k, { bulk: 0.95 + k.rnd(5) * 0.12, head: 1.05 }), boot = leather(avatar ? '#5a3c24' : '#6b4a2e')
+  const c = spec.character, skin = skinMat(archetypeSkin(c, k.pick(SKINS, 1))), shirt = spec.primary ?? (avatar ? '#7a6a4a' : k.pick(CLOTHS, 2)), pants = spec.secondary ?? (avatar ? '#4d5560' : k.pick(PANTS, 3)), hairColor = archetypeHair(c, k.pick(HAIRS, 4))
+  const { shape, scale } = archetypeShape(c, { bulk: 0.95 + k.rnd(5) * 0.12, head: 1.05 }), f = bipedFrame(k, shape), boot = leather(avatar ? '#5a3c24' : '#6b4a2e')
   body(k, f, { torso: cloth(shirt), pelvis: cloth(pants), thigh: cloth(pants), shin: boot, foot: boot, upper: cloth(shirt), fore: avatar ? cloth(shirt) : skin, hand: avatar ? leather('#7a5a3a') : skin, neck: skin, head: skin })
   face(k, f, { skin, iris: k.pick(IRIS, 6), brow: shade(hairColor, 0.8), nose: 'round', ears: 'round', mouth: true })
-  const hairStyle = avatar ? 1 : Math.floor(k.rnd(7) * 5)
-  hair(k, f, hairColor, hairStyle)
-  if (!avatar && k.rnd(8) > 0.6) beard(k, f, hairColor, false)
+  hair(k, f, hairColor, archetypeHairIndex(c, avatar ? 1 : Math.floor(k.rnd(7) * 5)))
+  const beardKind = archetypeBeard(c, !avatar && k.rnd(8) > 0.6 ? 'short' : 'none')
+  if (beardKind !== 'none') beard(k, f, hairColor, beardKind === 'long')
   k.mesh('tunic', 'j_hips', 'Barra da túnica', 'lathe', [0, -0.07, 0], [0.37 * f.b, 0.2, 0.27 * f.bd], { ...cloth(shirt), doubleSided: true }, { geometry: { profile: SKIRT, segments: 16 }, collidable: false })
   k.mesh('belt', 'j_spine', 'Cinto', 'cylinder', [0, 0.015, 0], [0.3 * f.b, 0.05, 0.215 * f.bd], leather('#4a3222'), { geometry: { segments: 16 } })
   k.mesh('buckle', 'j_spine', 'Fivela', 'box', [0, 0.015, 0.108 * f.bd], [0.05, 0.04, 0.012], metal('#c9a24a'), { collidable: false })
@@ -215,7 +220,7 @@ function villager(k: Kit, spec: PrefabSpec, avatar = false) {
     k.mesh('hatCrown', 'j_head', 'Copa do chapéu', 'lathe', [0, y + 0.135, z - 0.015], [0.24, 0.12, 0.25], leather('#7a5a36'), { geometry: { profile: [[0, 0], [1, 0], [0.95, 0.7], [0.75, 1], [0, 0.95]] }, collidable: false })
     k.mesh('hatBand', 'j_head', 'Fita do chapéu', 'cylinder', [0, y + 0.095, z - 0.015], [0.245, 0.025, 0.255], cloth('#3a2a20'), { collidable: false })
     k.mesh('canteen', 'j_hips', 'Cantil', 'cylinder', [0.19 * f.b, 0.0, 0.02], [0.1, 0.14, 0.1], metal('#7d8a70', 0.5), { rotation: [0, 0, 90], collidable: false })
-    return
+    return finish(k, scale)
   }
   if (k.rnd(9) > 0.55) {
     const [, y, z] = f.hc
@@ -233,12 +238,13 @@ function villager(k: Kit, spec: PrefabSpec, avatar = false) {
     k.mesh('basketHandle', g, 'Alça do cesto', 'torus', [0, -0.03, 0.04], [0.2, 0.17, 0.02], woodMat('#8a6236'), { geometry: { radius: 0.06, segments: 8 }, collidable: false })
     for (let i = 0; i < 3; i++) k.mesh(`apple${i}`, g, 'Fruta', 'sphere', [(i - 1) * 0.06, -0.02, 0.04 + (i % 2) * 0.03], [0.065, 0.065, 0.065], { color: ['#c0392b', '#d9a43a', '#7aa33a'][i], roughness: 0.4, metalness: 0, clearcoat: 0.6 }, { geometry: { segments: 10 }, collidable: false })
   }
+  return finish(k, scale)
 }
 
 function knight(k: Kit, spec: PrefabSpec) {
   const steel = metal(spec.primary ?? '#b9c0c8'), dark = metal(shade(spec.primary ?? '#b9c0c8', 0.55), 0.45), heraldry = spec.secondary ?? k.pick(['#9b2c2c', '#2c4f9b', '#2c7a4a', '#c79a2c'], 1)
-  const mail: Mat = { color: '#80868e', texture: 'fabric', textureScale: 12, normalStrength: 1.5, metalness: 0.8, roughness: 0.5 }, gold = metal('#d4a94a', 0.25), skin = skinMat(k.pick(SKINS, 2))
-  const f = bipedFrame(k, { bulk: 1.08 }), [, y, z] = f.hc
+  const mail: Mat = { color: '#80868e', texture: 'fabric', textureScale: 12, normalStrength: 1.5, metalness: 0.8, roughness: 0.5 }, gold = metal('#d4a94a', 0.25), skin = skinMat(archetypeSkin(spec.character, k.pick(SKINS, 2)))
+  const { shape, scale } = archetypeShape(spec.character, { bulk: 1.08 }), f = bipedFrame(k, shape), [, y, z] = f.hc
   body(k, f, { torso: steel, pelvis: mail, thigh: mail, shin: steel, foot: steel, upper: mail, fore: steel, hand: dark, neck: mail, head: skin, deltoid: mail })
   k.mesh('faulds', 'j_hips', 'Faldas da armadura', 'lathe', [0, -0.07, 0], [0.37 * f.b, 0.18, 0.27 * f.bd], { ...steel, doubleSided: true }, { geometry: { profile: SKIRT, segments: 16 }, collidable: false })
   k.mesh('tabard', 'j_spine', 'Sobreveste heráldica', 'extrude', [0, 0.04, 0.135 * f.bd], [0.28, 0.62, 0.012], cloth(heraldry), { rotation: [-3, 0, 0], geometry: { profile: [[-0.42, 0.5], [0.42, 0.5], [0.5, -0.3], [0, -0.5], [-0.5, -0.3]], bevel: 0 }, collidable: false })
@@ -261,16 +267,18 @@ function knight(k: Kit, spec: PrefabSpec) {
   k.mesh('shieldFace', shield, 'Pintura do escudo', 'extrude', [0, 0.01, 0.042], [0.36, 0.48, 0.02], { ...metal(heraldry, 0.4), metalness: 0.4 }, { geometry: { profile: [[-0.5, 0.5], [0.5, 0.5], [0.48, 0], [0.3, -0.35], [0, -0.55], [-0.3, -0.35], [-0.48, 0]], bevel: 0.02 }, collidable: false })
   k.mesh('shieldBoss', shield, 'Umbo', 'sphere', [0, 0.04, 0.06], [0.09, 0.09, 0.05], gold, { geometry: { segments: 12 }, collidable: false })
   k.mesh('cape', 'j_spine', 'Capa', 'extrude', [0, -0.08, -0.15 * f.bd], [0.46, 0.95, 0.02], { ...cloth(shade(heraldry, 0.75)), doubleSided: true }, { rotation: [9, 0, 0], geometry: { profile: [[-0.32, 0.5], [0.32, 0.5], [0.5, -0.45], [0.2, -0.5], [0, -0.46], [-0.2, -0.5], [-0.5, -0.45]], bevel: 0 }, collidable: false })
+  return finish(k, scale)
 }
 
 function wizard(k: Kit, spec: PrefabSpec) {
   const robe = spec.primary ?? k.pick(['#3b4a8f', '#5a2f7a', '#2f6a5a', '#7a2f2f'], 1), trim = '#d8b04a', gem = spec.secondary ?? k.pick(['#5fd8ff', '#b07aff', '#6aff9a'], 2)
-  const skin = skinMat(k.pick(SKINS, 3)), beardColor = k.pick(['#e8e6e0', '#b9b4aa', '#8a7f72'], 4)
-  const f = bipedFrame(k, { bulk: 0.95, hunch: 6 }), [, y, z] = f.hc
+  const c = spec.character, skin = skinMat(archetypeSkin(c, k.pick(SKINS, 3))), beardColor = archetypeHair(c, k.pick(['#e8e6e0', '#b9b4aa', '#8a7f72'], 4))
+  const { shape, scale } = archetypeShape(c, { bulk: 0.95, hunch: 6 }), f = bipedFrame(k, shape), [, y, z] = f.hc
   body(k, f, { torso: cloth(robe), pelvis: cloth(robe), thigh: cloth(robe), shin: cloth('#3a3436'), foot: leather('#4a3424'), upper: cloth(robe), fore: cloth(robe), hand: skin, neck: skin, head: skin })
   face(k, f, { skin, iris: '#6a8fb0', brow: beardColor, nose: 'round', ears: 'round' })
-  beard(k, f, beardColor, true)
-  hair(k, f, beardColor, 3)
+  const beardKind = archetypeBeard(c, 'long')
+  if (beardKind !== 'none') beard(k, f, beardColor, beardKind === 'long')
+  hair(k, f, beardColor, archetypeHairIndex(c, 3))
   k.mesh('robe', 'j_hips', 'Túnica longa', 'lathe', [0, -0.42, 0], [0.52, 0.86, 0.44], { ...cloth(robe), doubleSided: true }, { geometry: { profile: [[1, 0], [0.96, 0.05], [0.8, 0.4], [0.66, 0.8], [0.6, 1]], segments: 20 }, collidable: false })
   k.mesh('robeHem', 'j_hips', 'Barra bordada', 'lathe', [0, -0.835, 0], [0.535, 0.04, 0.455], { ...metal(trim, 0.5), metalness: 0.5 }, { geometry: { profile: [[0.97, 0], [1, 0.5], [0.97, 1]], segments: 20 }, collidable: false })
   k.mesh('sash', 'j_spine', 'Faixa', 'cylinder', [0, 0.02, 0], [0.3 * f.b, 0.055, 0.22 * f.bd], cloth(trim), { geometry: { segments: 16 } })
@@ -291,11 +299,12 @@ function wizard(k: Kit, spec: PrefabSpec) {
   }
   k.mesh('staffGem', staff, 'Gema mágica', 'polyhedron', [0, 1.17, 0], [0.09, 0.15, 0.09], { ...glow(gem, 3), clearcoat: 1, flatShading: true }, { geometry: { variant: 'octahedron' }, collidable: false })
   if (spec.lit) k.parts.push({ id: 'light', parentId: staff, name: 'Luz da gema', kind: 'light', position: [0, 1.3, 0], dimensions: [0.1, 0.1, 0.1], light: pointLight(gem, 2.5, 6) })
+  return finish(k, scale)
 }
 
 function astronaut(k: Kit, spec: PrefabSpec) {
   const suit: Mat = { ...cloth('#e8ecef', 3), sheen: 0.3, roughness: 0.8 }, accent = spec.primary ?? k.pick(['#e2643a', '#3a7ae2', '#e2c23a'], 1), visor = spec.secondary ?? '#d9a441'
-  const grey = { ...metal('#8d939a', 0.5), metalness: 0.4 }, f = bipedFrame(k, { bulk: 1.15 }), [, y, z] = f.hc, skin = skinMat(k.pick(SKINS, 2))
+  const { shape, scale } = archetypeShape(spec.character, { bulk: 1.15 }), grey = { ...metal('#8d939a', 0.5), metalness: 0.4 }, f = bipedFrame(k, shape), [, y, z] = f.hc, skin = skinMat(archetypeSkin(spec.character, k.pick(SKINS, 2)))
   body(k, f, { torso: suit, pelvis: suit, thigh: suit, shin: suit, foot: grey, upper: suit, fore: suit, hand: grey, neck: suit, head: skin, sole: plain('#3a3d42', 0.9) }, { hand: 1.15 })
   k.mesh('helmet', 'j_head', 'Capacete', 'sphere', [0, y, z], [0.34, 0.34, 0.34], { color: '#f3f5f7', roughness: 0.2, metalness: 0.1, clearcoat: 1 }, { geometry: { segments: 20 }, overlapWith: ['head'] })
   k.mesh('visor', 'j_head', 'Viseira espelhada', 'sphere', [0, y + 0.01, z + 0.1], [0.26, 0.2, 0.16], { color: visor, metalness: 0.8, roughness: 0.12, clearcoat: 1, iridescence: 0.4, emissive: shade(visor, 0.35), emissiveIntensity: 0.6 }, { geometry: { segments: 18 }, collidable: false })
@@ -315,16 +324,20 @@ function astronaut(k: Kit, spec: PrefabSpec) {
     k.mesh(`bootCuff${s}`, `j_knee${s}`, `Cano da bota (${label})`, 'cylinder', [0, -0.3, 0], [0.15 * f.lb, 0.14, 0.16 * f.lb], grey, { collidable: false })
   }
   k.mesh('belt', 'j_spine', 'Cinto de ferramentas', 'cylinder', [0, 0.01, 0], [0.33 * f.b, 0.05, 0.25 * f.bd], cloth(accent), { geometry: { segments: 16 } })
+  return finish(k, scale)
 }
 
 function goblin(k: Kit, spec: PrefabSpec) {
-  const skinColor = spec.primary ?? k.pick(['#6f9a3c', '#7f9c3a', '#5f8a4a', '#8a9a4a'], 1), skin = skinMat(skinColor), hide = leather(spec.secondary ?? '#6b4a2e')
-  const f = bipedFrame(k, { L: 0.7, A: 1.12, bulk: 0.85, head: 1.5, hunch: 18 }), [, y, z] = f.hc
+  const c = spec.character, skinColor = c?.skin ?? spec.primary ?? k.pick(['#6f9a3c', '#7f9c3a', '#5f8a4a', '#8a9a4a'], 1), skin = skinMat(skinColor), hide = leather(spec.secondary ?? '#6b4a2e')
+  const { shape, scale } = archetypeShape(c, { L: 0.7, A: 1.12, bulk: 0.85, head: 1.5, hunch: 18 }), f = bipedFrame(k, shape), [, y, z] = f.hc
   body(k, f, { torso: skin, pelvis: hide, thigh: skin, shin: skin, foot: skin, upper: skin, fore: skin, hand: skin, neck: skin, head: skin, sole: skinMat(shade(skinColor, 0.75)) }, { hand: 1.15 })
   face(k, f, { skin, glow: '#ffd23a', brow: shade(skinColor, 0.5), angry: true, nose: 'long', ears: 'long' })
   k.mesh('mouth', 'j_head', 'Boca', 'box', [0, y - 0.1, z + 0.125], [0.1, 0.012, 0.02], plain('#3a1a14', 0.6), { rotation: [-10, 0, 0], collidable: false })
   for (const [side, s] of sides) k.mesh(`tusk${s}`, 'j_head', 'Presa', 'cone', [side * 0.035, y - 0.08, z + 0.135], [0.02, 0.05, 0.02], boneMat('#efe6c8'), { rotation: [-15, 0, 0], geometry: { segments: 8 }, collidable: false })
-  if (k.rnd(2) > 0.4) for (let i = 0; i < 3; i++) k.mesh(`spike${i}`, 'j_head', 'Tufo de cabelo', 'cone', [0, y + 0.17 - i * 0.02, z - 0.02 - i * 0.07], [0.05, 0.09, 0.05], hairMat('#2a2018'), { rotation: [-25 - i * 25, 0, 0], geometry: { segments: 8 }, collidable: false })
+  const hairStyle = archetypeHairIndex(c, k.rnd(2) > 0.4 ? 7 : 0), hairColor = archetypeHair(c, '#2a2018'), beardKind = archetypeBeard(c, 'none')
+  if (hairStyle === 7) for (let i = 0; i < 3; i++) k.mesh(`spike${i}`, 'j_head', 'Tufo de cabelo', 'cone', [0, y + 0.17 - i * 0.02, z - 0.02 - i * 0.07], [0.05, 0.09, 0.05], hairMat(hairColor), { rotation: [-25 - i * 25, 0, 0], geometry: { segments: 8 }, collidable: false })
+  else hair(k, f, hairColor, hairStyle)
+  if (beardKind !== 'none') beard(k, f, hairColor, beardKind === 'long')
   k.mesh('loincloth', 'j_hips', 'Tanga de couro', 'lathe', [0, -0.08, 0], [0.34 * f.b, 0.22, 0.25 * f.bd], { ...hide, doubleSided: true }, { geometry: { profile: [[1, 0], [0.95, 0.15], [0.8, 0.6], [0.7, 1]], segments: 10 }, collidable: false })
   k.mesh('harness', 'j_spine', 'Correia', 'box', [0, 0.22, 0.108 * f.bd], [0.035, 0.52, 0.012], hide, { rotation: [-4, 0, 38], collidable: false })
   for (const [, s] of sides) k.mesh(`bracer${s}`, `j_elbow${s}`, 'Bracelete de couro', 'cylinder', [0, -0.17, 0], [0.098 * f.lb, 0.08, 0.103 * f.lb], hide, { collidable: false })
@@ -338,11 +351,12 @@ function goblin(k: Kit, spec: PrefabSpec) {
     k.mesh('clubBody', g, 'Porrete', 'lathe', [0, 0.28, 0], [0.13, 0.62, 0.13], woodMat('#7a5a36'), { geometry: { profile: [[0, 0], [0.3, 0.02], [0.35, 0.3], [0.7, 0.75], [1, 0.92], [0.7, 1], [0, 1]], segments: 12 } })
     for (let i = 0; i < 4; i++) k.mesh(`clubSpike${i}`, g, 'Cravo', 'cone', [Math.cos(i * 1.57) * 0.065, 0.48 + (i % 2) * 0.06, Math.sin(i * 1.57) * 0.065], [0.03, 0.06, 0.03], rusty('#6a6a6a'), { rotation: [Math.sin(i * 1.57) * 90, 0, -Math.cos(i * 1.57) * 90], geometry: { segments: 8 }, collidable: false })
   }
-  return scaled(k.parts, 0.72)
+  return scaled(k.parts, 0.72 * scale)
 }
 
 function skeleton(k: Kit, spec: PrefabSpec) {
-  const bone = boneMat(spec.primary ?? '#e6dcc3'), eye = spec.secondary ?? k.pick(['#5ff2ff', '#ff4a3a', '#9aff5a'], 1), f = bipedFrame(k, { bulk: 0.85 }), { L, A } = f
+  const { shape, scale } = archetypeShape(spec.character, { bulk: 0.85 })
+  const bone = boneMat(spec.primary ?? '#e6dcc3'), eye = spec.secondary ?? k.pick(['#5ff2ff', '#ff4a3a', '#9aff5a'], 1), f = bipedFrame(k, shape), { L, A } = f
   k.mesh('pelvis', 'j_hips', 'Bacia', 'lathe', [0, 0.0, 0], [0.27, 0.15, 0.18], { ...bone, doubleSided: true }, { geometry: { profile: [[0.55, 0], [0.8, 0.35], [1, 0.8], [0.95, 1]], segments: 14 } })
   k.mesh('spineColumn', 'j_spine', 'Coluna vertebral', 'lathe', [0, 0.2, -0.07], [0.04, 0.46, 0.04], bone, { geometry: { profile: taper(1, 0.8), segments: 8 }, overlapWith: ['pelvis'] })
   for (let i = 0; i < 4; i++) k.mesh(`vertebra${i}`, 'j_spine', 'Vértebra', 'cylinder', [0, 0.04 + i * 0.05, -0.07], [0.06, 0.025, 0.05], bone, { geometry: { segments: 8 }, collidable: false })
@@ -381,18 +395,23 @@ function skeleton(k: Kit, spec: PrefabSpec) {
     k.mesh('shieldBody', shield, 'Escudo rachado', 'cylinder', [0, -0.03, 0], [0.42, 0.04, 0.42], woodMat('#6b5236'), { geometry: { segments: 16 } })
     k.mesh('shieldRim', shield, 'Aro de ferro', 'lathe', [0, -0.03, 0], [0.44, 0.05, 0.44], rusty('#6a5040'), { geometry: { profile: RING, closed: true, segments: 16 }, collidable: false })
   }
+  return finish(k, scale)
 }
 
 function orc(k: Kit, spec: PrefabSpec) {
-  const skinColor = spec.primary ?? k.pick(['#5e7d4a', '#6b7a4f', '#7a8a5a', '#4f6b52'], 1), skin = skinMat(skinColor), hide = leather(spec.secondary ?? '#5a3e2b')
-  const iron = metal('#5d6066', 0.55), f = bipedFrame(k, { A: 1.12, bulk: 1.45, head: 0.95, hunch: 12 }), [, y, z] = f.hc, hs = f.hs
+  const c = spec.character, skinColor = c?.skin ?? spec.primary ?? k.pick(['#5e7d4a', '#6b7a4f', '#7a8a5a', '#4f6b52'], 1), skin = skinMat(skinColor), hide = leather(spec.secondary ?? '#5a3e2b')
+  const { shape, scale } = archetypeShape(c, { A: 1.12, bulk: 1.45, head: 0.95, hunch: 12 }), iron = metal('#5d6066', 0.55), f = bipedFrame(k, shape), [, y, z] = f.hc, hs = f.hs
   body(k, f, { torso: skin, pelvis: hide, thigh: cloth('#4a3c30'), shin: hide, foot: hide, upper: skin, fore: skin, hand: skin, neck: skin, head: skin }, { hand: 1.15 })
   face(k, f, { skin, glow: '#ff6a2a', brow: shade(skinColor, 0.6), angry: true, nose: 'wide', ears: 'pointy' })
   k.mesh('browRidge', 'j_head', 'Arcada', 'capsule', [0, y + 0.04 * hs, z + 0.088 * hs], [0.035 * hs, 0.17 * hs, 0.04 * hs], skin, { rotation: [0, 0, 90], geometry: { segments: 8 }, collidable: false })
   k.mesh('chin', 'j_head', 'Queixo', 'sphere', [0, y - 0.075 * hs, z + 0.045 * hs], [0.17 * hs, 0.1 * hs, 0.15 * hs], skin, { geometry: { segments: 12 }, collidable: false })
   for (const [side, s] of sides) k.mesh(`tusk${s}`, 'j_head', 'Presa', 'cone', [side * 0.045 * hs, y - 0.04 * hs, z + 0.105 * hs], [0.028 * hs, 0.08 * hs, 0.028 * hs], boneMat('#efe3c0'), { rotation: [-12, 0, side * -10], geometry: { segments: 8 }, collidable: false })
-  k.mesh('topknot', 'j_head', 'Rabo de cavalo', 'capsule', [0, y + 0.15 * hs, z - 0.06 * hs], [0.06, 0.16, 0.06], hairMat('#1c1a1d'), { rotation: [-35, 0, 0], collidable: false })
-  k.mesh('topknotTie', 'j_head', 'Amarração do cabelo', 'cylinder', [0, y + 0.115 * hs, z - 0.04 * hs], [0.068, 0.03, 0.068], hide, { rotation: [-35, 0, 0], collidable: false })
+  const hairStyle = archetypeHairIndex(c, 5), hairColor = archetypeHair(c, '#1c1a1d'), beardKind = archetypeBeard(c, 'none')
+  if (hairStyle === 5) {
+    k.mesh('topknot', 'j_head', 'Rabo de cavalo', 'capsule', [0, y + 0.15 * hs, z - 0.06 * hs], [0.06, 0.16, 0.06], hairMat(hairColor), { rotation: [-35, 0, 0], collidable: false })
+    k.mesh('topknotTie', 'j_head', 'Amarração do cabelo', 'cylinder', [0, y + 0.115 * hs, z - 0.04 * hs], [0.068, 0.03, 0.068], hide, { rotation: [-35, 0, 0], collidable: false })
+  } else hair(k, f, hairColor, hairStyle)
+  if (beardKind !== 'none') beard(k, f, hairColor, beardKind === 'long')
   k.mesh('loincloth', 'j_hips', 'Tanga', 'extrude', [0, -0.17, 0.125 * f.bd], [0.22, 0.34, 0.014], cloth(spec.secondary ? shade(spec.secondary, 0.8) : '#7a2e24'), { rotation: [6, 0, 0], geometry: { profile: [[-0.5, 0.5], [0.5, 0.5], [0.4, -0.4], [0, -0.5], [-0.4, -0.4]], bevel: 0 }, collidable: false })
   k.mesh('belt', 'j_spine', 'Cinturão', 'cylinder', [0, 0.01, 0], [0.33 * f.b, 0.07, 0.24 * f.bd], hide, { geometry: { segments: 16 } })
   k.mesh('buckle', 'j_spine', 'Fivela de crânio', 'sphere', [0, 0.01, 0.125 * f.bd], [0.09, 0.08, 0.05], boneMat('#e6dcc3'), { geometry: { segments: 10 }, collidable: false })
@@ -409,12 +428,12 @@ function orc(k: Kit, spec: PrefabSpec) {
     k.mesh('clubHead', g, 'Maça', 'lathe', [0, 0.62, 0], [0.2, 0.3, 0.2], woodMat('#6b4a2e'), { geometry: { profile: [[0, 0], [0.6, 0.05], [1, 0.5], [0.8, 0.95], [0, 1]], segments: 12 } })
     for (let i = 0; i < 5; i++) k.mesh(`maceSpike${i}`, g, 'Cravo', 'cone', [Math.cos(i * 1.256) * 0.1, 0.62 + (i % 2 ? 0.06 : -0.04), Math.sin(i * 1.256) * 0.1], [0.04, 0.08, 0.04], iron, { rotation: [Math.sin(i * 1.256) * 90, 0, -Math.cos(i * 1.256) * 90], geometry: { segments: 8 }, collidable: false })
   }
-  return scaled(k.parts, 1.15)
+  return scaled(k.parts, 1.15 * scale)
 }
 
 function golem(k: Kit, spec: PrefabSpec) {
   const stone = rockMat(spec.primary ?? '#8a8580'), dark = rockMat(shade(spec.primary ?? '#8a8580', 0.75)), rune = spec.secondary ?? (spec.seed % 2 ? '#ff7a2a' : '#56d8ff'), moss: Mat = { color: '#5f7f3a', texture: 'grass', textureScale: 3, roughness: 1, metalness: 0 }
-  const f = bipedFrame(k, { L: 0.9, A: 1.3, bulk: 1.9, hunch: 15 }), { L, A } = f
+  const { shape, scale } = archetypeShape(spec.character, { L: 0.9, A: 1.3, bulk: 1.9, hunch: 15 }), f = bipedFrame(k, shape), { L, A } = f
   const rock = (id: string, parent: string, name: string, position: V, dims: V, seed: number, material = stone, extra: Extra = {}) =>
     k.mesh(id, parent, name, 'polyhedron', position, dims, material, { ...extra, geometry: { variant: seed % 2 ? 'dodecahedron' : 'icosahedron', detail: 1, bevel: 0.14, seed: (spec.seed + seed) % 9999, ...extra.geometry } })
   rock('pelvis', 'j_hips', 'Quadril de pedra', [0, -0.02, 0], [0.5, 0.26, 0.34], 1, dark)
@@ -440,7 +459,7 @@ function golem(k: Kit, spec: PrefabSpec) {
     k.mesh(`legRune${s}`, `j_knee${s}`, 'Runa da perna', 'box', [0, -0.2 * L, 0.135], [0.04, 0.1, 0.012], glow(rune, 3), { collidable: false })
   }
   if (spec.lit) k.parts.push({ id: 'light', parentId: 'j_spine', name: 'Brilho do núcleo', kind: 'light', position: [0, 0.25, 0.45], dimensions: [0.1, 0.1, 0.1], light: pointLight(rune, 4, 6) })
-  return scaled(k.parts, 1.45)
+  return scaled(k.parts, 1.45 * scale)
 }
 
 function robot(k: Kit) {
@@ -647,14 +666,14 @@ function dragon(k: Kit, spec: PrefabSpec) {
 }
 
 export function buildCharacter(spec: PrefabSpec): PrefabPart[] {
-  const k = kit(spec.seed)
+  const k = kit(spec.seed), scale = archetypeShape(spec.character, {}).scale
   switch (spec.type as CharacterType) {
-    case 'villager': villager(k, spec); break
-    case 'knight': knight(k, spec); break
-    case 'wizard': wizard(k, spec); break
-    case 'astronaut': astronaut(k, spec); break
+    case 'villager': return villager(k, spec)
+    case 'knight': return knight(k, spec)
+    case 'wizard': return wizard(k, spec)
+    case 'astronaut': return astronaut(k, spec)
     case 'goblin': return goblin(k, spec)
-    case 'skeleton': skeleton(k, spec); break
+    case 'skeleton': return skeleton(k, spec)
     case 'orc': return orc(k, spec)
     case 'golem': return golem(k, spec)
     case 'wolf': wolf(k, spec); break
@@ -663,13 +682,13 @@ export function buildCharacter(spec: PrefabSpec): PrefabPart[] {
     case 'drone': drone(k, spec); break
     case 'dragon': dragon(k, spec); break
   }
-  return k.parts
+  return finish(k, scale)
 }
 /** Third-person player avatar: about 1.75 m, origin at the feet, facing +Z, rigged as a biped. */
 export function buildAvatar(kind: AvatarKind): PrefabPart[] {
   const spec = (type: CharacterType): PrefabSpec => ({ type, size: 1, seed: 0, primary: null, secondary: null, text: '', lit: false, interactive: false })
   const k = kit(7)
   if (kind === 'robot') { robot(k); return k.parts }
-  if (kind === 'explorer') { villager(k, spec('villager'), true); return k.parts }
+  if (kind === 'explorer') return villager(k, spec('villager'), true)
   return buildCharacter(spec(kind))
 }
