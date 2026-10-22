@@ -1,5 +1,5 @@
-import { ambiencePresets, animationKinds, attackStyles, avatarKinds, behaviorTypes, gradePresets, interactionActions, interactionTriggers, INTERACTION_KEYS, MAX_MESSAGE, musicPresets, objectiveTypes, MAX_SCENE_LIGHTS, MAX_SCENE_NODES, nodeLabels,
-  powerKinds, skyPresets, soundPresets, subtreeIds, textureKinds, weaponKinds, weatherKinds, type SceneNode } from './sceneDocument.ts'
+import { ambiencePresets, animationKinds, attackStyles, avatarKinds, behaviorTypes, emitterPresets, faunaDensities, gradePresets, grassDensities, interactionActions, interactionTriggers, INTERACTION_KEYS, MAX_MESSAGE, MAX_PREMISE, MAX_ROUTINE_STEPS,
+  musicPresets, npcReactions, objectiveTypes, MAX_SCENE_LIGHTS, MAX_SCENE_NODES, nodeLabels, powerKinds, routineActivities, skyPresets, soundPresets, subtreeIds, textureKinds, weaponKinds, weatherKinds, type SceneNode } from './sceneDocument.ts'
 import { estimateTriangles, MAX_SCENE_TRIANGLES, polyhedronVariants, terrainStyles, terrainBiomes } from './sceneGeometrySpec.ts'
 
 type Json = Record<string, unknown>
@@ -120,14 +120,30 @@ function sound(log: SanitizeLog, value: unknown): Json | null {
   if (!isRecord(value)) return null
   return { preset: choice(log, value.preset, soundPresets, 'wind', 'Som'), volume: number(log, value.volume, 0, 1, 0.6, 'Volume do som'), radius: number(log, value.radius, 1, 200, 12, 'Alcance do som') }
 }
-function behavior(log: SanitizeLog, value: unknown): Json | null {
+function routine(log: SanitizeLog, value: unknown): Json[] {
+  if (!Array.isArray(value)) { log.adjust('Rotina de NPC'); return [] }
+  if (value.length > MAX_ROUTINE_STEPS) log.adjust('Períodos de rotina além de 6')
+  return value.slice(0, MAX_ROUTINE_STEPS).filter(isRecord).map((step) => ({ activity: choice(log, step.activity, routineActivities, 'wander', 'Atividade de rotina'),
+    target: typeof step.target === 'string' && step.target.trim() ? step.target.slice(0, 120) : null,
+    from: number(log, step.from, 0, 24, 0, 'Horário de rotina'), to: number(log, step.to, 0, 24, 24, 'Horário de rotina') }))
+}
+/** Behaviors keep routines and reactions only on NPCs, where the runtime gives them meaning. */
+export function sanitizeBehavior(log: SanitizeLog, value: unknown): Json | null {
   if (!isRecord(value)) return null
   const type = choice(log, value.type, behaviorTypes, 'hazard', 'Comportamento')
+  const steps = value.routine == null ? null : type === 'npc' ? routine(log, value.routine) : (log.note('Rotinas só valem para NPCs; a rotina de um objeto que não é NPC foi removida.'), null)
+  const reaction = value.reaction == null ? null : type !== 'npc' ? (log.adjust('Reação fora de NPC'), null) : choice(log, value.reaction, npcReactions, 'greet', 'Reação de NPC')
   return { type, speed: number(log, value.speed, 0, 12, 2.5, 'Velocidade do inimigo'), range: number(log, value.range, 0.5, 80, 10, 'Alcance do comportamento'), damage: number(log, value.damage, 0, 1000, 20, 'Dano'),
     ...(typeof value.health === 'number' && Number.isFinite(value.health) ? { health: number(log, value.health, 1, 100, 1, 'Resistência', true) } : {}),
     ...(attackStyles.includes(value.attack as typeof attackStyles[number]) ? { attack: value.attack } : {}),
     ...(typeof value.flying === 'boolean' ? { flying: value.flying } : {}),
-    ...(typeof value.delay === 'number' && Number.isFinite(value.delay) && value.delay > 0 ? { delay: number(log, value.delay, 0, 3600, 0, 'Atraso de aparição') } : {}) }
+    ...(typeof value.delay === 'number' && Number.isFinite(value.delay) && value.delay > 0 ? { delay: number(log, value.delay, 0, 3600, 0, 'Atraso de aparição') } : {}),
+    ...(steps?.length ? { routine: steps } : {}), ...(reaction ? { reaction } : {}) }
+}
+export function sanitizeEmitter(log: SanitizeLog, value: unknown): Json | null {
+  if (!isRecord(value)) return null
+  if (!emitterPresets.includes(value.preset as typeof emitterPresets[number])) { log.note(`Um emissor de partículas desconhecido (“${String(value.preset)}”) foi removido.`); return null }
+  return { preset: value.preset, rate: number(log, value.rate, 0.1, 4, 1, 'Taxa de partículas'), spread: number(log, value.spread, 0, 20, 0.3, 'Raio das partículas') }
 }
 
 /** Brings one recipe template inside the contract. Returns null only when it cannot describe an object. */
@@ -156,7 +172,7 @@ export function sanitizeTemplate(log: SanitizeLog, value: unknown, index: number
     scale, dimensions,
     geometry: shape, color: surface.color, metalness: surface.metalness, roughness: surface.roughness, surface, animation: animation(log, value.animation), interaction: interaction(log, value.interaction),
     light, collidable: typeof value.collidable === 'boolean' ? value.collidable : true,
-    behavior: behavior(log, value.behavior), sound: sound(log, value.sound),
+    behavior: sanitizeBehavior(log, value.behavior), sound: sound(log, value.sound), emitter: sanitizeEmitter(log, value.emitter),
     overlapWith: Array.isArray(value.overlapWith) ? value.overlapWith.filter((id): id is string => typeof id === 'string').slice(0, 32) : [],
     repeat: { mode: choice(log, repeat.mode, ['linear', 'radial', 'grid', 'scatter'] as const, 'linear', 'Padrão de repetição'),
       count: number(log, repeat.count, 1, 400, 1, 'Cópias', true), offset: vector(log, repeat.offset, -1000, 1000, [0, 0, 0], 'Offset de repetição'),
@@ -185,7 +201,24 @@ export function sanitizeEnvironment(log: SanitizeLog, value: unknown): Json {
       volume: number(log, value.audio.volume, 0, 1, 0.7, 'Volume geral') } : { ambience: 'auto', music: 'auto', volume: 0.7 },
     weather: choice(log, value.weather, weatherKinds, 'none', 'Clima'), grade: choice(log, value.grade, gradePresets, 'none', 'Gradação de cor'),
     ...(isRecord(value.objective) ? { objective: { type: choice(log, value.objective.type, objectiveTypes, 'explore', 'Objetivo'), title: typeof value.objective.title === 'string' ? value.objective.title.slice(0, 160) : '',
-      timeLimit: number(log, value.objective.timeLimit, 0, 3600, 0, 'Tempo limite') } } : {}) }
+      timeLimit: number(log, value.objective.timeLimit, 0, 3600, 0, 'Tempo limite') } } : {}),
+    ...(isRecord(value.motion) ? { motion: { wind: number(log, value.motion.wind, 0, 2, 0.6, 'Vento'), grass: choice(log, value.motion.grass, grassDensities, 'auto', 'Grama'),
+      fauna: choice(log, value.motion.fauna, faunaDensities, 'auto', 'Fauna') } } : {}),
+    ...(isRecord(value.dayCycle) ? { dayCycle: { enabled: typeof value.dayCycle.enabled === 'boolean' ? value.dayCycle.enabled : true,
+      duration: number(log, value.dayCycle.duration, 60, 7200, 600, 'Duração do dia'), start: number(log, value.dayCycle.start, 0, 24, 9, 'Hora inicial') } } : {}),
+    ...(typeof value.premise === 'string' && value.premise.trim() ? { premise: value.premise.trim().slice(0, MAX_PREMISE) } : {}) }
+}
+
+/** Clears routine places that do not exist (or are the NPC itself or one of its parts); `drop` reports each one. */
+export function clearRoutineTargets(nodes: SceneNode[], exists: (id: string) => boolean, drop: (node: SceneNode) => void): void {
+  for (const node of nodes) {
+    const steps = node.behavior?.routine
+    if (!steps?.some((step) => step.target !== null)) continue
+    let own: Set<string> | null = null
+    const invalid = (id: string) => !exists(id) || (own ??= subtreeIds(nodes, node.id)).has(id)
+    if (!steps.some((step) => step.target !== null && invalid(step.target))) continue
+    node.behavior = { ...node.behavior!, routine: steps.map((step) => step.target !== null && invalid(step.target) ? (drop(node), { ...step, target: null }) : step) }
+  }
 }
 
 /** Repairs references and global budgets after expansion; existing scene nodes are never modified. */
@@ -213,6 +246,7 @@ export function repairReferences(log: SanitizeLog, existing: SceneNode[], added:
     const target = action.targetId ?? node.id
     if (action.action === 'toggleAnimation' && ![...subtreeIds(all, target)].some((id) => byId.get(id)!.animation.kind !== 'none')) { action.action = 'message'; log.note(`A interação de “${node.name}” não tinha animação para alternar e virou mensagem.`) }
   }
+  clearRoutineTargets(added, (id) => byId.has(id), () => log.adjust('Locais de rotina inexistentes'))
   let result = all
   const lights = result.filter((node) => node.kind === 'light' && fresh.has(node.id))
   const allowed = MAX_SCENE_LIGHTS - result.filter((node) => node.kind === 'light' && !fresh.has(node.id)).length
@@ -238,5 +272,6 @@ export function repairReferences(log: SanitizeLog, existing: SceneNode[], added:
     if (node.interaction?.targetId && !kept.has(node.interaction.targetId)) node.interaction.targetId = null
     if (node.parentId && !kept.has(node.parentId)) node.parentId = null
   }
+  clearRoutineTargets(result.filter((node) => fresh.has(node.id)), (id) => kept.has(id), () => {})
   return result
 }

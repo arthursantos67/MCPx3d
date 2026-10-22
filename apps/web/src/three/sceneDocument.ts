@@ -42,8 +42,19 @@ export const attackStyles = ['touch', 'melee', 'ranged', 'charge'] as const
  * Game behavior: enemies patrol/chase and hurt, hazards hurt, checkpoints set the respawn, goals finish the level, climbable surfaces work as ladders,
  * NPCs wander and talk, launchers throw the player `range` metres up. Enemies take `health` hits, may fly, attack in a style and appear after `delay` seconds.
  */
+export const routineActivities = ['wander', 'work', 'sit', 'chat', 'patrol', 'guard', 'sleep', 'perform'] as const
+export type RoutineActivity = typeof routineActivities[number]
+/** One period of an NPC day: the activity happens at (or, for patrols, between the base and) `target`, from hour `from` to hour `to` (wrapping past midnight). */
+export interface SceneRoutineStep { activity: RoutineActivity; target: string | null; from: number; to: number }
+export const npcReactions = ['greet', 'ignore', 'flee', 'alert'] as const
+export const MAX_ROUTINE_STEPS = 6
 export interface SceneBehavior { type: typeof behaviorTypes[number]; speed: number; range: number; damage: number
-  health?: number; attack?: typeof attackStyles[number]; flying?: boolean; delay?: number }
+  health?: number; attack?: typeof attackStyles[number]; flying?: boolean; delay?: number
+  /** NPCs only: daily schedule and how they react to the player and to danger. */
+  routine?: SceneRoutineStep[]; reaction?: typeof npcReactions[number] }
+export const emitterPresets = ['fire', 'smoke', 'sparks', 'magic', 'steam', 'fountain', 'leaves', 'dust', 'embers'] as const
+/** GPU particle source anchored to a node; `rate` scales the preset's emission and `spread` its radius in metres. */
+export interface SceneEmitter { preset: typeof emitterPresets[number]; rate: number; spread: number }
 export const objectiveTypes = ['explore', 'collectAll', 'reachGoal', 'defeatEnemies', 'survive'] as const
 export interface SceneObjective { type: typeof objectiveTypes[number]; title: string; timeLimit: number }
 export const soundPresets = ['fire', 'water', 'waves', 'wind', 'machine', 'magic', 'birds', 'insects', 'drip', 'engine', 'chimes', 'alarm', 'portal', 'crowd'] as const
@@ -57,6 +68,13 @@ export const weatherKinds = ['none', 'rain', 'snow', 'embers', 'fireflies', 'dus
 export const gradePresets = ['none', 'warm', 'cool', 'cinematic', 'vivid', 'noir', 'dreamy', 'retro'] as const
 export const weaponKinds = ['none', 'sword', 'blaster', 'bow', 'staff'] as const
 export const avatarKinds = ['explorer', 'knight', 'wizard', 'astronaut', 'robot'] as const
+export const grassDensities = ['auto', 'none', 'dense'] as const
+export const faunaDensities = ['auto', 'none', 'rich'] as const
+/** World motion: global wind strength (0 = still, 1 = breezy, 2 = storm), instanced grass and ambient wildlife. */
+export interface SceneMotion { wind: number; grass: typeof grassDensities[number]; fauna: typeof faunaDensities[number] }
+/** Optional day/night cycle: one full day lasts `duration` seconds of play, starting at hour `start` (0–24). */
+export interface SceneDayCycle { enabled: boolean; duration: number; start: number }
+export const MAX_PREMISE = 240
 export interface SceneNode {
   /** Compiler source for a terrain-conforming route, retained across terrain edits and JSON exports. */
   path?: {supportId:string;points:[number,number][];width:number}
@@ -82,6 +100,7 @@ export interface SceneNode {
   interaction?: SceneInteraction
   behavior?: SceneBehavior
   sound?: SceneSound
+  emitter?: SceneEmitter
   /** Authored purpose, used by terrain preparation and presentation without guessing from localized names. */
   role?: 'structure' | 'vegetation' | 'prop' | 'path'
 }
@@ -98,9 +117,13 @@ export interface SceneEnvironment {
   audio?: SceneAudio
   weather?: typeof weatherKinds[number]
   grade?: typeof gradePresets[number]
+  motion?: SceneMotion
+  dayCycle?: SceneDayCycle
+  /** One-sentence story shown on the level title card. */
+  premise?: string
 }
 export interface ThreeSceneDocument {
-  version: '1.3'
+  version: '1.4'
   name: string
   timeline: { duration: number }
   nodes: SceneNode[]
@@ -241,8 +264,32 @@ export function validateBehavior(value: unknown): SceneBehavior | undefined {
     ...(behavior.health == null ? {} : { health: Math.round(number(behavior.health, 'Resistência', 1, 100)) }),
     ...(behavior.attack == null ? {} : { attack: choice(behavior.attack, attackStyles, 'touch', 'Estilo de ataque desconhecido.') }),
     ...(behavior.flying == null ? {} : { flying: boolean(behavior.flying, 'Voo do inimigo') }),
-    ...(behavior.delay == null ? {} : { delay: number(behavior.delay, 'Atraso de aparição', 0, 3600) }) }
+    ...(behavior.delay == null ? {} : { delay: number(behavior.delay, 'Atraso de aparição', 0, 3600) }),
+    ...(behavior.routine == null ? {} : { routine: validateRoutine(behavior.routine) }),
+    ...(behavior.reaction == null ? {} : { reaction: choice(behavior.reaction, npcReactions, 'greet', 'Reação de NPC desconhecida.') }) }
 }
+export function validateRoutine(value: unknown): SceneRoutineStep[] {
+  if (!Array.isArray(value) || value.length > MAX_ROUTINE_STEPS) throw new Error(`Rotina: até ${MAX_ROUTINE_STEPS} períodos.`)
+  return value.map((entry) => {
+    const step = record(entry), target = step.target ?? null
+    if (target !== null && (typeof target !== 'string' || !target.trim() || target.length > 120)) throw new Error('Rotina: alvo inválido.')
+    return { activity: choice(step.activity, routineActivities, 'wander', 'Atividade de rotina desconhecida.'), target, from: number(step.from ?? 0, 'Início do período', 0, 24), to: number(step.to ?? 24, 'Fim do período', 0, 24) }
+  })
+}
+export function validateEmitter(value: unknown): SceneEmitter | undefined {
+  if (value === undefined || value === null) return undefined
+  const emitter = record(value)
+  return { preset: choice(emitter.preset, emitterPresets, 'smoke', 'Partícula desconhecida.'), rate: number(emitter.rate ?? 1, 'Taxa de partículas', 0.1, 4), spread: number(emitter.spread ?? 0.3, 'Raio das partículas', 0, 20) }
+}
+export function validateMotion(value: unknown): SceneMotion {
+  const motion = record(value)
+  return { wind: number(motion.wind ?? 0.6, 'Vento', 0, 2), grass: choice(motion.grass, grassDensities, 'auto', 'Densidade de grama desconhecida.'), fauna: choice(motion.fauna, faunaDensities, 'auto', 'Fauna desconhecida.') }
+}
+export function validateDayCycle(value: unknown): SceneDayCycle {
+  const cycle = record(value)
+  return { enabled: boolean(cycle.enabled ?? true, 'Ciclo dia/noite'), duration: number(cycle.duration ?? 600, 'Duração do dia', 60, 7200), start: number(cycle.start ?? 9, 'Hora inicial', 0, 24) }
+}
+export const DEFAULT_MOTION: SceneMotion = { wind: 0.6, grass: 'auto', fauna: 'auto' }
 
 export function validateEnvironment(value: unknown): SceneEnvironment {
   const env = record(value)
@@ -255,7 +302,10 @@ export function validateEnvironment(value: unknown): SceneEnvironment {
     toneMapping: choice(env.toneMapping, ['aces', 'agx', 'neutral'] as const, 'aces', 'Mapeamento tonal desconhecido.'), player: validatePlayer(env.player),
     ...(env.objective === undefined || env.objective === null ? {} : { objective: validateObjective(env.objective) }),
     audio: env.audio === undefined || env.audio === null ? { ambience: 'auto', music: 'auto', volume: 0.7 } : validateAudio(env.audio),
-    weather: choice(env.weather ?? undefined, weatherKinds, 'none', 'Clima desconhecido.'), grade: choice(env.grade ?? undefined, gradePresets, 'none', 'Gradação de cor desconhecida.') }
+    weather: choice(env.weather ?? undefined, weatherKinds, 'none', 'Clima desconhecido.'), grade: choice(env.grade ?? undefined, gradePresets, 'none', 'Gradação de cor desconhecida.'),
+    ...(env.motion == null ? {} : { motion: validateMotion(env.motion) }),
+    ...(env.dayCycle == null ? {} : { dayCycle: validateDayCycle(env.dayCycle) }),
+    ...(env.premise == null || env.premise === '' ? {} : { premise: text(env.premise, 'Premissa', MAX_PREMISE).trim() }) }
 }
 
 /** Returns only declared data; never deserializes Three.js objects or executable code. */
@@ -269,13 +319,14 @@ function validatePath(value:unknown):NonNullable<SceneNode['path']> {
 }
 export function validateScene(value: unknown): ThreeSceneDocument {
   const doc = record(value)
-  if (!['1.0', '1.1', '1.2', '1.3'].includes(doc.version as string)) throw new Error('Versão de projeto incompatível. Esperado ThreeSceneDocument 1.0–1.3.')
+  if (!['1.0', '1.1', '1.2', '1.3', '1.4'].includes(doc.version as string)) throw new Error('Versão de projeto incompatível. Esperado ThreeSceneDocument 1.0–1.4.')
   if (!Array.isArray(doc.nodes) || doc.nodes.length > MAX_SCENE_NODES) throw new Error(`A cena aceita até ${MAX_SCENE_NODES} nós.`)
   const nodes: SceneNode[] = doc.nodes.map((value) => {
     const node = record(value), material = record(node.material)
     if (typeof node.kind !== 'string' || !Object.hasOwn(nodeLabels, node.kind)) throw new Error('Tipo de objeto desconhecido.')
     if (node.parentId !== null && typeof node.parentId !== 'string') throw new Error('Referência de grupo inválida.')
-    const interaction = validateInteraction(node.interaction), behavior = validateBehavior(node.behavior), sound = validateSound(node.sound)
+    const interaction = validateInteraction(node.interaction), behavior = validateBehavior(node.behavior), sound = validateSound(node.sound), emitter = validateEmitter(node.emitter)
+    if (behavior?.routine && behavior.type !== 'npc') throw new Error('Rotinas pertencem a NPCs.')
     return {
       id: text(node.id, 'ID'), parentId: node.parentId as string | null, name: text(node.name, 'Nome'), kind: node.kind as NodeKind,
       visible: boolean(node.visible, 'Visibilidade'), position: vector(node.position, 'Posição', -10000, 10000),
@@ -290,6 +341,7 @@ export function validateScene(value: unknown): ThreeSceneDocument {
       ...(interaction ? { interaction } : {}),
       ...(behavior ? { behavior } : {}),
       ...(sound ? { sound } : {}),
+      ...(emitter ? { emitter } : {}),
       ...(node.asset == null ? {} : { asset: (() => { if (node.kind !== 'group') throw new Error('Asset deve pertencer a um grupo.'); const spec = prefabSpec(node.asset); if (!spec) throw new Error('Asset desconhecido.'); return spec })() }),
       ...(node.assetPart == null ? {} : {assetPart:text(node.assetPart,'Peça gerada')}),
       ...(node.path == null ? {} : {path:validatePath(node.path)}),
@@ -308,6 +360,7 @@ export function validateScene(value: unknown): ThreeSceneDocument {
       if (node.interaction.action === 'toggleAnimation' && ![...subtreeIds(nodes, target.id)].some((key) => byId.get(key)!.animation.kind !== 'none')) throw new Error(`Interação de “${node.name}” alterna uma animação inexistente.`)
       if (['collect', 'heal', 'powerup'].includes(node.interaction.action) && node.interaction.targetId !== null) throw new Error('Coletáveis, curas e poderes consomem o próprio objeto.')
     }
+    for (const step of node.behavior?.routine ?? []) if (step.target !== null && (step.target === node.id || !byId.has(step.target))) throw new Error(`Rotina de “${node.name}” referencia um local inexistente.`)
     const seen = new Set([node.id])
     let parentId = node.parentId
     while (parentId !== null) {
@@ -319,7 +372,7 @@ export function validateScene(value: unknown): ThreeSceneDocument {
       parentId = parent.parentId
     }
   }
-  return migrateHouseFloorSurfaces({ version: '1.3', name: text(doc.name, 'Nome do projeto'), nodes,
+  return migrateHouseFloorSurfaces({ version: '1.4', name: text(doc.name, 'Nome do projeto'), nodes,
     timeline: { duration: doc.timeline === undefined ? 20 : number(record(doc.timeline).duration, 'Duração da timeline', 1, 120) },
     environment: validateEnvironment(doc.environment) })
 }
@@ -336,7 +389,7 @@ export function createNode(kind: NodeKind, parentId: string | null = null): Scen
     ...(kind === 'light' ? { light: defaultLight() } : {}) }
 }
 export function createEmptyScene(): ThreeSceneDocument {
-  return { version: '1.3', name: 'Nova cena', nodes: [], timeline: { duration: 20 },
+  return { version: '1.4', name: 'Nova cena', nodes: [], timeline: { duration: 20 },
     environment: validateEnvironment({ background: '#e8eef3', exposure: 1.2, lightIntensity: 1.5, grid: true, wireframe: false, shadows: true, reflections: true }) }
 }
 export function subtreeIds(nodes: SceneNode[], id: string): Set<string> {

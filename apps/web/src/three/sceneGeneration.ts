@@ -1,7 +1,8 @@
 import type { AgentMessage, JsonSchema, LLMProvider } from '../../../../packages/agent/src/provider.ts'
 import { inspectSceneAsync } from './inspectSceneAsync.ts'
 import { repairImproved, type SceneInspection } from './sceneInspection.ts'
-import { repairReferences, sanitizeEnvironment, sanitizeTemplate, SanitizeLog } from './sceneRecipeSanitize.ts'
+import { clearRoutineTargets, repairReferences, sanitizeBehavior, sanitizeEmitter, sanitizeEnvironment, sanitizeTemplate, SanitizeLog } from './sceneRecipeSanitize.ts'
+import { beardStyles, characterAges, characterBuilds, characterStyles, hairStyles } from './sceneCharacterArchetype.ts'
 import { naturalPrefabs, prefabLabels, prefabParts, prefabRootBehavior, prefabSpec, prefabTypes, structurePrefabs, vegetationPrefabs, type PrefabType } from './scenePrefabs.ts'
 import { auditScene, describeAudit, prepareScene, settleLayout, type SceneAudit } from './sceneLayout.ts'
 import { sceneMatrices } from './scenePlacement.ts'
@@ -13,8 +14,9 @@ import { conformTerrainPaths } from './sceneGrounding.ts'
 import { applyScenePlanIntent } from './scenePlanRealization.ts'
 import * as THREE from 'three'
 import { defaultGeometry, hashNoise, polyhedronVariants, terrainHeightAt, terrainStyles, terrainBiomes } from './sceneGeometrySpec.ts'
-import { ambiencePresets, animationKinds, attackStyles, avatarKinds, behaviorTypes, createEmptyScene, createNode, gradePresets, objectiveTypes, hasSurface, interactionActions, interactionTriggers, MAX_MESSAGE, MAX_SCENE_NODES, musicPresets, nodeLabels, powerKinds, removeSubtree, skyPresets, soundPresets, textureKinds, validateAnimation, validateInteraction, validateScene, weaponKinds, weatherKinds,
-  type SceneNode, type ThreeSceneDocument, type Vector3Tuple } from './sceneDocument.ts'
+import { ambiencePresets, animationKinds, attackStyles, avatarKinds, behaviorTypes, createEmptyScene, createNode, emitterPresets, faunaDensities, gradePresets, grassDensities, objectiveTypes, hasSurface, interactionActions, interactionTriggers, MAX_MESSAGE, MAX_PREMISE,
+  MAX_ROUTINE_STEPS, MAX_SCENE_NODES, musicPresets, nodeLabels, npcReactions, powerKinds, removeSubtree, routineActivities, skyPresets, soundPresets, textureKinds, validateAnimation, validateInteraction, validateRoutine, validateScene, weaponKinds, weatherKinds,
+  type SceneBehavior, type SceneNode, type ThreeSceneDocument, type Vector3Tuple } from './sceneDocument.ts'
 
 const MAX_TEMPLATES = 120, MAX_COPIES = 400
 const numeric = (minimum: number, maximum: number) => ({ type: 'number', minimum, maximum })
@@ -22,7 +24,8 @@ const integer = (minimum: number, maximum: number) => ({ type: 'integer', minimu
 const tuple = (minimum: number, maximum: number) => ({ type: 'array', items: numeric(minimum, maximum), minItems: 3, maxItems: 3 })
 const object = (properties: Record<string, unknown>) => ({ type: 'object', properties, required: Object.keys(properties), additionalProperties: false })
 const nullable = (schema: unknown) => ({ anyOf: [{ type: 'null' }, schema] })
-const axis = { type: 'string', enum: ['x', 'y', 'z'] }
+const choices = (values: readonly string[]) => ({ type: 'string', enum: values })
+const axis = choices(['x', 'y', 'z'])
 const hex = { type: 'string', pattern: '^#[0-9a-fA-F]{6}$' }
 const kinds = { type: 'string', enum: Object.keys(nodeLabels) }
 const partial = (properties: Record<string, unknown>) => ({ type: 'object', properties, additionalProperties: false })
@@ -42,6 +45,12 @@ const interactionSchema = object({ trigger: { type: 'string', enum: interactionT
   action: { type: 'string', enum: interactionActions }, targetId: { type: ['string', 'null'] }, message: { type: 'string', maxLength: MAX_MESSAGE },
   item: { type: 'string', maxLength: 40 }, requires: { type: 'string', maxLength: 40 }, amount: numeric(0, 1000), power: { type: 'string', enum: ['none', ...powerKinds] } })
 const soundSchema = object({ preset: { type: 'string', enum: soundPresets }, volume: numeric(0, 1), radius: numeric(1, 200) })
+const emitterSchema = object({ preset: choices(emitterPresets), rate: numeric(0.1, 4), spread: numeric(0, 20) })
+const routineSchema = { type: 'array', maxItems: MAX_ROUTINE_STEPS, items: object({ activity: choices(routineActivities), target: { type: ['string', 'null'] }, from: numeric(0, 24), to: numeric(0, 24) }) }
+const behaviorFields = { type: choices(behaviorTypes), speed: numeric(0, 12), range: numeric(0.5, 80), damage: numeric(0, 1000), health: integer(1, 100), attack: choices(attackStyles), flying: { type: 'boolean' }, delay: numeric(0, 3600),
+  routine: nullable(routineSchema), reaction: nullable(choices(npcReactions)) }
+const characterSchema = object({ age: choices(characterAges), build: choices(characterBuilds), height: numeric(0.85, 1.15), style: choices(characterStyles), skin: nullable(hex), hair: nullable(hex),
+  hairStyle: choices(hairStyles), beard: choices(beardStyles) })
 const keyframeSchema = object({ at: numeric(0, 1), move: tuple(-1000, 1000), turn: tuple(-720, 720), scale: tuple(0.01, 100) })
 const animationFields = { kind: { type: 'string', enum: animationKinds }, axis, duration: numeric(0.2, 120), amplitude: numeric(0, 100), phase: numeric(0, 360),
   start: { type: 'string', enum: ['auto', 'trigger'] }, easing: { type: 'string', enum: ['linear', 'smooth', 'step'] }, keys: { type: 'array', maxItems: 16, items: keyframeSchema } }
@@ -52,16 +61,17 @@ const environmentFields = { background: hex, exposure: numeric(0.1, 3), lightInt
     allowFly: { type: 'boolean' }, health: numeric(1, 1000), camera: { type: 'string', enum: ['first', 'third'] }, weapon: { type: 'string', enum: weaponKinds }, avatar: { type: 'string', enum: avatarKinds } }),
   objective: nullable(object({ type: { type: 'string', enum: objectiveTypes }, title: { type: 'string', maxLength: 160 }, timeLimit: numeric(0, 3600) })),
   audio: object({ ambience: { type: 'string', enum: ambiencePresets }, music: { type: 'string', enum: musicPresets }, volume: numeric(0, 1) }),
-  weather: { type: 'string', enum: weatherKinds }, grade: { type: 'string', enum: gradePresets } }
+  weather: { type: 'string', enum: weatherKinds }, grade: { type: 'string', enum: gradePresets },
+  motion: nullable(object({ wind: numeric(0, 2), grass: choices(grassDensities), fauna: choices(faunaDensities) })),
+  dayCycle: nullable(object({ enabled: { type: 'boolean' }, duration: numeric(60, 7200), start: numeric(0, 24) })), premise: nullable({ type: 'string', maxLength: MAX_PREMISE }) }
 const nodeSchema = object({
   id: { type: 'string', minLength: 1, maxLength: 100 }, parentId: { type: ['string', 'null'] }, name: { type: 'string', minLength: 1, maxLength: 110 }, kind: kinds,
   role: nullable({ type: 'string', enum: ['structure', 'vegetation', 'prop', 'path'] }),
   geometry: nullable(geometrySchema), surface: nullable(materialSchema), light: nullable(lightSchema), interaction: nullable(interactionSchema), collidable: { type: 'boolean' },
-  behavior: nullable(object({ type: { type: 'string', enum: behaviorTypes }, speed: numeric(0, 12), range: numeric(0.5, 80), damage: numeric(0, 1000),
-    health: integer(1, 100), attack: { type: 'string', enum: attackStyles }, flying: { type: 'boolean' }, delay: numeric(0, 3600) })),
-  sound: nullable(soundSchema),
+  behavior: nullable(object(behaviorFields)), sound: nullable(soundSchema), emitter: nullable(emitterSchema),
   prefab: nullable(object({ type: { type: 'string', enum: prefabTypes }, size: numeric(0.3, 5), seed: integer(0, 9999), primary: { type: ['string', 'null'] }, secondary: { type: ['string', 'null'] }, text: { type: 'string', maxLength: 160 }, lit: { type: 'boolean' }, interactive: { type: 'boolean' },
-    building: nullable(object({ style: { type: 'string', enum: ['cottage', 'townhouse', 'lodge', 'villa'] }, floors: integer(1, 2), width: numeric(7.5, 16), depth: numeric(8.5, 16), furnished: { type: 'boolean' } })) })),
+    building: nullable(object({ style: { type: 'string', enum: ['cottage', 'townhouse', 'lodge', 'villa'] }, floors: integer(1, 2), width: numeric(7.5, 16), depth: numeric(8.5, 16), furnished: { type: 'boolean' } })),
+    character: nullable(characterSchema) })),
   overlapWith: { type: 'array', maxItems: 32, items: { type: 'string' } },
   position: tuple(-10000, 10000), rotation: tuple(-360, 360), scale: tuple(0.01, 100), dimensions: tuple(0.01, 1000),
   color: hex, metalness: numeric(0, 1), roughness: numeric(0, 1),
@@ -108,6 +118,15 @@ function dependencyOrder(entries: Template[], supports: Set<string>, extent: (en
   // Scattered fill comes last, so it can avoid every landmark, structure and rock placed explicitly.
   const rank = (entry: Template) => supports.has(entry.id as string) ? 0 : (entry.repeat as Template | undefined)?.mode === 'scatter' ? 4 : entry.kind === 'group' && extent(entry) >= 2.5 ? 1 : entry.kind === 'group' ? 2 : 3
   return entries.map((entry, index) => ({ entry, index })).sort((a, b) => rank(a.entry) - rank(b.entry) || a.index - b.index).map(({ entry }) => entry)
+}
+/** Routine places are node IDs resolved after expansion; a template is validated alone, so its places are set aside. */
+function routinePlaces(behavior: unknown): (string | null)[] {
+  const routine = behavior && typeof behavior === 'object' ? (behavior as Template).routine : undefined
+  return routine == null ? [] : validateRoutine(routine).map((step) => step.target)
+}
+function withoutPlaces<T>(behavior: T): T {
+  const routine = behavior && typeof behavior === 'object' ? (behavior as Template).routine : undefined
+  return Array.isArray(routine) ? { ...behavior, routine: routine.map((step) => step && typeof step === 'object' ? { ...step, target: null } : step) } : behavior
 }
 const singleRepeat = { mode: 'linear', count: 1, offset: [0, 0, 0], radius: 0, axis: 'y', columns: 1, jitter: 0, seed: 1, onto: null }
 /** Replaces a prefab template by its group and part templates; part IDs are `<template>.<part>`. */
@@ -334,7 +353,8 @@ export function expandSceneRecipe(value: unknown, onExpand: (templates: number) 
         count = room
       }
       // Validate a template before arithmetic, without requiring its parent or references to have appeared first.
-      const template = (geometry: unknown) => validateScene({ ...createEmptyScene(), nodes: [{ ...node, geometry, parentId: null, visible: true, interaction: undefined,
+      const places = routinePlaces(node.behavior)
+      const template = (geometry: unknown) => validateScene({ ...createEmptyScene(), nodes: [{ ...node, geometry, parentId: null, visible: true, interaction: undefined, behavior: withoutPlaces(node.behavior),
         material: { color: node.color, metalness: node.metalness, roughness: node.roughness, ...(node.surface ? record(node.surface) : {}) }, overlapWith: [], animation: validateAnimation(node.animation),
         light: node.light ?? undefined, collidable: node.collidable ?? true }] }).nodes[0]
       let base: SceneNode
@@ -431,7 +451,8 @@ export function expandSceneRecipe(value: unknown, onExpand: (templates: number) 
           if (!overlapWith.includes(support.id)) overlapWith.push(support.id)
         }
         nodes.push({ ...structuredClone(base), id, name: index ? `${base.name.slice(0, 110)} ${index + 1}` : base.name, overlapWith, parentId, position, rotation, scale,
-          ...(interaction ? { interaction: { ...interaction } } : {}) })
+          ...(interaction ? { interaction: { ...interaction } } : {}),
+          ...(base.behavior?.routine ? { behavior: { ...base.behavior, routine: base.behavior.routine.map((step, k) => ({ ...step, target: places[k] ?? null })) } } : {}) })
         meta.set(id, { template: base.id, scope, copy: index + 1 })
         if (repeat.mode === 'scatter') scatteredIds.add(id)
         copies.push(id)
@@ -492,6 +513,7 @@ export function expandSceneRecipe(value: unknown, onExpand: (templates: number) 
     const template = meta.get(node.id)?.template ?? node.id
     node.overlapWith = [...new Set([...node.overlapWith.map((reference) => resolve(reference, node.id, ids)), ...(partners.get(template) ?? []).map((reference) => resolve(reference, node.id, ids)).filter((id) => ids.has(id))])]
     if (node.interaction?.targetId) node.interaction.targetId = resolve(node.interaction.targetId, node.id, ids)
+    for (const step of node.behavior?.routine ?? []) if (step.target) step.target = resolve(step.target, node.id, ids)
     composed += partners.get(template)?.length ?? 0
   }
   if (lenient && composed) log.note('Peças repetidas em paralelo (mesmo padrão, encostadas) ou espalhadas juntas foram tratadas como um objeto por cópia, como paredes + telhado ou tronco + copa.')
@@ -500,26 +522,29 @@ export function expandSceneRecipe(value: unknown, onExpand: (templates: number) 
     ...(lenient ? sanitizeEnvironment(log, recipe.environment) : recipe.environment ? record(recipe.environment) : {}) }
   if (lenient) Object.assign(environment, { background: typeof recipe.background === 'string' && /^#[0-9a-f]{6}$/i.test(recipe.background) ? recipe.background : '#dfe7ee',
     exposure: finiteIn(recipe.exposure, 0.1, 3) ? recipe.exposure : 1.1, lightIntensity: finiteIn(recipe.lightIntensity, 0, 5) ? recipe.lightIntensity : 1.5 })
-  return validateScene(conformTerrainPaths(validateScene({ version: '1.3', name: lenient ? (typeof recipe.name === 'string' && recipe.name.trim() ? recipe.name.slice(0, 120) : 'Cena gerada') : recipe.name, nodes: finalNodes,
+  return validateScene(conformTerrainPaths(validateScene({ version: '1.4', name: lenient ? (typeof recipe.name === 'string' && recipe.name.trim() ? recipe.name.slice(0, 120) : 'Cena gerada') : recipe.name, nodes: finalNodes,
     timeline: { duration: lenient && !finiteIn(recipe.duration, 1, 120) ? 20 : recipe.duration }, environment })))
 }
 
 const SYSTEM = `Você é o diretor de arte, roteirista e level designer 3D do Forma. Produza uma cena COMPLETA, inventiva, densa em detalhes, iluminada, sonorizada e animada como receita JSON, sem código, markdown ou perguntas. Responda estritamente ao schema.
-DIREÇÃO CRIATIVA (decida em silêncio, antes de construir): título evocativo (name); premissa de uma frase com gancho; marco assinatura visível de longe; 3–5 pontos de interesse distintos, cada um com micro-história contada por objetos (carroça tombada com caixas espalhadas, muro rompido, fogueira com bancos e panela, barraca com mercadorias, ossadas junto a uma armadilha) e 6–12 adereços; paleta de 3–5 cores + um acento; luz, grade, clima e paisagem sonora; ciclo de jogo início seguro → desafio → recompensa → conclusão. Misture escalas (macro: marco e relevo; meso: construções; micro: adereços e vegetação rasteira), assimetria, silhuetas em camadas com primeiro plano e fundo, caminhos que guiam o olhar e recompensas em recantos. Dê vida: NPCs em assentamentos, fauna na natureza, inimigos do tema (masmorra/cemitério → skeleton; floresta → wolf/goblin; sci-fi/espaço/cyberpunk → drone/turret; deserto/caverna → spider; vulcão → golem; medieval → orc/goblin; chefe de fantasia → dragon). Evite vazios, grades de cópias idênticas e cenas genéricas; varie seed, size, rotação e cor das cópias.
+DIREÇÃO CRIATIVA (decida em silêncio, antes de construir): título evocativo (name); premissa de uma frase com gancho (environment.premise ≤240, mostrada no cartão de título); marco assinatura visível de longe; 3–5 pontos de interesse distintos, cada um com micro-história contada por objetos (carroça tombada com caixas espalhadas, muro rompido, fogueira com bancos e panela, barraca com mercadorias, ossadas junto a uma armadilha) e 6–12 adereços; paleta de 3–5 cores + um acento; luz, grade, clima e paisagem sonora; ciclo de jogo início seguro → desafio → recompensa → conclusão. Misture escalas (macro: marco e relevo; meso: construções; micro: adereços e vegetação rasteira), assimetria, silhuetas em camadas com primeiro plano e fundo, caminhos que guiam o olhar e recompensas em recantos. Dê vida: NPCs em assentamentos, fauna na natureza, inimigos do tema (masmorra/cemitério → skeleton; floresta → wolf/goblin; sci-fi/espaço/cyberpunk → drone/turret; deserto/caverna → spider; vulcão → golem; medieval → orc/goblin; chefe de fantasia → dragon). Evite vazios, grades de cópias idênticas e cenas genéricas; varie seed, size, rotação e cor das cópias.
 SUPORTES: a geometria segue o gênero: interiores usam pisos/paredes/passagens; plataformas preservam vãos para salto; arenas usam coberturas e circulação; paisagens usam terreno natural. Só em paisagens: geometry.biome ${terrainBiomes.filter((biome) => biome !== 'none').join('|')} com color="#ffffff", segments 96–128 com relevo caminhável e roads com onto explícito. Não sobreponha chãos para pintar grama nem declare contatos para esconder superfícies concorrentes. Não acrescente estradas, árvores ou casas a laboratório, arena ou fase orbital sem pedido. No espaço sideral não há terreno: sky="space", corpos flutuam e o jogador voa.
 ESCALA: metros, pessoa de 1,75 m, degraus ≈0,18 m, portas utilizáveis, caminhos ≥1,2 m. Eixo Y vertical, rotações XYZ em graus, transformações locais ao pai. Todo objeto com mais de uma peça é um group (origem no chão, peças locais) ou um prefab; nunca listas de peças soltas na raiz. Deixe ≥1 m entre objetos diferentes; o motor ajusta pequenos desvios, assenta no terreno e reporta o resto.
-PREFABS: prefab={type,size,seed,primary,secondary,text,lit,interactive,building} ou null; kind=group, dimensions=[1,1,1]; size escala; primary/secondary hex ou null. Tipos: ${prefabTypes.join(', ')}. Nenhum é obrigatório; crie geometrias próprias para o que o catálogo não representa.
+PREFABS: prefab={type,size,seed,primary,secondary,text,lit,interactive,building,character} ou null; kind=group, dimensions=[1,1,1]; size escala; primary/secondary hex ou null. Tipos: ${prefabTypes.join(', ')}. Nenhum é obrigatório; crie geometrias próprias para o que o catálogo não representa.
 PERSONAGENS (rig animado, origem nos pés, size≈1): NPCs villager, knight, wizard, astronaut passeiam e conversam — text = falas separadas por "|". Inimigos: goblin (ágil), skeleton, orc (forte, lento), wolf (veloz, em matilha), spider, drone (voa, ataca à distância), golem (lento, muita vida), dragon (chefe voador; um por cena, arena ampla); legado: enemy=slime, sentinel=robô, crawler. Fauna pacífica: deer. behavior no grupo ajusta speed/range/damage/health/attack/flying/delay.
+ARQUÉTIPOS: prefab.character={age child|young|adult|elder,build slim|average|athletic|heavy,height 0,85–1,15,style stylized|realistic,skin,hair (hex ou null = paleta da seed),hairStyle auto|bald|short|long|bun|ponytail|braids|mohawk,beard auto|none|short|long} só em personagens (null nos demais). Cada NPC é uma pessoa distinta: varie idade, porte, altura, pele, cabelo, barba, seed e primary/secondary (ferreiro adulto heavy de barba, idosa elder de coque, criança child, guarda athletic); nunca repita o mesmo modelo com repeat.
+ROTINAS: behavior.routine (só npc; até 6 períodos ou null)=[{activity wander|work|sit|chat|patrol|guard|sleep|perform,target=ID de um lugar concreto da receita (marketStall, bench, well, fountain, campfire, castleWall, gate, house) ou null,from,to (horas 0–24; podem cruzar meia-noite)}]: comerciante work na barraca 7–18 e chat no chafariz 18–21; guarda patrol na muralha e guard no portão; ferreiro work na forja; bardo perform na praça; sit no banco; sleep em casa 22–6. NPCs com chat no mesmo alvo conversam entre si. behavior.reaction greet (cumprimenta o jogador)|ignore|flee (foge do perigo)|alert (avisa o guarda mais próximo) ou null.
 MUNDO: castleWall (6 m; enfileire com offset 6), castleTower, gate (portão; text = item exigido, vazio = aberto), fountain, statue, marketStall, cart, haystack, chest, lever, banner, tombstone, ruinArch, dock, lighthouse, container, console, reactor, radarDish; campfire, torch e lampPost com lit=true iluminam. planet (6 m; seed ímpar = anéis; size 3–5 + escala do grupo para gigantes), asteroid gira, spaceship (7 m), spaceStation (anel de 16 m), rocket (9 m); mushroom (lit = bioluminescente; size≥2 gigante sólido), seaweed balança, crystalCluster lit ilumina, skyscraper (24–35 m; lit acende janelas), column (seed múltiplo de 3 = quebrada). house é só residencial: building={style:cottage|townhouse|lodge|villa,floors:1|2,width:7.5–16,depth:8.5–16,furnished}, com vãos e escada reais; nos outros tipos building=null.
 JOGABILIDADE: turret (inimigo fixo à distância), movingPlatform (desliza e carrega o jogador), jumpPad (lança para cima), heart (cura), key (coletável; text = nome do item, padrão "Chave dourada"), powerOrb (text speed|jump|shield|strength), coin/gem (coleta), spikes (perigo), checkpoint, portal (chegada), ladder (escalada).
 EDIÇÃO SEMÂNTICA: grupos com asset preservam parâmetros. Para andar, planta, estilo ou mobília use rebuilds=[{id do grupo existente,prefab completo}] (recompila preservando posição, rotação, escala e parentesco); nunca simule pavimentos com caixas nem altere dimensions do grupo. Cor/posição usam updates; novas construções usam additions. rebuilds=[] quando não há reconstrução.
 GEOMETRIA: box, roundedBox (bevel), sphere, cylinder, cone e capsule (altura Y), plane (piso XZ), torus (anel XY), torusKnot; polyhedron (geometry.variant icosahedron|dodecahedron|octahedron|tetrahedron, detail 0–5, bevel 0–0,2 deforma com seed — rochas e cristais com flatShading); terrain (relevo XZ, segments 8–128, detail 0–5, seed, closed=true forma ilha; dimensions.y = altura máxima; terrainStyle rolling|ridged|terraced|dunes; biome ${terrainBiomes.join('|')} colore por altitude e inclinação; com bioma use color #ffffff); text (placa XY, geometry.text ≤160, cor = color); extrude (profile [[x,y],...] sem cruzamentos, holes, profundidade Z); lathe (profile [[raio,altura],...] em Y; raio zero nas pontas fecha); tube (points XYZ Catmull-Rom); mesh (vertices e indices); light (light={type point|spot,color,intensity,distance,angle,penumbra,castShadow}; spot aponta -Y local; 5–40 cd luminárias, 80–400 holofotes; até 32 luzes, ≤4 com sombra). geometry null = padrão. Toda geometria é normalizada à caixa dimensions; scale normalmente [1,1,1].
 REPETIÇÃO: repeat={mode,count,offset,radius,axis,columns,jitter,seed,onto}. linear desloca por offset; grid usa columns e offset [dx,dy por linha,dz por linha]; radial distribui no plano normal a axis com radius girando as cópias; scatter espalha sem sobreposição numa área offset=[largura,altura,profundidade] centrada em position, jitter 0–1 varia giro/escala. onto=ID de terrain/plano/caixa anterior no MESMO grupo e sem rotação: apoia na superfície (position.y = altura acima dela) e declara o contato. Templates scatter com mesma seed, count, offset e position ficam alinhados (tronco + copa). Grupos podem ser repetidos com toda a subárvore. Nó único: {mode:"linear",count:1,offset:[0,0,0],radius:0,axis:"y",columns:1,jitter:0,seed:1,onto:null}. Até ${MAX_TEMPLATES} templates e ${MAX_SCENE_NODES} nós expandidos; prefira 25–70 templates e centenas de objetos em cenas grandes. Offsets devem superar a extensão do objeto; em radial, 2*raio*sin(pi/count) acomoda a largura.
 MATERIAIS: color #RRGGBB, metalness, roughness; surface aceita clearcoat, transmission (vidro/água com ior 1,33–1,5 e thickness), emissive+emissiveIntensity (0–20; >1,5 brilha com bloom), sheen, iridescence, opacity/transparent, flatShading e texturas procedurais ${textureKinds.filter((kind) => kind !== 'none').join(', ')} (color tinge: use tons claros #c8c8c8–#ffffff; textureScale ≈ metros/1–2). Varie acabamentos; evite cores chapadas.
-ATMOSFERA: environment={sky,sunElevation,sunAzimuth,fog,bloom,toneMapping,player,objective,audio,weather,grade}. sky studio|day|sunset (sunElevation 2–8)|night (estrelas; use luzes práticas)|overcast|space. fog 0,001–0,004 em paisagens de 70–150 m (mais denso só em pântano, caverna, subaquático ou terror). bloom 0,3–1,2 realça emissivos. Combine sol + luzes práticas (postes, lanternas, janelas) com esfera emissiva no bulbo. weather none|rain|snow|embers|fireflies|dust|bubbles|leaves|ash (rain tempestade/noir, snow inverno, embers forja/vulcão, fireflies floresta à noite, dust deserto/ruínas, bubbles subaquático, leaves outono/jardim, ash pós-apocalipse). grade none|warm|cool|cinematic|vivid|noir|dreamy|retro (warm vila/pôr do sol, cool inverno/sci-fi, vivid cartoon/doces, noir terror/cyberpunk chuvoso, dreamy encantado, retro synthwave). audio={ambience,music,volume}: auto escolhe pelo tema; explicite quando o tom importa (ambience forest|meadow|beach|desert|snow|swamp|cave|city|night|space|underwater|volcanic|scifi|dungeon|rain|wind; music calm|adventure|mystery|tension|combat|space|festive|spooky|heroic; none silencia). node.sound={preset,volume 0–1,radius 3–30} é som posicional sintetizado: fire (fogueiras, lareiras, tochas), water (rios, chafarizes), waves (mar), wind, machine (reatores, máquinas), engine, magic (cristais, altares), portal, chimes (sinos), alarm, crowd (mercados), birds/insects (árvores), drip (cavernas); 3–8 fontes por cena.
+ATMOSFERA: environment={sky,sunElevation,sunAzimuth,fog,bloom,toneMapping,player,objective,audio,weather,grade,motion,dayCycle,premise}. sky studio|day|sunset (sunElevation 2–8)|night (estrelas; use luzes práticas)|overcast|space. fog 0,001–0,004 em paisagens de 70–150 m (mais denso só em pântano, caverna, subaquático ou terror). bloom 0,3–1,2 realça emissivos. Combine sol + luzes práticas (postes, lanternas, janelas) com esfera emissiva no bulbo. weather none|rain|snow|embers|fireflies|dust|bubbles|leaves|ash (rain tempestade/noir, snow inverno, embers forja/vulcão, fireflies floresta à noite, dust deserto/ruínas, bubbles subaquático, leaves outono/jardim, ash pós-apocalipse). grade none|warm|cool|cinematic|vivid|noir|dreamy|retro (warm vila/pôr do sol, cool inverno/sci-fi, vivid cartoon/doces, noir terror/cyberpunk chuvoso, dreamy encantado, retro synthwave). audio={ambience,music,volume}: auto escolhe pelo tema; explicite quando o tom importa (ambience forest|meadow|beach|desert|snow|swamp|cave|city|night|space|underwater|volcanic|scifi|dungeon|rain|wind; music calm|adventure|mystery|tension|combat|space|festive|spooky|heroic; none silencia). node.sound={preset,volume 0–1,radius 3–30} é som posicional sintetizado: fire (fogueiras, lareiras, tochas), water (rios, chafarizes), waves (mar), wind, machine (reatores, máquinas), engine, magic (cristais, altares), portal, chimes (sinos), alarm, crowd (mercados), birds/insects (árvores), drip (cavernas); 3–8 fontes por cena.
+MUNDO VIVO: node.emitter={preset fire|smoke|sparks|magic|steam|fountain|leaves|dust|embers,rate 0,1–4,spread 0–20 m} ou null = partículas no nó: smoke em chaminés, fire em braseiros, sparks na bigorna/forja, steam em caldeiras e fontes termais, fountain em jatos d'água, magic em altares e portais, embers sobre fogueiras, leaves em copas de outono, dust em minas; campfire, torch, fountain e reactor já emitem sozinhos. motion={wind 0–2 (0 parado, 0,6 brisa, 1 ventoso, 2 tempestade),grass auto|none|dense,fauna auto|none|rich} ou null (automático): grass none em interiores, criptas, desertos, neve e espaço, dense em campos; fauna none em criptas, interiores e espaço, rich (aves, peixes, borboletas) em praias, ilhas, lagos e florestas. dayCycle={enabled,duration 60–7200 s por dia,start 0–24} só quando pedirem dia e noite, amanhecer/anoitecer ao longo do jogo ou passagem do tempo (rotinas seguem a hora); senão null.
 ANIMAÇÃO: animation={kind,axis,duration,amplitude,phase,start,easing,keys}. spin gira 360° por período; float oscila ±amplitude; bounce quica; swing balança ±amplitude graus; pulse escala ±amplitude (0–0,95); orbit circula com raio amplitude; keyframes usa keys [{at 0–1,move [m],turn [graus],scale}] relativos à pose base, easing linear|smooth|step. start="auto" repete; start="trigger" espera uma interação (keyframes tocam uma vez e invertem no próximo acionamento — portas, pontes, gavetas). Use períodos divisores da timeline; keys=[] quando não usados.
 JOGADOR: environment.player={spawn [x,y,z] no chão, fora de objetos, ou null, yaw (0 olha -Z), speed 3–8, jumpHeight 0,8–1,5, mode walk|fly, allowFly (false em desafios), health 50–300, camera first|third, weapon none|sword|blaster|bow|staff, avatar explorer|knight|wizard|astronaut|robot}. Controles: WASD, mouse, espaço pula, E interage/ataca, V troca câmera. Arma por gênero: sword (medieval/fantasia, avatar knight), bow (floresta, piratas, caça), staff (magia, avatar wizard), blaster (sci-fi, cyberpunk, faroeste, espaço; avatar astronaut ou robot), none (exploração, puzzle, plataforma: golpe curto e salto sobre inimigos). Pedido de tiro, arco ou espada exige a weapon correspondente.
-COMPORTAMENTO: behavior={type,speed,range,damage,health,attack,flying,delay}: enemy patrulha e persegue dentro de range (health = golpes/tiros para derrotar: comuns 2–4, elites 6–10, chefe 25–60; attack touch|melee|ranged|charge; flying para drones/dragões; delay = segundos até surgir), hazard, checkpoint, goal, climbable, npc (passeia e conversa), launcher (lança range metros para cima). Inimigos a ≥8 m do spawn.
+COMPORTAMENTO: behavior={type,speed,range,damage,health,attack,flying,delay,routine,reaction}: enemy patrulha e persegue dentro de range (health = golpes/tiros para derrotar: comuns 2–4, elites 6–10, chefe 25–60; attack touch|melee|ranged|charge; flying para drones/dragões; delay = segundos até surgir), hazard, checkpoint, goal, climbable, npc (passeia, conversa e segue routine), launcher (lança range metros para cima). Inimigos a ≥8 m do spawn.
 INTERAÇÃO: interaction={trigger,key,radius,action,targetId,message,item,requires,amount,power} ou null. trigger click (mirar + E dentro de radius), proximity ou key (0–9, b, g, j–p, r, t, u, x, y, z). action toggleAnimation (alvo ou filhos animados), toggleVisibility (grupos, luzes), collect (some e conta; item entra no inventário), message (placas, dicas), heal (amount de vida), powerup (power speed|jump|shield|strength por amount segundos), dialogue (falas separadas por "|"). requires bloqueia a ação até o inventário ter o item: chave → porta, gate, chest, ponte. Todo requires precisa de um collect/key com o MESMO nome, alcançável antes da passagem. collect/heal/powerup usam targetId null; message curta em português. collidable=false para grama, partículas, folhagem e decoração fina.
 OBJETIVO: environment.objective={type:explore|collectAll|reachGoal|defeatEnemies|survive,title,timeLimit}. survive = resistir timeLimit segundos (60–300) a ondas: inimigos com delay 0, 20, 40… vindos de lados diferentes e hearts entre ondas. reachGoal com timeLimit = corrida contra o relógio com checkpoints. Veículos dirigíveis não existem; armas decorativas não disparam — só player.weapon.
 GÊNEROS: combate → coberturas, flancos, inimigos corpo a corpo e à distância, recompensas após encontros; chefe → arena ampla com coberturas, um dragon/golem de health alta, lacaios antes e portal/chest depois; RPG/aventura → NPCs com dialogue que dão pistas e missões, key/item num ponto de interesse e gate/chest com requires em outro; plataformas → alturas progressivas, movingPlatform, jumpPad, checkpoints, spikes; furtividade → patrulhas de range curto, sombras, rotas alternativas; puzzle → lever/console com targetId num mecanismo real animado/visível; corrida → checkpoints em sequência, reachGoal e timeLimit; exploração → segredos, mirantes e coletáveis opcionais. Obedeça topologia e objetivo pedidos; não imponha combate, coleta, portas, vilas ou relevo a todo jogo.
@@ -680,7 +705,7 @@ export async function generateThreeScene(provider: LLMProvider, request: string,
 const nodeChanges = { kind: kinds, name: { type: 'string' }, parentId: { type: ['string', 'null'] },
   visible: { type: 'boolean' }, position: tuple(-10000, 10000), rotation: tuple(-360, 360), scale: tuple(0.01, 100), dimensions: tuple(0.01, 1000),
   material: materialSchema, geometry: geometrySchema, animation: partial(animationFields), light: lightSchema, interaction: nullable(interactionSchema), collidable: { type: 'boolean' },
-  behavior: nullable(partial({ type: { type: 'string', enum: behaviorTypes }, speed: numeric(0, 12), range: numeric(0.5, 80), damage: numeric(0, 1000) })) }
+  behavior: nullable(partial(behaviorFields)), emitter: nullable(emitterSchema) }
 export const sceneEditSchema: JsonSchema = object({
   updates: { type: 'array', maxItems: 500, items: object({ id: { type: 'string' }, changes: partial(nodeChanges) }) },
   additions: { type: 'array', maxItems: MAX_TEMPLATES, items: nodeSchema },
@@ -718,11 +743,18 @@ export function applySceneEdit(doc: ThreeSceneDocument, value: unknown, log?: Sa
       geometry: changes.geometry ? { ...(kindChanged ? defaultGeometry(String(changes.kind)) : node.geometry), ...record(changes.geometry) } : kindChanged ? defaultGeometry(String(changes.kind)) : node.geometry,
       animation: changes.animation ? { ...node.animation, ...record(changes.animation) } : node.animation } as SceneNode
     if (changes.light) next.light = { ...node.light, ...record(changes.light) } as SceneNode['light']
-    if (changes.behavior) next.behavior = { ...node.behavior, ...record(changes.behavior) } as SceneNode['behavior']
+    if (changes.behavior) {
+      const merged = { ...node.behavior, ...record(changes.behavior) }
+      next.behavior = (log ? sanitizeBehavior(log, merged) : merged) as SceneBehavior
+    }
     if (changes.behavior === null) delete next.behavior
     if (changes.interaction === null) delete next.interaction
+    if (changes.emitter !== undefined) {
+      const emitter = changes.emitter === null ? null : log ? sanitizeEmitter(log, changes.emitter) : changes.emitter
+      if (emitter) next.emitter = emitter as SceneNode['emitter']; else delete next.emitter
+    }
     if (!log) return next
-    try { validateScene({ ...createEmptyScene(), nodes: [{ ...next, parentId: null, overlapWith: [], interaction: undefined }] }); return next }
+    try { validateScene({ ...createEmptyScene(), nodes: [{ ...next, parentId: null, overlapWith: [], interaction: undefined, behavior: withoutPlaces(next.behavior) }] }); return next }
     catch (error) { log.note(`A alteração de “${node.name}” foi ignorada: ${error instanceof Error ? error.message : String(error)}`); return node }
   })
   if (plan.rebuilds !== undefined) {
@@ -734,7 +766,8 @@ export function applySceneEdit(doc: ThreeSceneDocument, value: unknown, log?: Sa
         const spec = prefabSpec(entry.prefab, log ? label => log.adjust(label) : undefined)
         if (!spec) throw new Error('Tipo de asset desconhecido.')
         const rebuilt = expandSceneRecipe({ name: doc.name, background: doc.environment.background, exposure: 1, lightIntensity: 1, duration: doc.timeline.duration,
-          nodes: [{ ...root, parentId: null, prefab: spec, color: root.material.color, metalness: root.material.metalness, roughness: root.material.roughness, repeat: singleRepeat }] }).nodes
+          nodes: [{ ...root, parentId: null, prefab: spec, behavior: withoutPlaces(root.behavior), color: root.material.color, metalness: root.material.metalness, roughness: root.material.roughness, repeat: singleRepeat }] }).nodes
+          .map((node) => node.id === root.id && node.behavior?.type === 'npc' && root.behavior?.routine ? { ...node, behavior: { ...node.behavior, routine: root.behavior.routine } } : node)
         const replacement=replaceAssetNodes({...doc,nodes},root,rebuilt)
         nodes = validateScene({ ...doc,nodes:replacement }).nodes
       } catch (error) { if (!log) throw error; log.note(`Reconstrução ignorada: ${error instanceof Error ? error.message : String(error)}`) }
@@ -759,7 +792,16 @@ export function applySceneEdit(doc: ThreeSceneDocument, value: unknown, log?: Sa
         }
         nodes = removeSubtree({ ...doc, nodes }, id).nodes
       }
+      // Places of a routine that the user removed are forgotten, like interaction targets.
+      const kept = new Set(nodes.map((node) => node.id))
+      nodes = nodes.map((node) => ({ ...node }))
+      clearRoutineTargets(nodes, (id) => kept.has(id) || !doc.nodes.some((node) => node.id === id), () => log?.adjust('Locais de rotina removidos'))
     }
+  }
+  if (log) {
+    const present = new Set(nodes.map((node) => node.id))
+    nodes = nodes.map((node) => ({ ...node }))
+    clearRoutineTargets(nodes, (id) => present.has(id), () => log.adjust('Locais de rotina inexistentes'))
   }
   const envPatch = plan.environment ? record(plan.environment) : null
   const merged = envPatch ? { ...doc.environment, ...envPatch,
@@ -785,7 +827,7 @@ function compactNode(node: SceneNode, selectedId?: string | null) {
     ...(node.kind !== 'group' ? { dimensions: r(node.dimensions) } : {}), ...(node.animation.kind !== 'none' ? { animation: node.animation } : {}),
     ...(node.overlapWith.length ? { overlapWith: node.overlapWith } : {}), ...(node.light ? { light: node.light } : {}), ...(node.interaction ? { interaction: node.interaction } : {}),
     ...(node.collidable === false ? { collidable: false } : {}), ...(node.visible ? {} : { visible: false }),
-    ...(node.behavior ? { behavior: node.behavior } : {}),
+    ...(node.behavior ? { behavior: node.behavior } : {}), ...(node.emitter ? { emitter: node.emitter } : {}),
     ...(hasSurface(node.kind) ? { material: { ...node.material, textureImage: node.material.textureImage ? '[imagem incorporada preservada]' : '' } } : {}),
     ...(node.id === selectedId || ['terrain', 'polyhedron', 'extrude', 'lathe', 'tube'].includes(node.kind) ? {
       geometry: node.kind === 'mesh' ? { vertices: node.geometry.vertices.length / 3, triangles: node.geometry.indices.length / 3 } : node.geometry } : {}) }
@@ -861,6 +903,7 @@ export async function editThreeScene(provider: LLMProvider, doc: ThreeSceneDocum
   if (options.mode === 'repair' && !before.intersections.length && !before.surfaceConflicts?.length) return doc
   const messages: AgentMessage[] = [{ role: 'system', content: SYSTEM + `
 Reconstruções arquitetônicas usam rebuilds:[{id,prefab}], além de updates, additions, removals e environment. Retorne rebuilds:[] quando não necessário. Para dar um novo andar ou planta a uma casa existente, prefira reconstruir o grupo por ID com building explícito; preservar os outros nós não impede substituir suas peças geradas.
+updates aceitam emitter (null remove) e behavior com routine/reaction; rebuilds aceitam prefab.character para mudar o arquétipo; environment aceita motion, dayCycle e premise (null remove).
 Agora você EDITA uma cena existente. Retorne {updates:[{id,changes:{somente campos alterados}}],additions:[templates de receita],removals:[IDs a excluir somente se o usuário pediu remoção],environment:null ou somente campos de ambiente alterados}. Preserve IDs, todos os nós não mencionados, materiais/mapas, interações e movimentos. Remover um grupo exclui seus descendentes e limpa as referências. Nunca exclua nem oculte objetos para esconder colisões, não troque toda a cena por outra e não altere overlapWith. interaction:null remove uma interação; behavior:null remove um comportamento. Edições de reparo usam removals:[] e só ajustam posições/rotações/órbitas, preservando dimensões/geometria/hierarquia/visibilidade/ambiente, para reduzir os pares diagnosticados sem criar novos. A geometria de malhas importadas omitida no contexto deve permanecer intacta. Adicione detalhes somente quando solicitado. A posição é local ao grupo, dimensões são caixas locais; considere rotações e escalas de todos os pais. Mudanças parciais em environment.player preservam os demais parâmetros do jogador.` },
     { role: 'user', content: `${options.mode === 'repair' ? 'Corrija as sobreposições diagnosticadas conservando a composição, objetos e animações.' : request}
 ${options.mode === 'repair' ? request : ''}

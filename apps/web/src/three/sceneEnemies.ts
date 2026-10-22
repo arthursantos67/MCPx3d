@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import type { PlayerBox, PlayerCollider } from './scenePlayer.ts'
+import type { NpcActivity, NpcTask } from './sceneRoutines.ts'
 
 export type EnemyMode = 'patrol' | 'chase' | 'search' | 'return'
 export type EnemyAttack = 'touch' | 'melee' | 'ranged' | 'charge'
@@ -25,18 +26,56 @@ export interface EnemyMotion {
   clock: number
   /** Flyers: current offset from their base altitude while rising toward the player. */
   lift: number
+  /** NPC life: greeting timer, fear of a threat (optionally the player after an attack), guard alarm and routine progress. */
+  greet: number
+  fear: number
+  threat: THREE.Vector3 | null
+  threatIsPlayer: boolean
+  alarm: THREE.Vector3 | null
+  alarmTime: number
+  taskKey: string
+  settled: boolean
+  best: number
+  stall: number
+  leg: number
 }
-/** `attack` defaults to touch (contact damage stays with the caller); NPCs wander and face the player, never chase or attack. */
-export interface EnemySettings { speed: number; range: number; radius?: number; height?: number; eyeHeight?: number; attack?: EnemyAttack; flying?: boolean; npc?: boolean }
-/** `attack` is set only on the step an attack is released; shots carry a unit `aim` direction starting at `muzzle`. */
-export interface EnemyStep { moved: boolean; seesPlayer: boolean; mode: EnemyMode; attack?: 'shoot' | 'melee' | 'charge'; aim?: THREE.Vector3; muzzle?: THREE.Vector3 }
+export type NpcReaction = 'greet' | 'ignore' | 'flee' | 'alert'
+/**
+ * `attack` defaults to touch (contact damage stays with the caller); NPCs wander and face the player, never chase or attack.
+ * Optional navigation: `route` returns the next waypoint toward a goal (ground agents only) and `neighbors` are the feet of nearby agents
+ * to keep apart from. NPC life: `task` is the active routine period, `threats` the feet of enemies chasing nearby, `guards` the feet of
+ * guard NPCs an alerting NPC runs to, and `guard` marks this NPC as one who answers alarms.
+ */
+export interface EnemySettings { speed: number; range: number; radius?: number; height?: number; eyeHeight?: number; attack?: EnemyAttack; flying?: boolean; npc?: boolean
+  route?: (from: THREE.Vector3, to: THREE.Vector3) => THREE.Vector3; neighbors?: THREE.Vector3[]
+  task?: NpcTask | null; reaction?: NpcReaction; threats?: THREE.Vector3[]; guards?: THREE.Vector3[]; guard?: boolean }
+/**
+ * `attack` is set only on the step an attack is released; shots carry a unit `aim` direction starting at `muzzle`.
+ * NPCs report an `activity` pose and a `face` point to look at; `anchor` is where the visual body belongs during the activity (seat,
+ * counter), `alarm` the threat an alerting NPC reports to the guard it reached, and `indoors` a sleeper that reached its door.
+ */
+export interface EnemyStep { moved: boolean; seesPlayer: boolean; mode: EnemyMode; attack?: 'shoot' | 'melee' | 'charge'; aim?: THREE.Vector3; muzzle?: THREE.Vector3
+  activity?: NpcActivity | null; face?: THREE.Vector3; anchor?: THREE.Vector3; alarm?: THREE.Vector3; indoors?: boolean }
 export const ENEMY_COMBAT = { meleeReach: 1.3, meleeHit: 2, meleeWindup: 0.35, meleeCooldown: 1, chargeRange: 6, chargeWindup: 0.4, chargeTime: 0.6, chargeSpeed: 2.4, chargeCooldown: 1.6,
   shotCooldown: 1.6, preferred: 0.6, npcNear: 4, flyBob: 0.15, flyRise: 3, flyDrop: 1 } as const
+export const NPC_LIFE = { greet: 1.2, fearRadius: 7, fearTime: 3, provoked: 6, alarmTime: 12, report: 1.8, guardStop: 2.5, arrive: 0.35, settle: 1.8, stall: 1.2, giveUp: 6,
+  patrolPause: 2.5, separation: 0.35 } as const
 
 export function createEnemyMotion(base: THREE.Vector3, ground: number, phase = 0): EnemyMotion {
   return { base: base.clone(), position: base.clone(), hover: Math.max(0, base.y - ground), heading: 0,
     phase, mode: 'patrol', lastSeen: null, memory: 0, perceptionIn: 0, seesPlayer: false, turnSide: Math.sin(phase) < 0 ? -1 : 1,
-    action: 'idle', actionTime: 0, cooldown: 0, dash: new THREE.Vector3(), clock: 0, lift: 0 }
+    action: 'idle', actionTime: 0, cooldown: 0, dash: new THREE.Vector3(), clock: 0, lift: 0,
+    greet: 0, fear: 0, threat: null, threatIsPlayer: false, alarm: null, alarmTime: 0, taskKey: '', settled: false, best: Infinity, stall: 0, leg: 1 }
+}
+
+/** The player attacked this NPC: it flees from (or, with 'alert', reports) the player for a while. 'ignore' NPCs do not react. */
+export function provokeNpc(state: EnemyMotion, playerFeet: THREE.Vector3, reaction: NpcReaction = 'greet'): void {
+  if (reaction === 'ignore') return
+  state.fear = NPC_LIFE.provoked; state.threat = playerFeet.clone(); state.threatIsPlayer = true; state.settled = false
+}
+/** A guard receives an alarm (from EnemyStep.alarm) and heads to the threat. */
+export function alertGuard(state: EnemyMotion, threat: THREE.Vector3): void {
+  state.alarm = threat.clone(); state.alarmTime = NPC_LIFE.alarmTime; state.settled = false
 }
 
 function boxRayDistance(ray: THREE.Ray, box: PlayerBox): number | null {
@@ -118,6 +157,13 @@ function flyCandidate(position: THREE.Vector3, direction: THREE.Vector3, distanc
 const UP = new THREE.Vector3(0, 1, 0), ANGLES = [0, 0.55, 1.05, 1.55, -0.55, -1.05, -1.55, 2.15]
 const facing = (from: THREE.Vector3, to: THREE.Vector3, fallback: number) => Math.hypot(to.x - from.x, to.z - from.z) > 1e-4 ? Math.atan2(to.x - from.x, to.z - from.z) : fallback
 const hash = (value: number) => { const x = Math.sin(value * 12.9898) * 43758.5453; return x - Math.floor(x) }
+const flatDistance = (a: THREE.Vector3, b: THREE.Vector3) => Math.hypot(a.x - b.x, a.z - b.z)
+const nearest = (points: THREE.Vector3[] | undefined, from: THREE.Vector3, limit: number) => {
+  let best: THREE.Vector3 | null = null, distance = limit
+  for (const point of points ?? []) { const d = flatDistance(point, from); if (d <= distance && Math.abs(point.y - from.y) < 3) { best = point; distance = d } }
+  return best
+}
+const routinePose: Record<NpcTask['activity'], NpcActivity | null> = { wander: null, work: 'work', sit: 'sit', chat: 'chat', patrol: 'guard', guard: 'guard', sleep: 'sleep', perform: 'perform' }
 
 /** One deterministic bounded update. The supplied collider must exclude enemy bodies themselves. */
 export function stepEnemyMotion(state: EnemyMotion, settings: EnemySettings, playerFeet: THREE.Vector3, collider: PlayerCollider, seconds: number, active = true): EnemyStep {

@@ -1,9 +1,11 @@
 import * as THREE from 'three'
 import { buildNodeGeometry, geometryKey } from './sceneGeometry.ts'
 import { proceduralTexture } from './sceneTextures.ts'
+import { isCharacterType } from './sceneCharacters.ts'
 import { hasSurface, subtreeIds, type SceneNode, type ThreeSceneDocument } from './sceneDocument.ts'
 import { createShadowScheduler } from './sceneShadows.ts'
 import { prepareTerrainLayers, usesTerrainLayers } from './sceneTerrainMaterial.ts'
+import type { CharacterSkin } from './sceneRuntimeTypes.ts'
 
 export const HELPER_LAYER = 1
 const MIN_BATCH = 3
@@ -11,7 +13,8 @@ const unitScale = new THREE.Vector3()
 
 export interface SceneResources {
   geometry: (node: SceneNode) => THREE.BufferGeometry
-  material: (node: SceneNode, wireframe: boolean) => THREE.MeshPhysicalMaterial
+  /** `variant` yields a separate cached material (e.g. wind-animated vegetation) prepared once by `prepare`. */
+  material: (node: SceneNode, wireframe: boolean, variant?: string, prepare?: (material: THREE.MeshPhysicalMaterial) => void) => THREE.MeshPhysicalMaterial
   begin: () => void
   prune: () => void
   dispose: () => void
@@ -60,11 +63,11 @@ export function createResources(anisotropy = 8): SceneResources {
       if (!geometries.has(key)) geometries.set(key, buildNodeGeometry(node))
       return geometries.get(key)!
     },
-    material(node, wireframe) {
+    material(node, wireframe, variant, prepare) {
       const aspect = node.kind === 'text' ? Math.round(node.dimensions[0] / node.dimensions[1] * 4) / 4 : 0
       const biome = node.kind === 'terrain' && !!node.geometry.biome && node.geometry.biome !== 'none'
       const layered=usesTerrainLayers(node)
-      const key = JSON.stringify([node.material, wireframe, node.kind === 'text' ? [node.geometry.text, aspect] : node.kind === 'tube', biome,layered?node.geometry.biome:null])
+      const key = JSON.stringify([node.material, wireframe, node.kind === 'text' ? [node.geometry.text, aspect] : node.kind === 'tube', biome,layered?node.geometry.biome:null, variant ?? null])
       usedMaterials.add(key)
       if (materials.has(key)) return materials.get(key)!
       const { texture: kind, textureScale = 1, textureImage, doubleSided, normalStrength = 1, sheen = 0, ...physical } = node.material
@@ -86,6 +89,7 @@ export function createResources(anisotropy = 8): SceneResources {
       const material = new THREE.MeshPhysicalMaterial(parameters)
       if (kind === 'water' && !textureImage && !layered) material.userData.water = true
       finishTerrain?.(material)
+      if (variant) prepare?.(material)
       materials.set(key, material)
       return material
     },
@@ -117,14 +121,24 @@ export interface BuiltScene {
   /** Recomputes instance matrices; suppressed instances collapse while a regular proxy replaces them. */
   sync: (suppressed?: Set<string>) => void
   updateShadows: (focus:THREE.Vector3) => void
+  /** Continuous skinned bodies by character root id; their rigid proxies stay in `meshes` but are hidden. */
+  skins: Map<string, CharacterSkin>
   dispose: () => void
+}
+export interface BuildOptions {
+  instancing: boolean; helpers: boolean
+  /** Material variant for a node (null = shared material) and its one-time preparation. */
+  variant?: (node: SceneNode) => { key: string; prepare: (material: THREE.MeshPhysicalMaterial) => void; depth?: () => THREE.Material } | null
+  /** Replaces the cached geometry of a node (e.g. tessellated water). */
+  geometry?: (node: SceneNode) => THREE.BufferGeometry | null
+  skins?: (doc: ThreeSceneDocument, holders: Map<string, THREE.Object3D>) => CharacterSkin[]
 }
 export function surfaceMatrix(holder: THREE.Object3D, node: SceneNode, target = new THREE.Matrix4()): THREE.Matrix4 {
   return target.copy(holder.matrixWorld).scale(unitScale.fromArray(node.dimensions))
 }
 
 /** Builds the render graph. Static repeated surfaces become one InstancedMesh per geometry/material. */
-export function buildScene(doc: ThreeSceneDocument, resources: SceneResources, options: { instancing: boolean; helpers: boolean }): BuiltScene {
+export function buildScene(doc: ThreeSceneDocument, resources: SceneResources, options: BuildOptions): BuiltScene {
   resources.begin()
   const root = new THREE.Group(), holders = new Map<string, THREE.Object3D>(), meshes = new Map<string, THREE.Mesh>()
   const instances = new Map<string, { mesh: THREE.InstancedMesh; index: number }>(), lights = new Map<string, THREE.PointLight | THREE.SpotLight>()
@@ -134,12 +148,16 @@ export function buildScene(doc: ThreeSceneDocument, resources: SceneResources, o
     if (node.animation.kind !== 'none' || ['collect', 'heal', 'powerup'].includes(node.interaction?.action ?? '') || node.behavior?.type === 'enemy' || node.behavior?.type === 'npc') for (const id of subtreeIds(doc.nodes, node.id)) dynamic.add(id)
     if (node.interaction?.action === 'toggleVisibility') for (const id of subtreeIds(doc.nodes, node.interaction.targetId ?? node.id)) dynamic.add(id)
   }
+  const characters = new Set(doc.nodes.filter((node) => node.asset && isCharacterType(node.asset.type)).flatMap((node) => [...subtreeIds(doc.nodes, node.id)]))
+  const variants = new Map(doc.nodes.map((node) => [node.id, hasSurface(node.kind) ? options.variant?.(node) ?? null : null]))
+  const material = (node: SceneNode) => { const variant = variants.get(node.id); return resources.material(node, doc.environment.wireframe, variant?.key, variant?.prepare) }
+  const geometry = (node: SceneNode) => options.geometry?.(node) ?? resources.geometry(node)
   const hiddenChain = (node: SceneNode): boolean => !node.visible || (!!node.parentId && hiddenChain(byId.get(node.parentId)!))
   const batches = new Map<string, SceneNode[]>()
   if (options.instancing) for (const node of doc.nodes) {
     const transparent = node.material.transparent || (node.material.opacity ?? 1) < 1 || (node.material.transmission ?? 0) > 0
-    if (!hasSurface(node.kind) || node.kind === 'text' || dynamic.has(node.id) || node.interaction || transparent || hiddenChain(node)) continue
-    const key = `${geometryKey(node)}|${JSON.stringify(node.material)}`
+    if (!hasSurface(node.kind) || node.kind === 'text' || dynamic.has(node.id) || characters.has(node.id) || node.interaction || transparent || hiddenChain(node) || options.geometry?.(node)) continue
+    const key = `${geometryKey(node)}|${JSON.stringify(node.material)}|${variants.get(node.id)?.key ?? ''}`
     batches.set(key, [...batches.get(key) ?? [], node])
   }
   const batched = new Set([...batches.values()].filter((nodes) => nodes.length >= MIN_BATCH).flat().map((node) => node.id))
@@ -153,7 +171,9 @@ export function buildScene(doc: ThreeSceneDocument, resources: SceneResources, o
     holder.name = node.name
     holder.userData.nodeId = node.id
     if (hasSurface(node.kind) && !batched.has(node.id)) {
-      const mesh = new THREE.Mesh(resources.geometry(node), resources.material(node, doc.environment.wireframe))
+      const mesh = new THREE.Mesh(geometry(node), material(node))
+      const depth = variants.get(node.id)?.depth?.()
+      if (depth) mesh.customDepthMaterial = depth
       mesh.scale.fromArray(node.dimensions)
       mesh.castShadow = node.kind !== 'text' && !collected.has(node.id) && !(node.material.transparent && (node.material.opacity ?? 1) < 0.5)
       mesh.receiveShadow = true
@@ -189,7 +209,9 @@ export function buildScene(doc: ThreeSceneDocument, resources: SceneResources, o
   const batchMeshes: THREE.InstancedMesh[] = []
   for (const nodes of batches.values()) {
     if (nodes.length < MIN_BATCH) continue
-    const mesh = new THREE.InstancedMesh(resources.geometry(nodes[0]), resources.material(nodes[0], doc.environment.wireframe), nodes.length)
+    const mesh = new THREE.InstancedMesh(resources.geometry(nodes[0]), material(nodes[0]), nodes.length)
+    const depth = variants.get(nodes[0].id)?.depth?.()
+    if (depth) mesh.customDepthMaterial = depth
     mesh.castShadow = true
     mesh.receiveShadow = true
     mesh.userData.nodeIds = nodes.map((node) => node.id)
@@ -207,11 +229,20 @@ export function buildScene(doc: ThreeSceneDocument, resources: SceneResources, o
     for (const mesh of batchMeshes) { mesh.instanceMatrix.needsUpdate = true; mesh.computeBoundingBox(); mesh.computeBoundingSphere() }
   }
   sync()
+  const skins = new Map<string, CharacterSkin>()
+  if (options.skins) {
+    root.updateMatrixWorld(true)
+    for (const skin of options.skins(doc, holders)) {
+      skins.set(skin.rootId, skin)
+      for (const id of skin.hidden) { const mesh = meshes.get(id); if (mesh) { mesh.visible = false; mesh.castShadow = false } }
+      for (const mesh of skin.meshes) pickables.push(mesh)
+    }
+  }
   resources.prune()
   const shadowScheduler=createShadowScheduler([...lights].filter(([id])=>byId.get(id)?.light?.castShadow).map(([id,light])=>({id,light})),
-    doc.nodes.filter(node=>hasSurface(node.kind)&&node.kind!=='text'&&!collected.has(node.id)&&!(node.material.transparent&&(node.material.opacity??1)<0.5)).map(node=>({id:node.id,object:holders.get(node.id)!,dimensions:node.dimensions})))
-  return { root, holders, meshes, instances, lights, pickables, dynamic, sync,updateShadows:focus=>{root.updateWorldMatrix(true,true);shadowScheduler.update(focus)},
-    dispose() { shadowScheduler.dispose();for (const mesh of batchMeshes) mesh.dispose(); for (const resource of helperResources) resource.dispose(); for (const light of lights.values()) light.dispose() } }
+    doc.nodes.filter(node=>hasSurface(node.kind)&&node.kind!=='text'&&!collected.has(node.id)&&meshes.get(node.id)?.visible!==false&&!(node.material.transparent&&(node.material.opacity??1)<0.5)).map(node=>({id:node.id,object:holders.get(node.id)!,dimensions:node.dimensions})))
+  return { root, holders, meshes, instances, lights, pickables, dynamic, sync, skins,updateShadows:focus=>{root.updateWorldMatrix(true,true);shadowScheduler.update(focus)},
+    dispose() { shadowScheduler.dispose();for (const skin of skins.values()) { skin.object.removeFromParent(); skin.dispose() };for (const mesh of batchMeshes) mesh.dispose(); for (const resource of helperResources) resource.dispose(); for (const light of lights.values()) light.dispose() } }
 }
 
 export function pickNodeId(intersection: THREE.Intersection): string | null {

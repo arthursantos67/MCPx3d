@@ -16,17 +16,34 @@ import { createCreationStage,createCombatArenaScene,createPlatformCourseScene,cr
 import { creativeIdeas, inferSceneAction } from './sceneDirection.ts'
 import { serializeSceneDraft } from './sceneDraft.ts'
 import { conformTerrainPaths } from './sceneGrounding.ts'
-import { prefabLabels, prefabTypes, type PrefabType } from './scenePrefabs.ts'
-import { characterTypes } from './sceneCharacters.ts'
+import { prefabLabels, prefabTypes, type PrefabSpec, type PrefabType } from './scenePrefabs.ts'
+import { characterTypes, isCharacterType } from './sceneCharacters.ts'
 import { worldPrefabTypes } from './scenePrefabsWorld.ts'
-import { actionOptionLabels, ambienceLabels, attackLabels, avatarLabels, behaviorLabels, gradeLabels, musicLabels, objectiveLabels, powerLabels, soundLabels, weaponLabels, weatherLabels } from './sceneLabels.ts'
+import { actionOptionLabels, ageLabels, ambienceLabels, attackLabels, avatarLabels, beardLabels, behaviorLabels, buildLabels, emitterLabels, faunaLabels, gradeLabels, grassLabels, hairLabels, musicLabels, objectiveLabels, powerLabels, reactionLabels, routineLabels, soundLabels, styleLabels, weaponLabels, weatherLabels } from './sceneLabels.ts'
+import { beardStyles, characterAges, characterBuilds, characterStyles, defaultCharacterSpec, hairStyles, type CharacterSpec } from './sceneCharacterArchetype.ts'
+import { rebuildPrefab } from './sceneAssetEdit.ts'
 import { normalizeProjectName } from '../workspace/projectName.ts'
 import { editorShortcut, editorShortcutList, isTypingTarget, type EditorCommand } from './sceneKeyboard.ts'
-import { ambiencePresets, attackStyles, avatarKinds, behaviorTypes, commitScene, createEmptyScene, createNode, duplicateSubtree, gradePresets, hasSurface, INTERACTION_KEYS, interactionActions, MAX_MESSAGE, MAX_SCENE_BYTES, MAX_SCENE_NODES, musicPresets, nodeLabels, objectiveTypes, powerKinds, soundPresets, weaponKinds, weatherKinds,
+import { ambiencePresets, attackStyles, DEFAULT_MOTION, emitterPresets, faunaDensities, grassDensities, MAX_PREMISE, MAX_ROUTINE_STEPS, npcReactions, routineActivities, avatarKinds, behaviorTypes, commitScene, createEmptyScene, createNode, duplicateSubtree, gradePresets, hasSurface, INTERACTION_KEYS, interactionActions, MAX_MESSAGE, MAX_SCENE_BYTES, MAX_SCENE_NODES, musicPresets, nodeLabels, objectiveTypes, powerKinds, soundPresets, weaponKinds, weatherKinds,
   parseScene, redoScene, removeSubtree, SCENE_STORAGE_KEY, skyLabels, skyPresets, subtreeIds, textureKinds, textureLabels, undoScene, validateAnimation,validateScene,
-  type NodeKind, type SceneAnimation, type SceneBehavior, type SceneHistory, type SceneInteraction, type SceneKeyframe, type SceneNode, type ScenePlayer, type SceneSound, type ThreeSceneDocument, type Vector3Tuple } from './sceneDocument.ts'
+  type NodeKind, type SceneAnimation, type SceneBehavior, type SceneHistory, type SceneInteraction, type SceneKeyframe, type SceneNode, type ScenePlayer, type SceneEmitter, type SceneRoutineStep, type SceneSound, type ThreeSceneDocument, type Vector3Tuple } from './sceneDocument.ts'
 import './ThreeWorkspace.css'
 
+function RoutineEditor({ steps, places, onChange }: { steps: SceneRoutineStep[]; places: SceneNode[]; onChange: (steps: SceneRoutineStep[]) => void }) {
+  const set = (index: number, patch: Partial<SceneRoutineStep>) => onChange(steps.map((step, i) => i === index ? { ...step, ...patch } : step))
+  return <div className="three-routine" aria-label="Rotina do NPC">
+    <p className="three-hint">Rotina diária: com ciclo dia/noite segue as horas; sem ciclo, os períodos se alternam durante o jogo.</p>
+    {steps.map((step, index) => <div key={index} className="three-routine__step">
+      <SelectField label={`Período ${index + 1}`} value={step.activity} options={routineActivities.map((activity) => [activity, routineLabels[activity]])} onChange={(activity) => set(index, { activity })} />
+      <label className="three-field">Local<select value={step.target ?? ''} onChange={(event) => set(index, { target: event.target.value || null })}>
+        <option value="">Perto da base</option>{places.map((node) => <option key={node.id} value={node.id}>{node.name}</option>)}</select></label>
+      <div className="three-material"><NumericField key={`from-${index}-${step.from}`} label="Das (h)" value={step.from} min={0} max={24} step={0.5} onChange={(from) => set(index, { from })} />
+        <NumericField key={`to-${index}-${step.to}`} label="Até (h)" value={step.to} min={0} max={24} step={0.5} onChange={(to) => set(index, { to })} /></div>
+      <button type="button" onClick={() => onChange(steps.filter((_, i) => i !== index))}>Remover período</button>
+    </div>)}
+    <button type="button" disabled={steps.length >= MAX_ROUTINE_STEPS} onClick={() => onChange([...steps, { activity: 'wander', target: null, from: steps.at(-1)?.to ?? 8, to: Math.min(24, (steps.at(-1)?.to ?? 8) + 4) }])}>Adicionar período</button>
+  </div>
+}
 function loadDraft(): { document: ThreeSceneDocument; error: string | null; restored?: boolean } {
   try {
     const stored = localStorage.getItem(SCENE_STORAGE_KEY)
@@ -199,6 +216,10 @@ export default function ThreeWorkspace({ active, provider, ready, onBusyChange, 
     if (!selected) return
     if (!patch) { const { behavior: _removed, ...rest } = selected; return commit({ ...doc, nodes: doc.nodes.map((node) => node.id === selected.id ? rest : node) }) }
     return updateNode({ behavior: { ...(selected.behavior ?? { type: 'enemy', speed: 2.5, range: 10, damage: 20 }), ...patch } })
+  }
+  const rebuildAsset = (patch: Partial<PrefabSpec>) => {
+    if (!selected) return
+    try { commit(rebuildPrefab(doc, selected.id, patch)) } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
   }
   const updateSound = (patch: Partial<SceneSound> | null) => {
     if (!selected) return
@@ -425,7 +446,7 @@ export default function ThreeWorkspace({ active, provider, ready, onBusyChange, 
       <span aria-hidden="true">{kindIcons[node.kind] ?? '◇'}</span><span>{node.name}</span>
       <small>{!node.visible ? 'Oculto' : node.interaction ? 'Interativo' : nodeLabels[node.kind]}</small></button>}{visibleRows(node.id, depth + 1)}</div>
   })
-  const env = doc.environment, player = env.player!, audio = env.audio ?? { ambience: 'auto', music: 'auto', volume: 0.7 }
+  const env = doc.environment, player = env.player!, audio = env.audio ?? { ambience: 'auto', music: 'auto', volume: 0.7 }, motion = env.motion ?? DEFAULT_MOTION
   const material = selected?.material
 
   return <div className={`three-workspace three-workspace--${studioOpen ? 'studio' : 'create'}${playMode ? ' three-workspace--playing' : ''}`} hidden={!active}>
@@ -627,6 +648,22 @@ export default function ThreeWorkspace({ active, provider, ready, onBusyChange, 
               {selected.interaction.action === 'powerup' && <SelectField label="Poder" value={selected.interaction.power ?? 'speed'} options={powerKinds.map((power) => [power, powerLabels[power]])} onChange={(power) => updateInteraction({ power })} />}
               {['heal', 'powerup'].includes(selected.interaction.action) && <NumericField key={`amount-${selected.interaction.amount}`} label={selected.interaction.action === 'heal' ? 'Vida restaurada' : 'Duração (s)'} value={selected.interaction.amount ?? (selected.interaction.action === 'heal' ? 25 : 10)} min={0} max={1000} step={1} onChange={(amount) => updateInteraction({ amount })} />}
             </>}
+            {selected.asset && isCharacterType(selected.asset.type) && (() => {
+              const character = selected.asset.character ?? defaultCharacterSpec(), set = (patch: Partial<CharacterSpec>) => rebuildAsset({ character: { ...character, ...patch } })
+              return <>
+                <h3>Personagem</h3>
+                <div className="three-material"><SelectField label="Idade" value={character.age} options={characterAges.map((age) => [age, ageLabels[age]])} onChange={(age) => set({ age })} />
+                  <SelectField label="Porte" value={character.build} options={characterBuilds.map((build) => [build, buildLabels[build]])} onChange={(build) => set({ build })} /></div>
+                <div className="three-material"><SelectField label="Estilo" value={character.style} options={characterStyles.map((style) => [style, styleLabels[style]])} onChange={(style) => set({ style })} />
+                  <NumericField key={`cheight-${character.height}`} label="Altura (×)" value={character.height} min={0.85} max={1.15} step={0.01} onChange={(height) => set({ height })} /></div>
+                <div className="three-material"><SelectField label="Cabelo" value={character.hairStyle} options={hairStyles.map((hair) => [hair, hairLabels[hair]])} onChange={(hairStyle) => set({ hairStyle })} />
+                  <SelectField label="Barba" value={character.beard} options={beardStyles.map((beard) => [beard, beardLabels[beard]])} onChange={(beard) => set({ beard })} /></div>
+                <div className="three-material"><label className="three-color">Pele<input type="color" value={character.skin ?? '#d9a882'} onChange={(event) => set({ skin: event.target.value })} /></label>
+                  <label className="three-color">Cor do cabelo<input type="color" value={character.hair ?? '#4a3222'} onChange={(event) => set({ hair: event.target.value })} /></label></div>
+                <div className="three-material"><NumericField key={`cseed-${selected.asset.seed}`} label="Semente" value={selected.asset.seed} min={0} max={9999} step={1} onChange={(seed) => rebuildAsset({ seed: Math.round(seed) })} />
+                  <button type="button" onClick={() => rebuildAsset({ character: undefined })} disabled={!selected.asset.character}>Arquétipo padrão</button></div>
+              </>
+            })()}
             <h3>Comportamento (modo jogo)</h3>
             <SelectField label="Função" value={selected.behavior?.type ?? 'none'} options={[['none', 'Sem comportamento'], ...behaviorTypes.map((type): [string, string] => [type, behaviorLabels[type]])]}
               onChange={(type) => updateBehavior(type === 'none' ? null : { type: type as SceneBehavior['type'] })} />
@@ -640,7 +677,19 @@ export default function ThreeWorkspace({ active, provider, ready, onBusyChange, 
                 <SelectField label="Ataque" value={selected.behavior.attack ?? 'touch'} options={attackStyles.map((attack) => [attack, attackLabels[attack]])} onChange={(attack) => updateBehavior({ attack })} />
                 <label className="three-check"><input type="checkbox" checked={selected.behavior.flying ?? false} onChange={(event) => updateBehavior({ flying: event.target.checked })} /> Voa sobre o terreno</label>
               </>}
+              {selected.behavior.type === 'npc' && <>
+                <SelectField label="Reação" value={selected.behavior.reaction ?? 'greet'} options={npcReactions.map((reaction) => [reaction, reactionLabels[reaction]])} onChange={(reaction) => updateBehavior({ reaction })} />
+                <RoutineEditor steps={selected.behavior.routine ?? []} places={doc.nodes.filter((node) => node.id !== selected.id && !node.parentId)} onChange={(routine) => {
+                  const { routine: _old, ...rest } = selected.behavior!
+                  updateNode({ behavior: routine.length ? { ...rest, routine } : rest })
+                }} />
+              </>}
             </>}
+            <h3>Partículas</h3>
+            <SelectField label="Emissor" value={selected.emitter?.preset ?? 'none'} options={[['none', 'Sem partículas'], ...emitterPresets.map((preset): [string, string] => [preset, emitterLabels[preset]])]}
+              onChange={(preset) => { if (preset === 'none') { const { emitter: _removed, ...rest } = selected; commit({ ...doc, nodes: doc.nodes.map((node) => node.id === selected.id ? rest : node) }) } else updateNode({ emitter: { rate: 1, spread: 0.3, ...selected.emitter, preset: preset as SceneEmitter['preset'] } }) }} />
+            {selected.emitter && <div className="three-material"><NumericField key={`erate-${selected.emitter.rate}`} label="Intensidade" value={selected.emitter.rate} min={0.1} max={4} step={0.1} onChange={(rate) => updateNode({ emitter: { ...selected.emitter!, rate } })} />
+              <NumericField key={`espread-${selected.emitter.spread}`} label="Raio (m)" value={selected.emitter.spread} min={0} max={20} step={0.1} onChange={(spread) => updateNode({ emitter: { ...selected.emitter!, spread } })} /></div>}
             <h3>Som posicional</h3>
             <SelectField label="Som" value={selected.sound?.preset ?? 'none'} options={[['none', 'Sem som'], ...soundPresets.map((preset): [string, string] => [preset, soundLabels[preset]])]}
               onChange={(preset) => updateSound(preset === 'none' ? null : { preset: preset as SceneSound['preset'] })} />
@@ -669,6 +718,15 @@ export default function ThreeWorkspace({ active, provider, ready, onBusyChange, 
             <label className="three-check"><input type="checkbox" checked={env.wireframe} onChange={(event) => updateEnvironment({ wireframe: event.target.checked })} /> Wireframe</label>
             <div className="three-material"><SelectField label="Clima" value={env.weather ?? 'none'} options={weatherKinds.map((kind) => [kind, weatherLabels[kind]])} onChange={(weather) => updateEnvironment({ weather })} />
               <SelectField label="Gradação de cor" value={env.grade ?? 'none'} options={gradePresets.map((grade) => [grade, gradeLabels[grade]])} onChange={(grade) => updateEnvironment({ grade })} /></div>
+            <h3>Mundo em movimento</h3>
+            <NumericField key={`wind-${motion.wind}`} label="Vento (0 calmo · 2 tempestade)" value={motion.wind} min={0} max={2} step={0.1} onChange={(wind) => updateEnvironment({ motion: { ...motion, wind } })} />
+            <div className="three-material"><SelectField label="Grama" value={motion.grass} options={grassDensities.map((grass) => [grass, grassLabels[grass]])} onChange={(grass) => updateEnvironment({ motion: { ...motion, grass } })} />
+              <SelectField label="Fauna" value={motion.fauna} options={faunaDensities.map((fauna) => [fauna, faunaLabels[fauna]])} onChange={(fauna) => updateEnvironment({ motion: { ...motion, fauna } })} /></div>
+            <label className="three-check"><input type="checkbox" checked={!!env.dayCycle?.enabled} onChange={(event) => updateEnvironment({ dayCycle: { duration: 600, start: 9, ...env.dayCycle, enabled: event.target.checked } })} /> Ciclo dia/noite no jogo</label>
+            {env.dayCycle?.enabled && <div className="three-material"><NumericField key={`dlen-${env.dayCycle.duration}`} label="Duração do dia (s)" value={env.dayCycle.duration} min={60} max={7200} step={30} onChange={(duration) => updateEnvironment({ dayCycle: { ...env.dayCycle!, duration } })} />
+              <NumericField key={`dstart-${env.dayCycle.start}`} label="Hora inicial" value={env.dayCycle.start} min={0} max={24} step={0.5} onChange={(start) => updateEnvironment({ dayCycle: { ...env.dayCycle!, start } })} /></div>}
+            <label className="three-field">Premissa (cartão de título)<textarea key={`premise-${env.premise ?? ''}`} rows={2} maxLength={MAX_PREMISE} defaultValue={env.premise ?? ''} placeholder="Uma frase sobre a história da fase"
+              onBlur={(event) => { const premise = event.target.value.trim(); if (premise === (env.premise ?? '')) return; if (premise) updateEnvironment({ premise }); else { const { premise: _removed, ...rest } = env; commit({ ...doc, environment: rest }) } }} /></label>
             <h3>Som</h3>
             <div className="three-material"><SelectField label="Ambiência" value={audio.ambience} options={ambiencePresets.map((preset) => [preset, ambienceLabels[preset]])} onChange={(ambience) => updateEnvironment({ audio: { ...audio, ambience } })} />
               <SelectField label="Música" value={audio.music} options={musicPresets.map((preset) => [preset, musicLabels[preset]])} onChange={(music) => updateEnvironment({ audio: { ...audio, music } })} /></div>

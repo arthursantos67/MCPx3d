@@ -18,6 +18,8 @@ export interface AudioEngine {
   update(listener: AudioListenerPose, emitters: AudioEmitter[], seconds: number): void
   sfx(name: SfxName, position?: [number, number, number]): void
   setIntensity(level: 'calm' | 'danger'): void
+  /** Day cycle, 0 day → 1 night: day birds fall silent, outdoor places gain crickets and owls, music softens. */
+  setTimeOfDay(night: number): void
   setMuted(muted: boolean): void
   dispose(): void
 }
@@ -220,7 +222,7 @@ interface Ev { next: number; fire: (at: number) => number }
 interface Patch { out: GainNode; sources: AudioScheduledSourceNode[]; nodes: AudioNode[]; events: Ev[]; dead: boolean; spread: AudioNode[] }
 interface Live { patch: Patch; panner: PannerNode; preset: SoundPreset; level: number; position: [number, number, number] }
 type Recipe = (p: Patch) => void
-const LOOKAHEAD = 0.3, MAX_VOICES = 140, MAX_SFX = 24, MAX_EMITTERS = 12
+const LOOKAHEAD = 0.3, MAX_VOICES = 140, MAX_SFX = 24, MAX_EMITTERS = 12, MUSIC_LEVEL = 0.24
 const midiHz = (midi: number) => 440 * 2 ** ((midi - 69) / 12)
 const rnd = (min: number, max: number) => min + Math.random() * (max - min)
 const pick = <T,>(items: readonly T[]) => items[Math.floor(Math.random() * items.length)]
@@ -247,7 +249,7 @@ function audioEngine(ctx: AudioContext): AudioEngine {
     master.connect(compressor).connect(ctx.destination)
   } catch { master.connect(ctx.destination) }
   const bus = (level: number) => { const node = gain(level); node.connect(master); return node }
-  const ambienceBus = bus(0.5), musicBus = bus(0.24), worldBus = bus(0.75), sfxBus = bus(0.85)
+  const ambienceBus = bus(0.5), musicBus = bus(MUSIC_LEVEL), worldBus = bus(0.75), sfxBus = bus(0.85)
   let reverb: ConvolverNode | null = null
   try {
     reverb = ctx.createConvolver()
@@ -281,7 +283,7 @@ function audioEngine(ctx: AudioContext): AudioEngine {
     return buffer
   }
 
-  let voices = 0, disposed = false
+  let voices = 0, disposed = false, night = 0
   const finish = (source: AudioScheduledSourceNode, nodes: AudioNode[], end: number) => {
     voices++
     source.onended = () => { voices--; for (const node of nodes) node.disconnect() }
@@ -392,13 +394,14 @@ function audioEngine(ctx: AudioContext): AudioEngine {
     } })
   }
   const chirp = (dest: AudioNode, at: number) => {
+    if (Math.random() < night * 0.85) return
     const base = rnd(2200, 3800), up = Math.random() < 0.6, count = 2 + Math.floor(Math.random() * 4), gap = rnd(0.07, 0.14)
     for (let i = 0; i < count; i++) tone({ dest, at: at + i * gap, f: base * rnd(0.92, 1.08), to: base * (up ? rnd(1.2, 1.6) : rnd(0.6, 0.8)), glide: 0.07, a: 0.008, h: 0.02, r: 0.06, v: 0.05, vib: Math.random() < 0.3 ? [40, 120] : undefined })
   }
   const cricket = (dest: AudioNode, at: number, level = 0.025) => { const f = rnd(4200, 5200); for (let k = 0; k < 2 + Math.floor(Math.random() * 2); k++) pulses(dest, at + k * 0.45, 'sine', f, 4 + Math.floor(Math.random() * 4), 0.045, 0.03, level) }
   const frog = (dest: AudioNode, at: number) => { const f = rnd(90, 160); for (let k = 0; k < 1 + Math.floor(Math.random() * 2); k++) pulses(dest, at + k * 0.42, 'sawtooth', f, 7 + Math.floor(Math.random() * 4), 0.03, 0.026, 0.1, ['bandpass', rnd(450, 700), 2]) }
   const owl = (dest: AudioNode, at: number) => { for (const [delay, f] of [[0, 392], [0.55, 370], [0.85, 370]]) tone({ dest, at: at + delay, f, to: f * 0.94, a: 0.06, h: delay ? 0.12 : 0.28, r: 0.2, v: 0.03, filter: ['lowpass', 900] }) }
-  const gull = (dest: AudioNode, at: number) => { for (let k = 0; k < 2 + Math.floor(Math.random() * 2); k++) tone({ dest, at: at + k * 0.32, type: 'sawtooth', f: rnd(1250, 1450), to: rnd(850, 950), glide: 0.25, a: 0.02, h: 0.08, r: 0.15, v: 0.012, filter: ['lowpass', 2200], vib: [14, 30] }) }
+  const gull = (dest: AudioNode, at: number) => { if (Math.random() < night * 0.85) return; for (let k = 0; k < 2 + Math.floor(Math.random() * 2); k++) tone({ dest, at: at + k * 0.32, type: 'sawtooth', f: rnd(1250, 1450), to: rnd(850, 950), glide: 0.25, a: 0.02, h: 0.08, r: 0.15, v: 0.012, filter: ['lowpass', 2200], vib: [14, 30] }) }
   const drip = (dest: AudioNode, at: number, level = 0.07) => { const f = rnd(900, 1800); tone({ dest, at, f, to: f * 1.9, glide: 0.04, a: 0.002, r: 0.18, v: level }) }
   const crackle = (dest: AudioNode, at: number, level = 0.08) => burst({ dest, at, filter: ['bandpass', rnd(1500, 5000), 1], a: 0.001, r: rnd(0.008, 0.03), v: level * rnd(0.4, 1) })
   const bubble = (dest: AudioNode, at: number, level = 0.04, low = 250, high = 600) => { for (let k = 0; k < 1 + Math.floor(Math.random() * 4); k++) { const f = rnd(low, high); tone({ dest, at: at + k * rnd(0.03, 0.12), f, to: f * rnd(1.8, 2.6), glide: rnd(0.03, 0.08), a: 0.003, r: 0.06, v: level }) } }
@@ -432,6 +435,16 @@ function audioEngine(ctx: AudioContext): AudioEngine {
     dungeon: (p) => { rumble(p, 0.2, 70); const air = noiseLoop(p, 'pink', ['bandpass', 180, 1], 0.12); lfo(p, air.gain.gain, 0.04, 0.06); every(p, 1.5, 4.5, (d, t) => drip(d, t, 0.06)); every(p, 9, 22, (d, t) => clank(d, t, 0.03)); every(p, 0.08, 0.5, (d, t) => crackle(d, t, 0.012)) },
     rain: (p) => { noiseLoop(p, 'white', ['bandpass', 3500, 0.4], 0.2); noiseLoop(p, 'pink', ['lowpass', 600, 0.7], 0.2); every(p, 0.02, 0.09, (d, t) => burst({ dest: d, at: t, filter: ['bandpass', rnd(2500, 6000), 3], a: 0.001, r: 0.02, v: rnd(0.02, 0.05) })); every(p, 15, 40, thunder) },
     wind: (p) => { wind(p, 0.55, 450, 0.2); wind(p, 0.2, 220, 0.09); whistle(p, 0.05, 1000) },
+  }
+  // Outdoor ambiences gain a night layer under the day cycle; enclosed or already nocturnal places keep their own bed.
+  const nightLayers: Partial<Record<Ambience, Recipe>> = {
+    forest: (p) => { every(p, 0.3, 1.4, (d, t) => cricket(d, t)); every(p, 9, 22, owl) },
+    meadow: (p) => { every(p, 0.25, 1.2, (d, t) => cricket(d, t)); every(p, 14, 30, owl) },
+    beach: (p) => every(p, 0.6, 2.4, (d, t) => cricket(d, t, 0.015)),
+    desert: (p) => every(p, 1, 3.5, (d, t) => cricket(d, t, 0.014)),
+    snow: (p) => every(p, 16, 34, owl),
+    swamp: (p) => { every(p, 0.3, 1.1, (d, t) => cricket(d, t, 0.02)); every(p, 12, 26, owl) },
+    wind: (p) => { every(p, 1.2, 4, (d, t) => cricket(d, t, 0.012)); every(p, 18, 36, owl) },
   }
   const sounds: Record<SoundPreset, Recipe> = {
     fire: (p) => { const roar = noiseLoop(p, 'brown', ['lowpass', 500, 0.7], 0.35); lfo(p, roar.gain.gain, 0.9, 0.1); const flame = noiseLoop(p, 'pink', ['bandpass', 1100, 0.6], 0.12); lfo(p, flame.gain.gain, 1.7, 0.08); every(p, 0.03, 0.25, crackle) },
@@ -488,7 +501,8 @@ function audioEngine(ctx: AudioContext): AudioEngine {
   let playing = false, muted = false, volume = 0.7, timer: ReturnType<typeof setInterval> | null = null, idle: ReturnType<typeof setTimeout> | null = null
   let ambience: Patch | null = null, mood: Mood | null = null, intensity: 'calm' | 'danger' = 'calm', layer: GainNode | null = null, seed = 1, barIndex = 0, barStart = 0, sfxActive = 0
   let queue: { at: number; play: (at: number) => void }[] = []
-  const live = new Map<string, Live>(), lastSfx = new Map<SfxName, number>()
+  let nightPatch: Patch | null = null, outdoor: ResolvedAmbience = 'none'
+  const live =new Map<string, Live>(), lastSfx = new Map<SfxName, number>()
   const resume = () => { if (ctx.state !== 'running') void ctx.resume?.()?.catch(() => undefined) }
   const applyMaster = () => { const t = now(); master.gain.cancelScheduledValues(t); master.gain.setTargetAtTime(muted ? 0 : volume, t, 0.08) }
   const safe = <A extends unknown[]>(run: (...args: A) => void) => (...args: A) => { if (disposed) return; try { run(...args) } catch { return } }
@@ -506,7 +520,7 @@ function audioEngine(ctx: AudioContext): AudioEngine {
   const voice = (kind: Voice | Drum, midi: number, at: number, duration: number) => {
     const dest = layer, spec = moods[mood && intensity === 'danger' ? dangerOf[mood] : mood ?? 'calm']
     if (!dest) return
-    const f = midiHz(midi), drums = spec.drumLevel
+    const f = midiHz(midi), drums = spec.drumLevel * (1 - 0.5 * night)
     if (kind === 'pad') for (const detune of [-8, 8]) tone({ dest, at, type: 'sawtooth', f, detune, a: Math.min(0.6, duration * 0.4), h: duration * 0.6, r: 1.2, v: 0.03, filter: ['lowpass', spec.padTone, 0.6] })
     else if (kind === 'pluck') tone({ dest, at, type: 'triangle', f, a: 0.004, r: Math.min(0.9, duration * 2), v: 0.08, filter: ['lowpass', 3000] })
     else if (kind === 'bass') tone({ dest, at, type: 'triangle', f, a: 0.01, h: duration * 0.8, r: 0.12, v: 0.16, filter: ['lowpass', 700] })
@@ -541,6 +555,7 @@ function audioEngine(ctx: AudioContext): AudioEngine {
     if (!playing) return
     const t = now()
     if (ambience) runEvents(ambience, t)
+    if (nightPatch && night > 0.05) runEvents(nightPatch, t)
     for (const entry of live.values()) runEvents(entry.patch, t)
     if (!mood || !layer) return
     if (barStart < t - 0.2 && !queue.length) barStart = t + 0.05
@@ -557,7 +572,9 @@ function audioEngine(ctx: AudioContext): AudioEngine {
     if (timer) clearInterval(timer)
     timer = null
     if (ambience) release(ambience, fade)
-    ambience = null; queue = []
+    if (nightPatch) release(nightPatch, fade)
+    ambience = null; nightPatch = null; night = 0; queue = []
+    musicBus.gain.cancelScheduledValues(now()); musicBus.gain.setValueAtTime(MUSIC_LEVEL, now())
     releaseEmitters(fade)
     mood = null
     newLayer(0, fade)
@@ -574,6 +591,7 @@ function audioEngine(ctx: AudioContext): AudioEngine {
       const kind = resolveAmbience(doc), music = resolveMusic(doc)
       ambienceSend.gain.value = reverbSend[kind] ?? 0.15
       if (kind !== 'none') { ambience = patch(ambienceBus, 1, 2.5, true); ambiences[kind](ambience) }
+      outdoor = kind
       intensity = 'calm'; mood = music === 'none' ? null : music; seed = textHash(doc.name || 'forma'); barIndex = 0; barStart = now() + 0.2
       newLayer(1.5, 0.8)
       playing = true
@@ -640,6 +658,16 @@ function audioEngine(ctx: AudioContext): AudioEngine {
       if (!mood || !playing || before === (level === 'danger' ? dangerOf[mood] : mood)) return
       queue = []; barStart = now() + 0.08
       newLayer(level === 'danger' ? 0.6 : 2, level === 'danger' ? 1.2 : 2.5)
+    }),
+    setTimeOfDay: safe((value: number) => {
+      const level = clamp(value, 0, 1)
+      if (!playing || Math.abs(level - night) < 0.02) return
+      night = level
+      const t = now(), recipe = outdoor === 'none' ? undefined : nightLayers[outdoor]
+      musicBus.gain.setTargetAtTime(MUSIC_LEVEL * (1 - 0.3 * night), t, 1.5)
+      if (!recipe) return
+      if (!nightPatch && night > 0.05) { nightPatch = patch(ambienceBus, 0, 0, true); recipe(nightPatch) }
+      nightPatch?.out.gain.setTargetAtTime(Math.min(1, Math.max(0, (night - 0.15) / 0.6)), t, 2)
     }),
     setMuted: safe((value: boolean) => { muted = value; applyMaster(); if (!value) resume() }),
     dispose: safe(() => {

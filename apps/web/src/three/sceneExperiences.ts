@@ -142,6 +142,7 @@ export function createCryptScene():ThreeSceneDocument {
   for(const z of [-10,10]) nodes.push(node(`crypt-light${z}`,'light',[0,4,z],[0.2,0.2,0.2],{light:{type:'point',color:z<0?'#9c7bff':'#ffb36b',intensity:45,distance:20,angle:35,penumbra:0.5,castShadow:z>0}}))
   return scene('Cripta do Rei Esqueleto',rest(nodes,()=>'crypt-floor'),living(environment('Encontre a chave, abra o portão e alcance o portal','reachGoal',[0,0.02,19]),{
     sky:'night',fog:0.025,bloom:0.7,grade:'cinematic',weather:'dust',audio:{ambience:'dungeon',music:'mystery',volume:0.7},
+    premise:'O Rei Esqueleto guarda a saída da própria tumba; só a chave esquecida no altar abre o caminho até o portal.',motion:{wind:0,grass:'none',fauna:'none'},
     player:{spawn:[0,0.02,19],yaw:0,speed:4.5,jumpHeight:1.1,mode:'walk',allowFly:false,health:120,camera:'third',weapon:'sword',avatar:'knight'}}))
 }
 
@@ -158,10 +159,21 @@ export function createMarketTownScene():ThreeSceneDocument {
     'npc-guard':['Alto! Ah, é só uma visitante.','A muralha protege o mercado dos lobos da floresta.','Fique dentro dos portões quando anoitecer.'],
     'npc-sage':['As estrelas contam histórias antigas…','Dizem que o chafariz foi erguido por um mago da torre norte.'],
   }
-  nodes.push(asset('npc-mira','villager',[4,0,7],{rotation:[0,200,0],prefab:prefabOf('villager',1,7,{primary:'#b5543c'}),interaction:say(lines['npc-mira'])}))
-  nodes.push(asset('npc-guard','knight',[0,0,27],{rotation:[0,180,0],prefab:prefabOf('knight',1,2),interaction:say(lines['npc-guard'])}))
-  nodes.push(asset('npc-sage','wizard',[-15,0,-18],{rotation:[0,40,0],prefab:prefabOf('wizard',1,4),interaction:say(lines['npc-sage'])}))
-  nodes.push(asset('npc-buyer','villager',[-8,0,4],{rotation:[0,120,0],prefab:prefabOf('villager',1,12,{primary:'#3d6b8f'}),interaction:say(['Os tomates daqui são os melhores do reino!'])}))
+  const npc=(type:string,routine:unknown[],reaction='greet')=>({type:'npc',speed:type==='knight'?1.1:1,range:8,damage:0,routine,reaction})
+  const period=(activity:string,target:string|null,from:number,to:number)=>({activity,target,from,to})
+  nodes.push(asset('bench-a','bench',[0,0,5.6],{rotation:[0,180,0],prefab:prefabOf('bench',1,1)}),asset('bench-b','bench',[-5.6,0,0],{rotation:[0,90,0],prefab:prefabOf('bench',1,2)}))
+  nodes.push(asset('npc-mira','villager',[4,0,7],{rotation:[0,200,0],prefab:prefabOf('villager',1,7,{primary:'#b5543c',character:{age:'adult',build:'average',height:0.97,style:'stylized',skin:null,hair:'#8a3b22',hairStyle:'ponytail',beard:'none'}}),interaction:say(lines['npc-mira']),
+    behavior:npc('villager',[period('work','stall0',7,17),period('chat','fountain',17,21),period('sleep',null,21,7)])}))
+  nodes.push(asset('npc-guard','knight',[0,0,27],{rotation:[0,180,0],prefab:prefabOf('knight',1,2,{character:{age:'adult',build:'athletic',height:1.06,style:'stylized',skin:null,hair:null,hairStyle:'short',beard:'short'}}),interaction:say(lines['npc-guard']),
+    behavior:npc('knight',[period('patrol','tower33',6,20),period('guard',null,20,6)])}))
+  nodes.push(asset('npc-sage','wizard',[-15,0,-18],{rotation:[0,40,0],prefab:prefabOf('wizard',1,4,{character:{age:'elder',build:'slim',height:0.95,style:'stylized',skin:null,hair:null,hairStyle:'long',beard:'long'}}),interaction:say(lines['npc-sage']),
+    behavior:npc('wizard',[period('sit','bench-b',9,15),period('perform','well',15,19),period('wander',null,19,9)])}))
+  nodes.push(asset('npc-buyer','villager',[-8,0,4],{rotation:[0,120,0],prefab:prefabOf('villager',1,12,{primary:'#3d6b8f',character:{age:'young',build:'slim',height:1.02,style:'stylized',skin:'#9a6440',hair:'#1c1a1d',hairStyle:'braids',beard:'none'}}),interaction:say(['Os tomates daqui são os melhores do reino!']),
+    behavior:npc('villager',[period('chat','fountain',8,20),period('wander',null,20,8)],'flee')}))
+  nodes.push(asset('npc-elder','villager',[2.5,0,4.2],{rotation:[0,180,0],prefab:prefabOf('villager',1,31,{primary:'#6b5b45',character:{age:'elder',build:'heavy',height:0.92,style:'stylized',skin:'#f2c7a5',hair:'#d9d6d0',hairStyle:'short',beard:'long'}}),interaction:say(['No meu tempo, o chafariz jorrava vinho nas festas!']),
+    behavior:npc('villager',[period('sit','bench-a',7,19),period('chat','fountain',19,22)],'alert')}))
+  nodes.push(asset('npc-child','villager',[-3,0,-6],{rotation:[0,30,0],prefab:prefabOf('villager',1,44,{primary:'#d68910',character:{age:'child',build:'slim',height:1,style:'stylized',skin:'#c98d66',hair:'#5a3a22',hairStyle:'bun',beard:'none'}}),interaction:say(['Você viu o lobo? Eu vi um lobo! Bem grandão!']),
+    behavior:npc('villager',[period('chat','fountain',8,18),period('wander',null,18,8)],'flee')}))
   nodes.push(asset('barn-cart','cart',[24,0,-14],{rotation:[0,30,0],prefab:prefabOf('cart',1,3)}),asset('hay-a','haystack',[27,0,-19],{prefab:prefabOf('haystack',1,1)}),asset('hay-b','haystack',[21,0,-21],{prefab:prefabOf('haystack',1,2)}))
   nodes.push(asset('lost-key','key',[25,0,-23],{prefab:prefabOf('key',1,3,{text:'Chave do baú'})}),asset('reward-chest','chest',[0,0,-16],{prefab:prefabOf('chest',1,6,{text:'Chave do baú'})}))
   for(const x of [-24,-12,12,24]) nodes.push(asset(`wall-n${x}`,'castleWall',[x,0,-33],{prefab:prefabOf('castleWall',1,Math.abs(x))}))
@@ -171,6 +183,8 @@ export function createMarketTownScene():ThreeSceneDocument {
   nodes.push(asset('well','well',[-24,0,10],{prefab:prefabOf('well',1,2)}))
   return scene('Mercado de Valemar',rest(nodes,()=>'square'),living(environment('Converse com Mira, encontre a chave e abra o baú','explore',[0,0.02,22]),{
     sky:'day',sunElevation:34,sunAzimuth:120,fog:0.004,bloom:0.2,grade:'warm',weather:'leaves',audio:{ambience:'meadow',music:'festive',volume:0.7},
+    premise:'Valemar vive da feira: as barracas abrem de manhã, a praça se enche ao entardecer e Mira perdeu a chave do baú da família.',
+    motion:{wind:0.7,grass:'auto',fauna:'auto'},dayCycle:{enabled:true,duration:480,start:8},
     player:{spawn:[0,0.02,22],yaw:0,speed:4.5,jumpHeight:1.1,mode:'walk',allowFly:false,health:100,camera:'third',weapon:'none',avatar:'explorer'}}))
 }
 
@@ -189,6 +203,7 @@ export function createSkyIslandsScene():ThreeSceneDocument {
   nodes.push(asset('orb','powerOrb',[7,2,-16-travel],{prefab:prefabOf('powerOrb',1,1,{text:'jump'})}),asset('flag','checkpoint',[-2,2,-16-travel+2],{prefab:prefabOf('checkpoint',0.8,2,{interactive:false,lit:false})}))
   nodes.push(asset('finish','portal',[0,8,-28-travel],{prefab:prefabOf('portal',1,3)}))
   return scene('Ilhas Celestes',nodes,living(environment('Salte entre as ilhas e alcance o portal','reachGoal',[0,0.02,15]),{
+    premise:'Ilhas arrancadas do chão flutuam sobre as nuvens; o último portal para casa espera na ilha mais alta.',motion:{wind:1,grass:'auto',fauna:'auto'},
     sky:'day',sunElevation:42,bloom:0.35,grade:'vivid',weather:'none',audio:{ambience:'wind',music:'adventure',volume:0.7},
     player:{spawn:[0,0.02,15],yaw:0,speed:5,jumpHeight:1.3,mode:'walk',allowFly:false,health:100,camera:'third',weapon:'none',avatar:'explorer'}}))
 }
@@ -205,6 +220,7 @@ export function createWastelandSurvivalScene():ThreeSceneDocument {
   return scene('Ermo dos Saqueadores',rest(nodes,()=>'dunes'),living(environment('Sobreviva por 90 segundos','reachGoal',[0,0.02,4]),{
     objective:{type:'survive',title:'Sobreviva por 90 segundos às ondas de saqueadores',timeLimit:90},
     sky:'sunset',sunElevation:9,sunAzimuth:250,fog:0.008,bloom:0.4,grade:'cinematic',weather:'dust',audio:{ambience:'desert',music:'combat',volume:0.7},
+    premise:'Seu robô ficou sem bateria no meio do ermo, e os saqueadores sentiram o cheiro de sucata. Aguente até o resgate.',motion:{wind:1.3,grass:'none',fauna:'auto'},
     player:{spawn:[0,0.02,4],yaw:0,speed:4.8,jumpHeight:1.1,mode:'walk',allowFly:false,health:150,camera:'third',weapon:'blaster',avatar:'robot'}}))
 }
 

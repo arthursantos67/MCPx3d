@@ -323,3 +323,5 @@
   .three-prompt__suggestions { gap: 4px; }
   .three-prompt__suggestions button { font-size: 9px; }
 }
+.three-routine { display: grid; gap: 8px; }
+.three-routine__step { display: grid; gap: 6px; padding: 8px; border: 1px solid var(--line, #d5dde3); border-radius: 8px; }
