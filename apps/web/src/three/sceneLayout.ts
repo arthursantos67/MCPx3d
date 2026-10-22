@@ -82,8 +82,9 @@ function layoutContext(doc: ThreeSceneDocument, movable?: Set<string>) {
     for (const node of members.get(unit) ?? []) boxes.get(node.id)?.translate(delta)
   }
   const declaresGround = (unit: string) => (members.get(unit) ?? []).some((node) => node.overlapWith.some((id) => { const other = byId.get(id); return !!other && isGround(other) }))
-  /** Non-collidable decoration (fireflies, particles, hovering effects) may float by design. */
+  /** Non-collidable decoration (fireflies, particles, hovering effects), flying enemies and floating pickups may float by design. */
   const decorative = (unit: string) => (members.get(unit) ?? []).filter((node) => hasSurface(node.kind)).every((node) => node.collidable === false)
+    || (members.get(unit) ?? []).some((node) => !!node.behavior?.flying || ['heal', 'powerup'].includes(node.interaction?.action ?? ''))
   const rest = (unit: string, force = false) => {
     if (fixed.has(unit) || removed.has(unit)) return false
     if (!force && (declaresGround(unit) || decorative(unit))) return false

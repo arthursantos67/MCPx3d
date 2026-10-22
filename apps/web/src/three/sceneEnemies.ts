@@ -2,6 +2,9 @@ import * as THREE from 'three'
 import type { PlayerBox, PlayerCollider } from './scenePlayer.ts'
 
 export type EnemyMode = 'patrol' | 'chase' | 'search' | 'return'
+export type EnemyAttack = 'touch' | 'melee' | 'ranged' | 'charge'
+/** Attack cycle: windup before a melee strike or charge, dash while charging; pause/talk are NPC states. */
+export type EnemyAction = 'idle' | 'windup' | 'dash' | 'pause' | 'talk'
 /** All positions and headings are world-space; the renderer converts them to a parent-local pose. */
 export interface EnemyMotion {
   base: THREE.Vector3
@@ -15,13 +18,25 @@ export interface EnemyMotion {
   perceptionIn: number
   seesPlayer: boolean
   turnSide: number
+  action: EnemyAction
+  actionTime: number
+  cooldown: number
+  dash: THREE.Vector3
+  clock: number
+  /** Flyers: current offset from their base altitude while rising toward the player. */
+  lift: number
 }
-export interface EnemySettings { speed: number; range: number; radius?: number; height?: number; eyeHeight?: number }
-export interface EnemyStep { moved: boolean; seesPlayer: boolean; mode: EnemyMode }
+/** `attack` defaults to touch (contact damage stays with the caller); NPCs wander and face the player, never chase or attack. */
+export interface EnemySettings { speed: number; range: number; radius?: number; height?: number; eyeHeight?: number; attack?: EnemyAttack; flying?: boolean; npc?: boolean }
+/** `attack` is set only on the step an attack is released; shots carry a unit `aim` direction starting at `muzzle`. */
+export interface EnemyStep { moved: boolean; seesPlayer: boolean; mode: EnemyMode; attack?: 'shoot' | 'melee' | 'charge'; aim?: THREE.Vector3; muzzle?: THREE.Vector3 }
+export const ENEMY_COMBAT = { meleeReach: 1.3, meleeHit: 2, meleeWindup: 0.35, meleeCooldown: 1, chargeRange: 6, chargeWindup: 0.4, chargeTime: 0.6, chargeSpeed: 2.4, chargeCooldown: 1.6,
+  shotCooldown: 1.6, preferred: 0.6, npcNear: 4, flyBob: 0.15, flyRise: 3, flyDrop: 1 } as const
 
 export function createEnemyMotion(base: THREE.Vector3, ground: number, phase = 0): EnemyMotion {
   return { base: base.clone(), position: base.clone(), hover: Math.max(0, base.y - ground), heading: 0,
-    phase, mode: 'patrol', lastSeen: null, memory: 0, perceptionIn: 0, seesPlayer: false, turnSide: Math.sin(phase) < 0 ? -1 : 1 }
+    phase, mode: 'patrol', lastSeen: null, memory: 0, perceptionIn: 0, seesPlayer: false, turnSide: Math.sin(phase) < 0 ? -1 : 1,
+    action: 'idle', actionTime: 0, cooldown: 0, dash: new THREE.Vector3(), clock: 0, lift: 0 }
 }
 
 function boxRayDistance(ray: THREE.Ray, box: PlayerBox): number | null {
@@ -90,24 +105,115 @@ function moveCandidate(position: THREE.Vector3, direction: THREE.Vector3, distan
   return candidate
 }
 
+/** Flyers need no ground support, but their capsule (feet at the body origin) is still blocked by colliders. */
+function flyCandidate(position: THREE.Vector3, direction: THREE.Vector3, distance: number, collider: PlayerCollider, radius: number, height: number): THREE.Vector3 | null {
+  const steps = Math.max(1, Math.ceil(distance / Math.min(0.16, radius * 0.5))), candidate = position.clone()
+  for (let i = 0; i < steps; i++) {
+    candidate.addScaledVector(direction, distance / steps)
+    if (!capsuleClear(candidate, collider, radius, height)) return null
+  }
+  return candidate
+}
+
+const UP = new THREE.Vector3(0, 1, 0), ANGLES = [0, 0.55, 1.05, 1.55, -0.55, -1.05, -1.55, 2.15]
+const facing = (from: THREE.Vector3, to: THREE.Vector3, fallback: number) => Math.hypot(to.x - from.x, to.z - from.z) > 1e-4 ? Math.atan2(to.x - from.x, to.z - from.z) : fallback
+const hash = (value: number) => { const x = Math.sin(value * 12.9898) * 43758.5453; return x - Math.floor(x) }
+
 /** One deterministic bounded update. The supplied collider must exclude enemy bodies themselves. */
 export function stepEnemyMotion(state: EnemyMotion, settings: EnemySettings, playerFeet: THREE.Vector3, collider: PlayerCollider, seconds: number, active = true): EnemyStep {
   const dt = Math.max(0, Math.min(0.1, Number.isFinite(seconds) ? seconds : 0))
   if (!active || !dt) return { moved: false, seesPlayer: state.seesPlayer, mode: state.mode }
-  const radius = Math.max(0.15, Math.min(1.5, settings.radius ?? 0.43)), height = Math.max(radius * 2, settings.height ?? 1.1)
+  const radius = Math.max(0.15, Math.min(1.5, settings.radius ?? 0.43)), height = Math.max(radius * 2, settings.height ?? 1.1), flying = !!settings.flying
+  const attack = settings.attack ?? 'touch', speed = Math.max(0, settings.speed)
+  state.clock += dt
+  state.cooldown = Math.max(0, state.cooldown - dt)
+  let moved = false
+  const travel = (wish: THREE.Vector3, distance: number, angles: readonly number[], turn = true) => {
+    for (const angle of angles) {
+      const direction = wish.clone().applyAxisAngle(UP, angle * state.turnSide)
+      const candidate = flying ? flyCandidate(state.position, direction, distance, collider, radius, height) : moveCandidate(state.position, direction, distance, state.hover, collider, radius, height)
+      if (!candidate || Math.hypot(candidate.x - state.base.x, candidate.z - state.base.z) > settings.range * 1.8 + 1) continue
+      state.position.copy(candidate)
+      if (turn) state.heading = Math.atan2(direction.x, direction.z)
+      moved = true
+      return true
+    }
+    return false
+  }
+  const step = (extra: Partial<EnemyStep> = {}): EnemyStep => ({ moved, seesPlayer: state.seesPlayer, mode: state.mode, ...extra })
+  if (flying) {
+    // Hover at the base altitude with a slight bob; chasing flyers rise or dip toward the player's chest within limits.
+    const wanted = state.mode === 'chase' && !settings.npc ? Math.min(ENEMY_COMBAT.flyRise, Math.max(-ENEMY_COMBAT.flyDrop, playerFeet.y + 1.2 - state.base.y)) : 0
+    state.lift += Math.sign(wanted - state.lift) * Math.min(Math.abs(wanted - state.lift), Math.max(1, speed * 0.5) * dt)
+    const y = state.base.y + state.lift + ENEMY_COMBAT.flyBob * Math.sin(state.clock * 2.2 + state.phase)
+    if (Math.abs(y - state.position.y) > 1e-6 && capsuleClear(state.position.clone().setY(y), collider, radius, height)) { state.position.y = y; moved = true }
+  }
+  if (settings.npc) {
+    // NPCs wander between deterministic points around their base, pause, and stop to face a nearby player.
+    state.mode = 'patrol'
+    state.seesPlayer = Math.hypot(playerFeet.x - state.position.x, playerFeet.z - state.position.z) <= ENEMY_COMBAT.npcNear && Math.abs(playerFeet.y - (state.position.y - state.hover)) < 3
+    if (state.seesPlayer) { state.action = 'talk'; state.heading = facing(state.position, playerFeet, state.heading); return step() }
+    if (state.action === 'talk') state.action = 'idle'
+    if (state.action === 'pause') { state.actionTime -= dt; if (state.actionTime > 0) return step(); state.action = 'idle' }
+    const reach = Math.min(4, settings.range) * (0.35 + 0.65 * hash(state.phase))
+    const wish = state.base.clone().add(new THREE.Vector3(Math.cos(state.phase) * reach, 0, Math.sin(state.phase) * reach)).sub(state.position).setY(0), remaining = wish.length()
+    const rest = (seconds: number) => { state.phase += 2.39996; state.action = 'pause'; state.actionTime = seconds; return step() }
+    if (remaining < 0.2 || !speed) return rest(1.5 + hash(state.phase + 1))
+    return travel(wish.divideScalar(remaining), Math.min(remaining, Math.min(1.5, speed * 0.5) * dt), ANGLES.slice(0, 4)) ? step() : rest(1)
+  }
   state.perceptionIn -= dt
   if (state.perceptionIn <= 0) {
     state.perceptionIn = 0.15
-    const eyes = state.position.clone().add(new THREE.Vector3(0, (settings.eyeHeight ?? Math.max(0.55, height * 0.7)) - state.hover, 0))
+    const eyes = flying ? state.position.clone().add(new THREE.Vector3(0, Math.min(settings.eyeHeight ?? height * 0.5, height * 0.5), 0))
+      : state.position.clone().add(new THREE.Vector3(0, (settings.eyeHeight ?? Math.max(0.55, height * 0.7)) - state.hover, 0))
     const target = playerFeet.clone().add(new THREE.Vector3(0, 1.4, 0))
-    const inLeash = state.base.distanceTo(playerFeet) <= settings.range * 1.7
+    const inLeash = state.base.distanceTo(playerFeet) <= settings.range * 1.7 + (flying ? state.hover + ENEMY_COMBAT.flyRise : 0)
     state.seesPlayer = inLeash && eyes.distanceTo(target) <= settings.range && enemyCanSee(eyes, target, collider)
     if (state.seesPlayer) state.lastSeen = playerFeet.clone()
   }
   if (state.seesPlayer) { state.memory = 4; state.mode = 'chase' }
   else { state.memory = Math.max(0, state.memory - dt); state.mode = state.lastSeen && state.memory > 0 ? 'search' : state.mode === 'patrol' ? 'patrol' : 'return' }
+  const flat = Math.hypot(playerFeet.x - state.position.x, playerFeet.z - state.position.z)
+  if (state.action === 'dash') {
+    state.actionTime -= dt
+    if (state.actionTime <= 0 || !travel(state.dash, speed * ENEMY_COMBAT.chargeSpeed * dt, [0])) { state.action = 'idle'; state.cooldown = ENEMY_COMBAT.chargeCooldown }
+    return step()
+  }
+  if (state.action === 'windup') {
+    state.actionTime -= dt
+    if (attack === 'melee') state.heading = facing(state.position, playerFeet, state.heading)
+    if (state.actionTime > 0) return step()
+    state.action = 'idle'
+    if (attack === 'charge') {
+      state.action = 'dash'; state.actionTime = ENEMY_COMBAT.chargeTime
+      state.dash.set(Math.sin(state.heading), 0, Math.cos(state.heading))
+      return step({ attack: 'charge' })
+    }
+    state.cooldown = ENEMY_COMBAT.meleeCooldown
+    const vertical = Math.abs(playerFeet.y - (state.position.y - (flying ? 0 : state.hover)))
+    return flat <= ENEMY_COMBAT.meleeHit && vertical < 2 ? step({ attack: 'melee' }) : step()
+  }
+  const ready = state.mode === 'chase' && state.seesPlayer && !state.cooldown
+  if (ready && ((attack === 'melee' && flat <= ENEMY_COMBAT.meleeReach + 0.1) || (attack === 'charge' && speed > 0 && flat <= ENEMY_COMBAT.chargeRange))) {
+    state.action = 'windup'; state.actionTime = attack === 'melee' ? ENEMY_COMBAT.meleeWindup : ENEMY_COMBAT.chargeWindup
+    state.heading = facing(state.position, playerFeet, state.heading)
+    return step()
+  }
+  let shot: Partial<EnemyStep> = {}
+  if (ready && attack === 'ranged') {
+    state.cooldown = ENEMY_COMBAT.shotCooldown
+    const muzzle = state.position.clone().add(new THREE.Vector3(0, flying ? height * 0.5 : Math.max(0.4, height * 0.6) - state.hover, 0))
+    shot = { attack: 'shoot', muzzle, aim: playerFeet.clone().add(new THREE.Vector3(0, 1.1, 0)).sub(muzzle).normalize() }
+  }
+  const ranged = attack === 'ranged' && state.mode === 'chase'
   let target: THREE.Vector3
-  if (state.mode === 'chase' || state.mode === 'search') target = state.lastSeen!.clone()
+  if (ranged) {
+    // Keep a preferred distance from the last seen position and strafe sideways around it.
+    const seen = state.lastSeen!, away = state.position.clone().sub(seen).setY(0), distance = away.length()
+    if (distance > 1e-4) away.divideScalar(distance); else away.set(Math.sin(state.heading + Math.PI), 0, Math.cos(state.heading + Math.PI))
+    const side = new THREE.Vector3(-away.z, 0, away.x).multiplyScalar(Math.sin(state.clock * 1.3 + state.phase) >= 0 ? 1.2 : -1.2)
+    target = seen.clone().addScaledVector(away, settings.range * ENEMY_COMBAT.preferred).add(side)
+  } else if (state.mode === 'chase' || state.mode === 'search') target = state.lastSeen!.clone()
   else if (state.mode === 'return') {
     target = state.base.clone()
     if (Math.hypot(target.x - state.position.x, target.z - state.position.z) < 0.35) { state.mode = 'patrol'; state.lastSeen = null }
@@ -117,18 +223,11 @@ export function stepEnemyMotion(state: EnemyMotion, settings: EnemySettings, pla
     if (Math.hypot(target.x - state.position.x, target.z - state.position.z) < 0.4) state.phase += Math.PI * 0.6
   }
   const wish = target.sub(state.position).setY(0), remaining = wish.length()
-  if (remaining < (state.mode === 'chase' ? 0.65 : 0.12) || settings.speed <= 0) return { moved: false, seesPlayer: state.seesPlayer, mode: state.mode }
+  const stop = state.mode !== 'chase' ? 0.12 : ranged ? 0.25 : attack === 'melee' ? ENEMY_COMBAT.meleeReach - 0.2 : 0.65
+  if (ranged) state.heading = facing(state.position, state.lastSeen!, state.heading)
+  if (remaining < stop || speed <= 0) return step(shot)
   wish.divideScalar(remaining)
-  const distance = Math.min(remaining, Math.max(0, settings.speed) * dt)
   // A stable preferred side prevents alternating left/right at the same obstacle every frame.
-  const angles = [0, 0.55, 1.05, 1.55, -0.55, -1.05, -1.55, 2.15]
-  for (const angle of angles) {
-    const direction = wish.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), angle * state.turnSide)
-    const candidate = moveCandidate(state.position, direction, distance, state.hover, collider, radius, height)
-    if (!candidate || Math.hypot(candidate.x - state.base.x, candidate.z - state.base.z) > settings.range * 1.8 + 1) continue
-    state.position.copy(candidate)
-    state.heading = Math.atan2(direction.x, direction.z)
-    return { moved: true, seesPlayer: state.seesPlayer, mode: state.mode }
-  }
-  return { moved: false, seesPlayer: state.seesPlayer, mode: state.mode }
+  travel(wish, Math.min(attack === 'melee' && state.mode === 'chase' ? remaining - stop + 0.05 : remaining, speed * (ranged ? 0.75 : 1) * dt), ANGLES, !ranged)
+  return step(shot)
 }

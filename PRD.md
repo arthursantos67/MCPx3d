@@ -100,6 +100,19 @@ Elevar o gerador ao padrão atual de ferramentas Three.js: cenas mais detalhadas
 - Sistemas de jogo: câmera em primeira/terceira pessoa (V) com avatar, vida e dano, inimigos que patrulham e perseguem (derrotados com pulo ou golpe), obstáculos, pontos de controle, portal de chegada, objetivos com cronômetro e tela de vitória, escadas escaláveis e início sempre em terra firme. Terreno aplainado sob construções, estradas que seguem o relevo e dispersão que evita água, estradas e construções.
 - Fora desta entrega: física de corpos rígidos, áudio, personagens/animação esquelética, combate com armas/projéteis, multiplayer, exportação HTML jogável, LOD/streaming e persistência de assets no servidor. Colisão de objetos móveis é aproximada por caixas. Detalhes em [threejs-studio.md](docs/threejs-studio.md).
 
+### Mundos vivos Three.js — 2026-10-22 (versão 0.5)
+
+Objetivo: cenas com padrão de jogo de mercado — personagens animados, combate, progresso, som e atmosfera — mantendo dados declarativos, validação e inspeção. Detalhes em [docs/threejs-living-worlds.md](docs/threejs-living-worlds.md); próximos marcos em [ROADMAP.md](ROADMAP.md).
+
+- Contrato `ThreeSceneDocument` 1.3 (importa 1.0–1.3): `environment.audio` (ambiência/música automáticas ou explícitas, volume), `weather`, `grade`, `player.weapon`/`avatar`, objetivo `survive`; `node.sound` posicional; comportamentos `npc`/`launcher` com `health`, `attack`, `flying` e `delay`; interações `heal`/`powerup`/`dialogue` com `item`, `requires`, `amount` e `power`. Campos ausentes recebem padrões neutros.
+- 13 personagens procedurais com rig (NPCs, inimigos humanoides, fauna, aranha, drone, golem e dragão-chefe) e animação procedural; avatar de terceira pessoa com os mesmos modelos. Peças rígidas; pele contínua fica para a 0.6.
+- Armas (mãos, espada, blaster, arco, cajado) com projéteis varridos contra a colisão; inimigos com corpo a corpo, investida, tiro à distância, voo e resistência; NPCs que passeiam e conversam; inventário, chaves e bloqueios; curas e poderes temporários; plataformas móveis que carregam o jogador; lançadores; ondas por atraso; pontuação.
+- Áudio sintetizado localmente (Web Audio): 16 ambiências, música generativa em 9 humores com intensidade dinâmica, 23 efeitos e fontes posicionais. Nenhum arquivo de áudio externo. Inicia somente no modo jogo e pode ser silenciado (M).
+- Clima por partículas em GPU, gradação de cor com vinheta/granulação e água animada.
+- 25 objetos novos de mundo e jogabilidade, verificados sem interseções nas variantes. Quatro exemplos novos (cripta, mercado, ilhas celestes, sobrevivência) passam por inspeção e auditoria.
+- A IA recebe direção criativa (premissa, marco, pontos de interesse com densidade de objetos, paleta, som e ciclo de jogo), 19 temas novos e revisões de jogabilidade (itens exigidos sem fonte, vilas sem habitantes, tiro sem arma, sobrevivência sem ondas). Isso não mede a qualidade de um modelo real.
+- Fora desta entrega: pele contínua/GLB com esqueleto, física de corpos rígidos, navmesh, veículos, eventos encadeados, exportação HTML jogável, multiplayer e medição com provedor real.
+
 ## Operação e limites
 
 `npm run dev` inicia API e frontend. CadQuery faz parte da instalação padrão; nenhum servidor MCP é necessário nesse modo. A IA local WebLLM continua disponível para navegadores com WebGPU, com alternativa de endpoint compatível com OpenAI configurado pelo usuário.

@@ -114,7 +114,7 @@ O pipeline de terreno usa camadas PBR em metros para biomas naturais, e os camin
 
 ## Próximos trabalhos
 
-Seleção múltipla e biblioteca de materiais; física de corpos rígidos opcional, áudio espacial e eventos encadeados; terceira pessoa e personagens com animação esquelética; pipeline de assets com persistência IndexedDB/servidor, mapas físicos de GLB importado e compressão; LOD e streaming; exportação HTML jogável autocontida. Antes de elevar limites, medir FPS, memória, draw calls e tempo de inspeção por hardware. Não há benchmark que sustente desempenho constante ou zero erros em qualquer pedido livre; os testes de navegador usam SwiftShader, sem GPU.
+A [revisão de mundos vivos (0.5)](threejs-living-worlds.md) entregou áudio, personagens com rig, combate à distância, inventário, NPCs, plataformas móveis, clima e gradação, com o contrato 1.3. Restam, conforme o [roteiro](../ROADMAP.md): seleção múltipla e biblioteca de materiais; física de corpos rígidos opcional, áudio espacial e eventos encadeados; terceira pessoa e personagens com animação esquelética; pipeline de assets com persistência IndexedDB/servidor, mapas físicos de GLB importado e compressão; LOD e streaming; exportação HTML jogável autocontida. Antes de elevar limites, medir FPS, memória, draw calls e tempo de inspeção por hardware. Não há benchmark que sustente desempenho constante ou zero erros em qualquer pedido livre; os testes de navegador usam SwiftShader, sem GPU.
 
 ## Referências
 

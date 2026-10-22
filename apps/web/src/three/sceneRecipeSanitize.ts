@@ -1,5 +1,5 @@
-import { animationKinds, behaviorTypes, interactionActions, interactionTriggers, INTERACTION_KEYS, objectiveTypes, MAX_SCENE_LIGHTS, MAX_SCENE_NODES, nodeLabels, skyPresets, subtreeIds, textureKinds,
-  type SceneNode } from './sceneDocument.ts'
+import { ambiencePresets, animationKinds, attackStyles, avatarKinds, behaviorTypes, gradePresets, interactionActions, interactionTriggers, INTERACTION_KEYS, MAX_MESSAGE, musicPresets, objectiveTypes, MAX_SCENE_LIGHTS, MAX_SCENE_NODES, nodeLabels,
+  powerKinds, skyPresets, soundPresets, subtreeIds, textureKinds, weaponKinds, weatherKinds, type SceneNode } from './sceneDocument.ts'
 import { estimateTriangles, MAX_SCENE_TRIANGLES, polyhedronVariants, terrainStyles, terrainBiomes } from './sceneGeometrySpec.ts'
 
 type Json = Record<string, unknown>
@@ -106,9 +106,28 @@ function interaction(log: SanitizeLog, value: unknown): Json | null {
   const trigger = choice(log, value.trigger, interactionTriggers, 'click', 'Gatilho de interação')
   let key = typeof value.key === 'string' ? value.key.toLowerCase() : ''
   if (trigger === 'key' && !INTERACTION_KEYS.test(key)) { log.note(`A tecla “${key}” é reservada ao jogador; o gatilho passou para mirar + E.`); key = '' }
+  const label = (input: unknown) => typeof input === 'string' ? input.trim().slice(0, 40) : ''
+  const action = choice(log, value.action, interactionActions, 'message', 'Ação de interação'), item = label(value.item), requires = label(value.requires)
+  const power = powerKinds.includes(value.power as typeof powerKinds[number]) ? value.power : null
   return { trigger: trigger === 'key' && !key ? 'click' : trigger, key: trigger === 'key' ? key : '', radius: number(log, value.radius, 0.5, 50, 3, 'Alcance da interação'),
-    action: choice(log, value.action, interactionActions, 'message', 'Ação de interação'), targetId: typeof value.targetId === 'string' ? value.targetId : null,
-    message: typeof value.message === 'string' ? value.message.slice(0, 160) : '' }
+    action, targetId: typeof value.targetId === 'string' ? value.targetId : null,
+    message: typeof value.message === 'string' ? value.message.slice(0, MAX_MESSAGE) : '',
+    ...(item ? { item } : {}), ...(requires ? { requires } : {}),
+    ...(typeof value.amount === 'number' && Number.isFinite(value.amount) && value.amount > 0 ? { amount: number(log, value.amount, 0, 1000, 0, 'Quantidade da interação') } : {}),
+    ...(power && action === 'powerup' ? { power } : {}) }
+}
+function sound(log: SanitizeLog, value: unknown): Json | null {
+  if (!isRecord(value)) return null
+  return { preset: choice(log, value.preset, soundPresets, 'wind', 'Som'), volume: number(log, value.volume, 0, 1, 0.6, 'Volume do som'), radius: number(log, value.radius, 1, 200, 12, 'Alcance do som') }
+}
+function behavior(log: SanitizeLog, value: unknown): Json | null {
+  if (!isRecord(value)) return null
+  const type = choice(log, value.type, behaviorTypes, 'hazard', 'Comportamento')
+  return { type, speed: number(log, value.speed, 0, 12, 2.5, 'Velocidade do inimigo'), range: number(log, value.range, 0.5, 80, 10, 'Alcance do comportamento'), damage: number(log, value.damage, 0, 1000, 20, 'Dano'),
+    ...(typeof value.health === 'number' && Number.isFinite(value.health) ? { health: number(log, value.health, 1, 100, 1, 'Resistência', true) } : {}),
+    ...(attackStyles.includes(value.attack as typeof attackStyles[number]) ? { attack: value.attack } : {}),
+    ...(typeof value.flying === 'boolean' ? { flying: value.flying } : {}),
+    ...(typeof value.delay === 'number' && Number.isFinite(value.delay) && value.delay > 0 ? { delay: number(log, value.delay, 0, 3600, 0, 'Atraso de aparição') } : {}) }
 }
 
 /** Brings one recipe template inside the contract. Returns null only when it cannot describe an object. */
@@ -137,8 +156,7 @@ export function sanitizeTemplate(log: SanitizeLog, value: unknown, index: number
     scale, dimensions,
     geometry: shape, color: surface.color, metalness: surface.metalness, roughness: surface.roughness, surface, animation: animation(log, value.animation), interaction: interaction(log, value.interaction),
     light, collidable: typeof value.collidable === 'boolean' ? value.collidable : true,
-    behavior: isRecord(value.behavior) ? { type: choice(log, value.behavior.type, behaviorTypes, 'hazard', 'Comportamento'), speed: number(log, value.behavior.speed, 0, 12, 2.5, 'Velocidade do inimigo'),
-      range: number(log, value.behavior.range, 0.5, 80, 10, 'Alcance do comportamento'), damage: number(log, value.behavior.damage, 0, 1000, 20, 'Dano') } : null,
+    behavior: behavior(log, value.behavior), sound: sound(log, value.sound),
     overlapWith: Array.isArray(value.overlapWith) ? value.overlapWith.filter((id): id is string => typeof id === 'string').slice(0, 32) : [],
     repeat: { mode: choice(log, repeat.mode, ['linear', 'radial', 'grid', 'scatter'] as const, 'linear', 'Padrão de repetição'),
       count: number(log, repeat.count, 1, 400, 1, 'Cópias', true), offset: vector(log, repeat.offset, -1000, 1000, [0, 0, 0], 'Offset de repetição'),
@@ -161,7 +179,11 @@ export function sanitizeEnvironment(log: SanitizeLog, value: unknown): Json {
     player: { spawn: Array.isArray(player.spawn) ? vector(log, player.spawn, -10000, 10000, [0, 0, 0], 'Início do jogador') : null, yaw: angle(log, player.yaw, 'Direção do jogador'),
       speed: number(log, player.speed, 1, 20, 4.5, 'Velocidade do jogador'), jumpHeight: number(log, player.jumpHeight, 0, 5, 1.1, 'Altura do pulo'),
       mode: choice(log, player.mode, ['walk', 'fly'] as const, 'walk', 'Modo do jogador'), allowFly: typeof player.allowFly === 'boolean' ? player.allowFly : true,
-      health: number(log, player.health, 1, 1000, 100, 'Vida do jogador'), camera: choice(log, player.camera, ['first', 'third'] as const, 'first', 'Câmera do jogador') },
+      health: number(log, player.health, 1, 1000, 100, 'Vida do jogador'), camera: choice(log, player.camera, ['first', 'third'] as const, 'first', 'Câmera do jogador'),
+      weapon: choice(log, player.weapon, weaponKinds, 'none', 'Arma do jogador'), avatar: choice(log, player.avatar, avatarKinds, 'explorer', 'Avatar do jogador') },
+    audio: isRecord(value.audio) ? { ambience: choice(log, value.audio.ambience, ambiencePresets, 'auto', 'Ambiência'), music: choice(log, value.audio.music, musicPresets, 'auto', 'Música'),
+      volume: number(log, value.audio.volume, 0, 1, 0.7, 'Volume geral') } : { ambience: 'auto', music: 'auto', volume: 0.7 },
+    weather: choice(log, value.weather, weatherKinds, 'none', 'Clima'), grade: choice(log, value.grade, gradePresets, 'none', 'Gradação de cor'),
     ...(isRecord(value.objective) ? { objective: { type: choice(log, value.objective.type, objectiveTypes, 'explore', 'Objetivo'), title: typeof value.objective.title === 'string' ? value.objective.title.slice(0, 160) : '',
       timeLimit: number(log, value.objective.timeLimit, 0, 3600, 0, 'Tempo limite') } } : {}) }
 }
@@ -187,7 +209,7 @@ export function repairReferences(log: SanitizeLog, existing: SceneNode[], added:
     const action = node.interaction
     if (!action) continue
     if (action.targetId !== null && !byId.has(action.targetId)) { log.adjust('Alvos de interação inexistentes'); action.targetId = null }
-    if (action.action === 'collect') action.targetId = null
+    if (['collect', 'heal', 'powerup'].includes(action.action)) action.targetId = null
     const target = action.targetId ?? node.id
     if (action.action === 'toggleAnimation' && ![...subtreeIds(all, target)].some((id) => byId.get(id)!.animation.kind !== 'none')) { action.action = 'message'; log.note(`A interação de “${node.name}” não tinha animação para alternar e virou mensagem.`) }
   }

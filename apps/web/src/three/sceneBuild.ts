@@ -84,6 +84,7 @@ export function createResources(anisotropy = 8): SceneResources {
         parameters.normalScale = new THREE.Vector2(normalStrength, normalStrength)
       }
       const material = new THREE.MeshPhysicalMaterial(parameters)
+      if (kind === 'water' && !textureImage && !layered) material.userData.water = true
       finishTerrain?.(material)
       materials.set(key, material)
       return material
@@ -130,7 +131,7 @@ export function buildScene(doc: ThreeSceneDocument, resources: SceneResources, o
   const pickables: THREE.Object3D[] = [], helperResources: { dispose: () => void }[] = [], byId = new Map(doc.nodes.map((node) => [node.id, node]))
   const dynamic = new Set<string>()
   for (const node of doc.nodes) {
-    if (node.animation.kind !== 'none' || node.interaction?.action === 'collect' || node.behavior?.type === 'enemy') for (const id of subtreeIds(doc.nodes, node.id)) dynamic.add(id)
+    if (node.animation.kind !== 'none' || ['collect', 'heal', 'powerup'].includes(node.interaction?.action ?? '') || node.behavior?.type === 'enemy' || node.behavior?.type === 'npc') for (const id of subtreeIds(doc.nodes, node.id)) dynamic.add(id)
     if (node.interaction?.action === 'toggleVisibility') for (const id of subtreeIds(doc.nodes, node.interaction.targetId ?? node.id)) dynamic.add(id)
   }
   const hiddenChain = (node: SceneNode): boolean => !node.visible || (!!node.parentId && hiddenChain(byId.get(node.parentId)!))

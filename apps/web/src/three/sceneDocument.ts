@@ -25,14 +25,38 @@ export const defaultAnimation = (): SceneAnimation => ({ kind: 'none', axis: 'y'
 export interface SceneLight { type: 'point' | 'spot'; color: string; intensity: number; distance: number; angle: number; penumbra: number; castShadow: boolean }
 export const defaultLight = (): SceneLight => ({ type: 'point', color: '#ffd9a8', intensity: 12, distance: 18, angle: 35, penumbra: 0.4, castShadow: false })
 export const interactionTriggers = ['click', 'proximity', 'key'] as const
-export const interactionActions = ['toggleAnimation', 'toggleVisibility', 'collect', 'message'] as const
-export interface SceneInteraction { trigger: typeof interactionTriggers[number]; key: string; radius: number; action: typeof interactionActions[number]; targetId: string | null; message: string }
+export const interactionActions = ['toggleAnimation', 'toggleVisibility', 'collect', 'message', 'heal', 'powerup', 'dialogue'] as const
+export const powerKinds = ['speed', 'jump', 'shield', 'strength'] as const
+export type PowerKind = typeof powerKinds[number]
+/**
+ * `item` names what a collect adds to the inventory (keys, relics); `requires` blocks the action until the inventory holds that item.
+ * `amount` is the health restored by heal or the seconds of a powerup; dialogue messages separate lines with `|`.
+ */
+export interface SceneInteraction { trigger: typeof interactionTriggers[number]; key: string; radius: number; action: typeof interactionActions[number]; targetId: string | null; message: string
+  item?: string; requires?: string; amount?: number; power?: PowerKind }
 export const INTERACTION_KEYS = /^[0-9bgjklmnoprtuxyz]$/
-export const behaviorTypes = ['enemy', 'hazard', 'checkpoint', 'goal', 'climbable'] as const
-/** Game behavior: enemies patrol/chase and hurt on touch, hazards hurt, checkpoints set the respawn, goals finish the level, climbable surfaces work as ladders. */
-export interface SceneBehavior { type: typeof behaviorTypes[number]; speed: number; range: number; damage: number }
-export const objectiveTypes = ['explore', 'collectAll', 'reachGoal', 'defeatEnemies'] as const
+export const MAX_MESSAGE = 600
+export const behaviorTypes = ['enemy', 'hazard', 'checkpoint', 'goal', 'climbable', 'npc', 'launcher'] as const
+export const attackStyles = ['touch', 'melee', 'ranged', 'charge'] as const
+/**
+ * Game behavior: enemies patrol/chase and hurt, hazards hurt, checkpoints set the respawn, goals finish the level, climbable surfaces work as ladders,
+ * NPCs wander and talk, launchers throw the player `range` metres up. Enemies take `health` hits, may fly, attack in a style and appear after `delay` seconds.
+ */
+export interface SceneBehavior { type: typeof behaviorTypes[number]; speed: number; range: number; damage: number
+  health?: number; attack?: typeof attackStyles[number]; flying?: boolean; delay?: number }
+export const objectiveTypes = ['explore', 'collectAll', 'reachGoal', 'defeatEnemies', 'survive'] as const
 export interface SceneObjective { type: typeof objectiveTypes[number]; title: string; timeLimit: number }
+export const soundPresets = ['fire', 'water', 'waves', 'wind', 'machine', 'magic', 'birds', 'insects', 'drip', 'engine', 'chimes', 'alarm', 'portal', 'crowd'] as const
+export type SoundPreset = typeof soundPresets[number]
+/** Positional loop synthesized locally around a node; no audio files or URLs. */
+export interface SceneSound { preset: SoundPreset; volume: number; radius: number }
+export const ambiencePresets = ['auto', 'none', 'forest', 'meadow', 'beach', 'desert', 'snow', 'swamp', 'cave', 'city', 'night', 'space', 'underwater', 'volcanic', 'scifi', 'dungeon', 'rain', 'wind'] as const
+export const musicPresets = ['auto', 'none', 'calm', 'adventure', 'mystery', 'tension', 'combat', 'space', 'festive', 'spooky', 'heroic'] as const
+export interface SceneAudio { ambience: typeof ambiencePresets[number]; music: typeof musicPresets[number]; volume: number }
+export const weatherKinds = ['none', 'rain', 'snow', 'embers', 'fireflies', 'dust', 'bubbles', 'leaves', 'ash'] as const
+export const gradePresets = ['none', 'warm', 'cool', 'cinematic', 'vivid', 'noir', 'dreamy', 'retro'] as const
+export const weaponKinds = ['none', 'sword', 'blaster', 'bow', 'staff'] as const
+export const avatarKinds = ['explorer', 'knight', 'wizard', 'astronaut', 'robot'] as const
 export interface SceneNode {
   /** Compiler source for a terrain-conforming route, retained across terrain edits and JSON exports. */
   path?: {supportId:string;points:[number,number][];width:number}
@@ -57,21 +81,26 @@ export interface SceneNode {
   light?: SceneLight
   interaction?: SceneInteraction
   behavior?: SceneBehavior
+  sound?: SceneSound
   /** Authored purpose, used by terrain preparation and presentation without guessing from localized names. */
   role?: 'structure' | 'vegetation' | 'prop' | 'path'
 }
 export const skyPresets = ['studio', 'day', 'sunset', 'night', 'overcast', 'space'] as const
 export type SkyPreset = typeof skyPresets[number]
 export const skyLabels: Record<SkyPreset, string> = { studio: 'Estúdio', day: 'Dia claro', sunset: 'Pôr do sol', night: 'Noite', overcast: 'Nublado', space: 'Espaço' }
-export interface ScenePlayer { spawn: Vector3Tuple | null; yaw: number; speed: number; jumpHeight: number; mode: 'walk' | 'fly'; allowFly?: boolean; health?: number; camera?: 'first' | 'third' }
+export interface ScenePlayer { spawn: Vector3Tuple | null; yaw: number; speed: number; jumpHeight: number; mode: 'walk' | 'fly'; allowFly?: boolean; health?: number; camera?: 'first' | 'third'
+  weapon?: typeof weaponKinds[number]; avatar?: typeof avatarKinds[number] }
 export interface SceneEnvironment {
   background: string; exposure: number; lightIntensity: number; grid: boolean; wireframe: boolean; shadows?: boolean; reflections?: boolean
   sky?: SkyPreset; sunElevation?: number; sunAzimuth?: number; fog?: number; bloom?: number; ambientOcclusion?: boolean; toneMapping?: 'aces' | 'agx' | 'neutral'
   player?: ScenePlayer
   objective?: SceneObjective
+  audio?: SceneAudio
+  weather?: typeof weatherKinds[number]
+  grade?: typeof gradePresets[number]
 }
 export interface ThreeSceneDocument {
-  version: '1.2'
+  version: '1.3'
   name: string
   timeline: { duration: number }
   nodes: SceneNode[]
@@ -166,11 +195,26 @@ export function validateInteraction(value: unknown): SceneInteraction | undefine
   const key = trigger === 'key' ? String(interaction.key ?? '').toLowerCase() : ''
   if (trigger === 'key' && !INTERACTION_KEYS.test(key)) throw new Error('Tecla de interação: use 0–9 ou B, G, J–P, R, T, U, X, Y, Z (WASD, E, F, C, Q, H, V e espaço controlam o jogador).')
   const message = interaction.message ?? ''
-  if (typeof message !== 'string' || message.length > 160) throw new Error('Mensagem de interação: até 160 caracteres.')
+  if (typeof message !== 'string' || message.length > MAX_MESSAGE) throw new Error(`Mensagem de interação: até ${MAX_MESSAGE} caracteres.`)
   const targetId = interaction.targetId ?? null
   if (targetId !== null && typeof targetId !== 'string') throw new Error('Alvo de interação inválido.')
-  return { trigger, key, radius: number(interaction.radius ?? 3, 'Alcance da interação', 0.5, 50),
-    action: choice(interaction.action, interactionActions, 'message', 'Ação de interação desconhecida.'), targetId, message }
+  const label = (value: unknown, field: string) => { if (typeof value !== 'string' || value.length > 40) throw new Error(`${field}: texto de até 40 caracteres.`); return value.trim() }
+  const item = interaction.item == null ? '' : label(interaction.item, 'Item'), requires = interaction.requires == null ? '' : label(interaction.requires, 'Item necessário')
+  const action = choice(interaction.action, interactionActions, 'message', 'Ação de interação desconhecida.')
+  return { trigger, key, radius: number(interaction.radius ?? 3, 'Alcance da interação', 0.5, 50), action, targetId, message,
+    ...(item ? { item } : {}), ...(requires ? { requires } : {}),
+    ...(interaction.amount == null ? {} : { amount: number(interaction.amount, 'Quantidade da interação', 0, 1000) }),
+    ...(interaction.power == null ? {} : { power: choice(interaction.power, powerKinds, 'speed', 'Poder desconhecido.') }) }
+}
+
+export function validateSound(value: unknown): SceneSound | undefined {
+  if (value === undefined || value === null) return undefined
+  const sound = record(value)
+  return { preset: choice(sound.preset, soundPresets, 'wind', 'Som desconhecido.'), volume: number(sound.volume ?? 0.6, 'Volume do som', 0, 1), radius: number(sound.radius ?? 12, 'Alcance do som', 1, 200) }
+}
+export function validateAudio(value: unknown): SceneAudio {
+  const audio = record(value)
+  return { ambience: choice(audio.ambience, ambiencePresets, 'auto', 'Ambiência desconhecida.'), music: choice(audio.music, musicPresets, 'auto', 'Música desconhecida.'), volume: number(audio.volume ?? 0.7, 'Volume geral', 0, 1) }
 }
 
 export function validatePlayer(value: unknown): ScenePlayer {
@@ -179,7 +223,8 @@ export function validatePlayer(value: unknown): ScenePlayer {
     yaw: number(player.yaw ?? 0, 'Direção inicial', -360, 360), speed: number(player.speed ?? 4.5, 'Velocidade do jogador', 1, 20),
     jumpHeight: number(player.jumpHeight ?? 1.1, 'Altura do pulo', 0, 5), mode: choice(player.mode, ['walk', 'fly'] as const, 'walk', 'Modo do jogador inválido.'),
     allowFly: player.allowFly === undefined ? true : boolean(player.allowFly, 'Voo permitido'), health: number(player.health ?? 100, 'Vida do jogador', 1, 1000),
-    camera: choice(player.camera, ['first', 'third'] as const, 'first', 'Câmera do jogador inválida.') }
+    camera: choice(player.camera, ['first', 'third'] as const, 'first', 'Câmera do jogador inválida.'),
+    weapon: choice(player.weapon, weaponKinds, 'none', 'Arma do jogador desconhecida.'), avatar: choice(player.avatar, avatarKinds, 'explorer', 'Avatar do jogador desconhecido.') }
 }
 
 export function validateObjective(value: unknown): SceneObjective {
@@ -192,7 +237,11 @@ export function validateBehavior(value: unknown): SceneBehavior | undefined {
   if (value === undefined || value === null) return undefined
   const behavior = record(value)
   return { type: choice(behavior.type, behaviorTypes, 'hazard', 'Comportamento desconhecido.'), speed: number(behavior.speed ?? 2.5, 'Velocidade do inimigo', 0, 12),
-    range: number(behavior.range ?? 10, 'Alcance do comportamento', 0.5, 80), damage: number(behavior.damage ?? 20, 'Dano', 0, 1000) }
+    range: number(behavior.range ?? 10, 'Alcance do comportamento', 0.5, 80), damage: number(behavior.damage ?? 20, 'Dano', 0, 1000),
+    ...(behavior.health == null ? {} : { health: Math.round(number(behavior.health, 'Resistência', 1, 100)) }),
+    ...(behavior.attack == null ? {} : { attack: choice(behavior.attack, attackStyles, 'touch', 'Estilo de ataque desconhecido.') }),
+    ...(behavior.flying == null ? {} : { flying: boolean(behavior.flying, 'Voo do inimigo') }),
+    ...(behavior.delay == null ? {} : { delay: number(behavior.delay, 'Atraso de aparição', 0, 3600) }) }
 }
 
 export function validateEnvironment(value: unknown): SceneEnvironment {
@@ -204,7 +253,9 @@ export function validateEnvironment(value: unknown): SceneEnvironment {
     sunAzimuth: number(env.sunAzimuth ?? 35, 'Azimute do sol', 0, 360), fog: number(env.fog ?? 0, 'Neblina', 0, 0.2), bloom: number(env.bloom ?? 0, 'Brilho (bloom)', 0, 3),
     ambientOcclusion: env.ambientOcclusion === undefined ? false : boolean(env.ambientOcclusion, 'Oclusão ambiente'),
     toneMapping: choice(env.toneMapping, ['aces', 'agx', 'neutral'] as const, 'aces', 'Mapeamento tonal desconhecido.'), player: validatePlayer(env.player),
-    ...(env.objective === undefined || env.objective === null ? {} : { objective: validateObjective(env.objective) }) }
+    ...(env.objective === undefined || env.objective === null ? {} : { objective: validateObjective(env.objective) }),
+    audio: env.audio === undefined || env.audio === null ? { ambience: 'auto', music: 'auto', volume: 0.7 } : validateAudio(env.audio),
+    weather: choice(env.weather ?? undefined, weatherKinds, 'none', 'Clima desconhecido.'), grade: choice(env.grade ?? undefined, gradePresets, 'none', 'Gradação de cor desconhecida.') }
 }
 
 /** Returns only declared data; never deserializes Three.js objects or executable code. */
@@ -218,13 +269,13 @@ function validatePath(value:unknown):NonNullable<SceneNode['path']> {
 }
 export function validateScene(value: unknown): ThreeSceneDocument {
   const doc = record(value)
-  if (doc.version !== '1.0' && doc.version !== '1.1' && doc.version !== '1.2') throw new Error('Versão de projeto incompatível. Esperado ThreeSceneDocument 1.0–1.2.')
+  if (!['1.0', '1.1', '1.2', '1.3'].includes(doc.version as string)) throw new Error('Versão de projeto incompatível. Esperado ThreeSceneDocument 1.0–1.3.')
   if (!Array.isArray(doc.nodes) || doc.nodes.length > MAX_SCENE_NODES) throw new Error(`A cena aceita até ${MAX_SCENE_NODES} nós.`)
   const nodes: SceneNode[] = doc.nodes.map((value) => {
     const node = record(value), material = record(node.material)
     if (typeof node.kind !== 'string' || !Object.hasOwn(nodeLabels, node.kind)) throw new Error('Tipo de objeto desconhecido.')
     if (node.parentId !== null && typeof node.parentId !== 'string') throw new Error('Referência de grupo inválida.')
-    const interaction = validateInteraction(node.interaction), behavior = validateBehavior(node.behavior)
+    const interaction = validateInteraction(node.interaction), behavior = validateBehavior(node.behavior), sound = validateSound(node.sound)
     return {
       id: text(node.id, 'ID'), parentId: node.parentId as string | null, name: text(node.name, 'Nome'), kind: node.kind as NodeKind,
       visible: boolean(node.visible, 'Visibilidade'), position: vector(node.position, 'Posição', -10000, 10000),
@@ -238,6 +289,7 @@ export function validateScene(value: unknown): ThreeSceneDocument {
       ...(node.kind === 'light' ? { light: validateLight(node.light) } : {}),
       ...(interaction ? { interaction } : {}),
       ...(behavior ? { behavior } : {}),
+      ...(sound ? { sound } : {}),
       ...(node.asset == null ? {} : { asset: (() => { if (node.kind !== 'group') throw new Error('Asset deve pertencer a um grupo.'); const spec = prefabSpec(node.asset); if (!spec) throw new Error('Asset desconhecido.'); return spec })() }),
       ...(node.assetPart == null ? {} : {assetPart:text(node.assetPart,'Peça gerada')}),
       ...(node.path == null ? {} : {path:validatePath(node.path)}),
@@ -254,7 +306,7 @@ export function validateScene(value: unknown): ThreeSceneDocument {
       const target = node.interaction.targetId === null ? node : byId.get(node.interaction.targetId)
       if (!target) throw new Error('Interação referencia um alvo inexistente.')
       if (node.interaction.action === 'toggleAnimation' && ![...subtreeIds(nodes, target.id)].some((key) => byId.get(key)!.animation.kind !== 'none')) throw new Error(`Interação de “${node.name}” alterna uma animação inexistente.`)
-      if (node.interaction.action === 'collect' && node.interaction.targetId !== null) throw new Error('Coletáveis coletam o próprio objeto.')
+      if (['collect', 'heal', 'powerup'].includes(node.interaction.action) && node.interaction.targetId !== null) throw new Error('Coletáveis, curas e poderes consomem o próprio objeto.')
     }
     const seen = new Set([node.id])
     let parentId = node.parentId
@@ -267,7 +319,7 @@ export function validateScene(value: unknown): ThreeSceneDocument {
       parentId = parent.parentId
     }
   }
-  return migrateHouseFloorSurfaces({ version: '1.2', name: text(doc.name, 'Nome do projeto'), nodes,
+  return migrateHouseFloorSurfaces({ version: '1.3', name: text(doc.name, 'Nome do projeto'), nodes,
     timeline: { duration: doc.timeline === undefined ? 20 : number(record(doc.timeline).duration, 'Duração da timeline', 1, 120) },
     environment: validateEnvironment(doc.environment) })
 }
@@ -284,7 +336,7 @@ export function createNode(kind: NodeKind, parentId: string | null = null): Scen
     ...(kind === 'light' ? { light: defaultLight() } : {}) }
 }
 export function createEmptyScene(): ThreeSceneDocument {
-  return { version: '1.2', name: 'Nova cena', nodes: [], timeline: { duration: 20 },
+  return { version: '1.3', name: 'Nova cena', nodes: [], timeline: { duration: 20 },
     environment: validateEnvironment({ background: '#e8eef3', exposure: 1.2, lightIntensity: 1.5, grid: true, wireframe: false, shadows: true, reflections: true }) }
 }
 export function subtreeIds(nodes: SceneNode[], id: string): Set<string> {

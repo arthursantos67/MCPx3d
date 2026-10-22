@@ -1,14 +1,18 @@
 import { buildVegetation } from './sceneVegetation.ts'
 import { buildHouse, type BuildingSpec } from './sceneArchitecture.ts'
-import type { NodeKind, SceneAnimation, SceneBehavior, SceneInteraction, SceneLight, SceneMaterial, Vector3Tuple } from './sceneDocument.ts'
+import type { NodeKind, SceneAnimation, SceneBehavior, SceneInteraction, SceneLight, SceneMaterial, SceneSound, Vector3Tuple } from './sceneDocument.ts'
 import { hashNoise, type GeometrySpec } from './sceneGeometrySpec.ts'
+import { buildCharacter, characterBehavior, characterLabels, characterTypes, isCharacterType } from './sceneCharacters.ts'
+import { buildWorldPrefab, worldNaturalPrefabs, worldPrefabBehavior, worldPrefabLabels, worldPrefabTypes, worldStructurePrefabs, type WorldPrefabType } from './scenePrefabsWorld.ts'
 
-export const prefabTypes = ['house', 'tree', 'pine', 'bush', 'rock', 'lampPost', 'torch', 'fence', 'bench', 'table', 'chair', 'barrel', 'crate', 'well', 'tower', 'campfire', 'sign',
+const basePrefabTypes = ['house', 'tree', 'pine', 'bush', 'rock', 'lampPost', 'torch', 'fence', 'bench', 'table', 'chair', 'barrel', 'crate', 'well', 'tower', 'campfire', 'sign',
   'bridge', 'windmill', 'coin', 'gem', 'flowerBed', 'ladder', 'enemy', 'sentinel', 'crawler', 'spikes', 'checkpoint', 'portal',
   'planet', 'asteroid', 'spaceship', 'satellite', 'spaceStation', 'rocket', 'mushroom', 'log', 'stump', 'palm', 'cactus', 'coral', 'seaweed', 'crystalCluster',
   'column', 'tent', 'car', 'boat', 'skyscraper'] as const
+export const prefabTypes = [...basePrefabTypes, ...characterTypes, ...worldPrefabTypes] as const
 export type PrefabType = typeof prefabTypes[number]
-export const prefabLabels: Record<PrefabType, string> = { house: 'Casa', tree: 'Árvore', pine: 'Pinheiro', bush: 'Arbusto', rock: 'Rochas', lampPost: 'Poste de luz', torch: 'Tocha',
+const isWorldPrefab = (type: string): type is WorldPrefabType => (worldPrefabTypes as readonly string[]).includes(type)
+export const prefabLabels: Record<PrefabType, string> = { ...characterLabels, ...worldPrefabLabels, house: 'Casa', tree: 'Árvore', pine: 'Pinheiro', bush: 'Arbusto', rock: 'Rochas', lampPost: 'Poste de luz', torch: 'Tocha',
   fence: 'Cerca (4 m)', bench: 'Banco', table: 'Mesa', chair: 'Cadeira', barrel: 'Barril', crate: 'Caixote', well: 'Poço', tower: 'Torre de vigia', campfire: 'Fogueira',
   sign: 'Placa', bridge: 'Ponte (6 m)', windmill: 'Moinho', coin: 'Moeda coletável', gem: 'Cristal coletável', flowerBed: 'Canteiro', ladder: 'Escada de mão (4 m)',
   enemy: 'Inimigo (slime)', sentinel:'Sentinela robótica',crawler:'Criatura rastejante', spikes: 'Espinhos', checkpoint: 'Ponto de controle', portal: 'Portal de chegada',
@@ -16,18 +20,22 @@ export const prefabLabels: Record<PrefabType, string> = { house: 'Casa', tree: '
   log: 'Tronco caído', stump: 'Toco', palm: 'Palmeira', cactus: 'Cacto', coral: 'Coral', seaweed: 'Algas', crystalCluster: 'Formação de cristais', column: 'Coluna',
   tent: 'Barraca', car: 'Carro', boat: 'Barco', skyscraper: 'Arranha-céu' }
 /** Natural or small props rest on uneven ground as they are; structures flatten the terrain under their footprint. */
-export const naturalPrefabs: readonly PrefabType[] = ['tree', 'pine', 'bush', 'rock', 'coin', 'gem', 'torch', 'lampPost', 'sign', 'fence', 'flowerBed', 'mushroom', 'log', 'stump', 'palm', 'cactus', 'coral', 'seaweed', 'crystalCluster', 'asteroid']
+export const naturalPrefabs: readonly PrefabType[] = ['tree', 'pine', 'bush', 'rock', 'coin', 'gem', 'torch', 'lampPost', 'sign', 'fence', 'flowerBed', 'mushroom', 'log', 'stump', 'palm', 'cactus', 'coral', 'seaweed', 'crystalCluster', 'asteroid',
+  ...characterTypes, ...worldNaturalPrefabs]
+export const characterPrefabs: readonly PrefabType[] = characterTypes
 export const vegetationPrefabs: readonly PrefabType[] = ['tree', 'pine', 'bush', 'flowerBed', 'mushroom', 'log', 'stump', 'palm', 'cactus', 'coral', 'seaweed']
-export const structurePrefabs: readonly PrefabType[] = ['house', 'windmill', 'tower', 'bridge', 'well', 'portal', 'spaceStation', 'rocket', 'skyscraper', 'column', 'tent']
+export const structurePrefabs: readonly PrefabType[] = ['house', 'windmill', 'tower', 'bridge', 'well', 'portal', 'spaceStation', 'rocket', 'skyscraper', 'column', 'tent', ...worldStructurePrefabs]
 export interface PrefabSpec { building?: BuildingSpec; type: PrefabType; size: number; seed: number; primary: string | null; secondary: string | null; text: string; lit: boolean; interactive: boolean }
 /** One part relative to the prefab origin, which sits on the ground at the footprint center. */
 export interface PrefabPart {
   id: string; parentId: string | null; name: string; kind: NodeKind; position: Vector3Tuple; rotation?: Vector3Tuple; dimensions: Vector3Tuple
   material?: Partial<SceneMaterial>; geometry?: Partial<GeometrySpec>; animation?: Partial<SceneAnimation>; interaction?: SceneInteraction; light?: SceneLight
-  collidable?: boolean; overlapWith?: string[]; behavior?: SceneBehavior
+  collidable?: boolean; overlapWith?: string[]; behavior?: SceneBehavior; sound?: SceneSound
 }
 /** Behavior applied to the prefab root group (enemies move as a whole; hazards, checkpoints and goals react to touch). */
 export function prefabRootBehavior(spec: PrefabSpec): SceneBehavior | null {
+  if (isCharacterType(spec.type)) return characterBehavior(spec.type, spec.size)
+  if (isWorldPrefab(spec.type)) return worldPrefabBehavior(spec)
   if (spec.type === 'enemy') return { type: 'enemy', speed: 2.6, range: 12 * spec.size, damage: 20 }
   if (spec.type === 'sentinel') return { type:'enemy',speed:2,range:15*spec.size,damage:25 }
   if (spec.type === 'crawler') return { type:'enemy',speed:3.3,range:10*spec.size,damage:15 }
@@ -59,6 +67,8 @@ function build(spec: PrefabSpec): PrefabPart[] {
   const legs = (prefix: string, x: number, z: number, height: number, width: number, material = wood) => {
     for (const [i, [dx, dz]] of [[-x, -z], [x, -z], [-x, z], [x, z]].entries()) add({ id: `${prefix}${i}`, parentId: null, name: `Perna ${i + 1}`, kind: 'box', position: [dx, height / 2, dz], dimensions: [width, height, width], material })
   }
+  if (isCharacterType(spec.type)) return buildCharacter(spec)
+  if (isWorldPrefab(spec.type)) return buildWorldPrefab(spec)
   switch (spec.type) {
     case 'house': return buildHouse(spec)
     case 'tree': return buildVegetation(spec)

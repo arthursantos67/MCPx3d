@@ -12,16 +12,19 @@ import { auditScene, describeAudit, type SceneAudit } from './sceneLayout.ts'
 import type { AgentProvider } from '../ai/types.ts'
 import { createPavilionScene, createOrbitalScene, createIslandScene } from './scenePreset.ts'
 import { createArchitectureScene, createValleyScene } from './sceneShowcase.ts'
-import { createCreationStage,createCombatArenaScene,createPlatformCourseScene,createLabPuzzleScene,createSolarSystemScene,createEnchantedForestScene,creationIdeas } from './sceneExperiences.ts'
-import { inferSceneAction } from './sceneDirection.ts'
+import { createCreationStage,createCombatArenaScene,createPlatformCourseScene,createLabPuzzleScene,createSolarSystemScene,createEnchantedForestScene,createCryptScene,createMarketTownScene,createSkyIslandsScene,createWastelandSurvivalScene,creationIdeas } from './sceneExperiences.ts'
+import { creativeIdeas, inferSceneAction } from './sceneDirection.ts'
 import { serializeSceneDraft } from './sceneDraft.ts'
 import { conformTerrainPaths } from './sceneGrounding.ts'
 import { prefabLabels, prefabTypes, type PrefabType } from './scenePrefabs.ts'
+import { characterTypes } from './sceneCharacters.ts'
+import { worldPrefabTypes } from './scenePrefabsWorld.ts'
+import { actionOptionLabels, ambienceLabels, attackLabels, avatarLabels, behaviorLabels, gradeLabels, musicLabels, objectiveLabels, powerLabels, soundLabels, weaponLabels, weatherLabels } from './sceneLabels.ts'
 import { normalizeProjectName } from '../workspace/projectName.ts'
 import { editorShortcut, editorShortcutList, isTypingTarget, type EditorCommand } from './sceneKeyboard.ts'
-import { commitScene, createEmptyScene, createNode, duplicateSubtree, hasSurface, INTERACTION_KEYS, MAX_SCENE_BYTES, MAX_SCENE_NODES, nodeLabels,
+import { ambiencePresets, attackStyles, avatarKinds, behaviorTypes, commitScene, createEmptyScene, createNode, duplicateSubtree, gradePresets, hasSurface, INTERACTION_KEYS, interactionActions, MAX_MESSAGE, MAX_SCENE_BYTES, MAX_SCENE_NODES, musicPresets, nodeLabels, objectiveTypes, powerKinds, soundPresets, weaponKinds, weatherKinds,
   parseScene, redoScene, removeSubtree, SCENE_STORAGE_KEY, skyLabels, skyPresets, subtreeIds, textureKinds, textureLabels, undoScene, validateAnimation,validateScene,
-  type NodeKind, type SceneAnimation, type SceneHistory, type SceneInteraction, type SceneKeyframe, type SceneNode, type ScenePlayer, type ThreeSceneDocument, type Vector3Tuple } from './sceneDocument.ts'
+  type NodeKind, type SceneAnimation, type SceneBehavior, type SceneHistory, type SceneInteraction, type SceneKeyframe, type SceneNode, type ScenePlayer, type SceneSound, type ThreeSceneDocument, type Vector3Tuple } from './sceneDocument.ts'
 import './ThreeWorkspace.css'
 
 function loadDraft(): { document: ThreeSceneDocument; error: string | null; restored?: boolean } {
@@ -188,7 +191,19 @@ export default function ThreeWorkspace({ active, provider, ready, onBusyChange, 
     const base: SceneInteraction = selected.interaction ?? { trigger: 'click', key: '', radius: 3, action: selected.animation.kind !== 'none' ? 'toggleAnimation' : 'message', targetId: null, message: '' }
     const next = { ...base, ...patch }
     if (next.trigger === 'key' && !INTERACTION_KEYS.test(next.key)) next.key = '1'
+    if (['collect', 'heal', 'powerup'].includes(next.action)) next.targetId = null
+    for (const key of ['item', 'requires'] as const) if (next[key] === '') delete next[key]
     return updateNode({ interaction: next })
+  }
+  const updateBehavior = (patch: Partial<SceneBehavior> | null) => {
+    if (!selected) return
+    if (!patch) { const { behavior: _removed, ...rest } = selected; return commit({ ...doc, nodes: doc.nodes.map((node) => node.id === selected.id ? rest : node) }) }
+    return updateNode({ behavior: { ...(selected.behavior ?? { type: 'enemy', speed: 2.5, range: 10, damage: 20 }), ...patch } })
+  }
+  const updateSound = (patch: Partial<SceneSound> | null) => {
+    if (!selected) return
+    if (!patch) { const { sound: _removed, ...rest } = selected; return commit({ ...doc, nodes: doc.nodes.map((node) => node.id === selected.id ? rest : node) }) }
+    return updateNode({ sound: { ...(selected.sound ?? { preset: 'wind', volume: 0.6, radius: 12 }), ...patch } })
   }
   const add = () => {
     const parentId = selected?.kind === 'group' ? selected.id : selected?.parentId ?? null
@@ -410,7 +425,7 @@ export default function ThreeWorkspace({ active, provider, ready, onBusyChange, 
       <span aria-hidden="true">{kindIcons[node.kind] ?? '◇'}</span><span>{node.name}</span>
       <small>{!node.visible ? 'Oculto' : node.interaction ? 'Interativo' : nodeLabels[node.kind]}</small></button>}{visibleRows(node.id, depth + 1)}</div>
   })
-  const env = doc.environment, player = env.player!
+  const env = doc.environment, player = env.player!, audio = env.audio ?? { ambience: 'auto', music: 'auto', volume: 0.7 }
   const material = selected?.material
 
   return <div className={`three-workspace three-workspace--${studioOpen ? 'studio' : 'create'}${playMode ? ' three-workspace--playing' : ''}`} hidden={!active}>
@@ -429,7 +444,7 @@ export default function ThreeWorkspace({ active, provider, ready, onBusyChange, 
         <span>Você traz a ideia. A IA cuida da cena.</span></div>
       <div className="three-prompt__composer"><textarea aria-label="Descreva a cena Three.js" maxLength={4000} rows={2} disabled={busy}
         placeholder="Descreva o lugar, o que o jogador faz e seu objetivo: combate, plataformas, enigmas, exploração…" value={prompt} onChange={(event) => setPrompt(event.target.value)} />
-        {!hasCreated && !prompt && <div className="three-prompt__suggestions" aria-label="Ideias para começar">{creationIdeas.map(([label, idea]) => <button key={label} type="button" disabled={busy} onClick={() => setPrompt(idea)}>{label} ↗</button>)}</div>}
+        {!hasCreated && !prompt && <div className="three-prompt__suggestions" aria-label="Ideias para começar">{[...creationIdeas.slice(0, 4), ...creativeIdeas.slice(0, 4)].map(([label, idea]) => <button key={label} type="button" disabled={busy} onClick={() => setPrompt(idea)}>{label} ↗</button>)}</div>}
         <div className="three-prompt__buttons"><details className="three-prompt__options"><summary>Opções de criação</summary><div><label className="three-generation-limit">Ação da IA
           <select aria-label="Ação da IA" value={action} disabled={busy} onChange={(event) => setAction(event.target.value as typeof action)}>
             <option value="auto">Automática pelo pedido</option><option value="create">Criar nova cena</option><option value="edit">Editar cena atual</option><option value="repair">Corrigir cena</option></select></label><label className="three-generation-limit">Tempo máximo de geração
@@ -471,6 +486,10 @@ export default function ThreeWorkspace({ active, provider, ready, onBusyChange, 
         <button type="button" onClick={() => replace(createLabPuzzleScene())}>Puzzle no laboratório</button>
         <button type="button" onClick={() => replace(createSolarSystemScene())}>Sistema solar</button>
         <button type="button" onClick={() => replace(createEnchantedForestScene())}>Floresta encantada</button>
+        <button type="button" onClick={() => replace(createCryptScene())}>Cripta do Rei Esqueleto</button>
+        <button type="button" onClick={() => replace(createMarketTownScene())}>Mercado de Valemar</button>
+        <button type="button" onClick={() => replace(createSkyIslandsScene())}>Ilhas Celestes</button>
+        <button type="button" onClick={() => replace(createWastelandSurvivalScene())}>Ermo dos Saqueadores</button>
         <button type="button" onClick={() => replace(createValleyScene())}>Vale dos Ventos</button>
         <button type="button" onClick={() => replace(createArchitectureScene())}>Casa com dois pavimentos</button>
         <span className="three-toolbar__separator" />
@@ -495,7 +514,9 @@ export default function ThreeWorkspace({ active, provider, ready, onBusyChange, 
         <p className="three-panel__intro">Organize formas, luzes e grupos para compor cada detalhe.</p>
         <div className="three-add"><select aria-label="Tipo de objeto" value={addKind} onChange={(event) => setAddKind(event.target.value as typeof addKind)}>
           <optgroup label="Formas e luzes">{Object.entries(nodeLabels).map(([kind, label]) => <option key={kind} value={kind}>{label}</option>)}</optgroup>
-          <optgroup label="Pré-fabricados">{prefabTypes.map((type) => <option key={type} value={`prefab:${type}`}>{prefabLabels[type]}</option>)}</optgroup></select>
+          <optgroup label="Pré-fabricados">{prefabTypes.filter((type) => !(characterTypes as readonly string[]).includes(type) && !(worldPrefabTypes as readonly string[]).includes(type)).map((type) => <option key={type} value={`prefab:${type}`}>{prefabLabels[type]}</option>)}</optgroup>
+          <optgroup label="Personagens e criaturas">{characterTypes.map((type) => <option key={type} value={`prefab:${type}`}>{prefabLabels[type]}</option>)}</optgroup>
+          <optgroup label="Mundo e jogabilidade">{worldPrefabTypes.map((type) => <option key={type} value={`prefab:${type}`}>{prefabLabels[type]}</option>)}</optgroup></select>
           <button type="button" onClick={add} disabled={doc.nodes.length >= MAX_SCENE_NODES}>Adicionar</button></div>
         <input className="three-search" aria-label="Buscar objetos" placeholder="Buscar na cena…" value={filter} onChange={(event) => setFilter(event.target.value)} />
         <div className="three-tree">{visibleRows(null)}{!doc.nodes.length && <p className="three-empty">Sua cena começa aqui. Adicione uma forma ou um grupo.</p>}</div>
@@ -505,7 +526,7 @@ export default function ThreeWorkspace({ active, provider, ready, onBusyChange, 
         <ThreeViewport document={doc} selectedId={selected?.id ?? null} active={active} fitRequest={fitRequest} playing={playing} seekTime={seekTime} seekRequest={seekRequest}
           gizmo={studioOpen ? gizmo : null} snap={snap} playMode={playMode} presentation={!studioOpen} controller={viewport} onTimeChange={setTime} onSelect={studioOpen ? setSelectedId : () => {}} onTransform={transformNode} onExitPlay={() => setPlayMode(false)} />
         {!playMode && !studioOpen && <div className="three-scene-caption"><span className="workspace-eyebrow">{hasCreated ? 'SUA CRIAÇÃO' : 'EXPLORE UMA CENA'}</span><strong>{doc.name}</strong><span>Arraste para olhar ao redor · Role para aproximar</span>
-          <div><button type="button" disabled={busy} onClick={() => { replace(createCombatArenaScene()); setProjectMenu(false) }}>Jogar arena ↗</button><button type="button" disabled={busy} onClick={() => { replace(createPlatformCourseScene()); setProjectMenu(false) }}>Jogar plataformas ↗</button><button type="button" disabled={busy} onClick={() => { replace(createLabPuzzleScene()); setProjectMenu(false) }}>Resolver puzzle ↗</button></div></div>}
+          <div><button type="button" disabled={busy} onClick={() => { replace(createCombatArenaScene()); setProjectMenu(false) }}>Jogar arena ↗</button><button type="button" disabled={busy} onClick={() => { replace(createPlatformCourseScene()); setProjectMenu(false) }}>Jogar plataformas ↗</button><button type="button" disabled={busy} onClick={() => { replace(createLabPuzzleScene()); setProjectMenu(false) }}>Resolver puzzle ↗</button><button type="button" disabled={busy} onClick={() => { replace(createCryptScene()); setProjectMenu(false) }}>Explorar cripta ↗</button><button type="button" disabled={busy} onClick={() => { replace(createMarketTownScene()); setProjectMenu(false) }}>Visitar mercado ↗</button></div></div>}
         {!playMode && studioOpen && <div className="three-stage__tools">
           <div className="three-segmented" role="group" aria-label="Ferramenta de transformação">
             {([['translate', 'Mover', 'W'], ['rotate', 'Girar', 'E'], ['scale', 'Escalar', 'R']] as const).map(([mode, label, key]) =>
@@ -592,16 +613,39 @@ export default function ThreeWorkspace({ active, provider, ready, onBusyChange, 
             <SelectField label="Gatilho" value={selected.interaction?.trigger ?? 'none'} options={[['none', 'Sem interação'], ['click', 'Mirar e pressionar E'], ['proximity', 'Ao se aproximar'], ['key', 'Tecla global']]}
               onChange={(trigger) => updateInteraction(trigger === 'none' ? null : { trigger })} />
             {selected.interaction && <>
-              <SelectField label="Ação" value={selected.interaction.action} options={[['toggleAnimation', 'Alternar animação (portas, mecanismos)'], ['toggleVisibility', 'Mostrar/ocultar (luzes, passagens)'], ['collect', 'Coletar item'], ['message', 'Mostrar mensagem']]}
-                onChange={(next) => updateInteraction({ action: next, ...(next === 'collect' ? { targetId: null } : {}) })} />
-              {selected.interaction.action !== 'collect' && <label className="three-field">Alvo<select value={selected.interaction.targetId ?? ''} onChange={(event) => updateInteraction({ targetId: event.target.value || null })}>
+              <SelectField label="Ação" value={selected.interaction.action} options={interactionActions.map((action) => [action, actionOptionLabels[action]])}
+                onChange={(next) => updateInteraction({ action: next })} />
+              {!['collect', 'heal', 'powerup'].includes(selected.interaction.action) && <label className="three-field">Alvo<select value={selected.interaction.targetId ?? ''} onChange={(event) => updateInteraction({ targetId: event.target.value || null })}>
                 <option value="">Este objeto</option>{doc.nodes.filter((node) => node.id !== selected.id).map((node) => <option key={node.id} value={node.id}>{node.name}</option>)}</select></label>}
               <div className="three-material">
                 {selected.interaction.trigger === 'key' ? <TextField key={`key-${selected.interaction.key}`} label="Tecla" max={1} value={selected.interaction.key} onChange={(key) => updateInteraction({ key: key.toLowerCase() })} />
                   : <NumericField key={`radius-${selected.interaction.radius}`} label="Alcance (m)" value={selected.interaction.radius} min={0.5} max={50} onChange={(radius) => updateInteraction({ radius })} />}
               </div>
-              <label className="three-field">Mensagem<input key={`msg-${selected.interaction.message}`} defaultValue={selected.interaction.message} maxLength={160} onBlur={(event) => { if (event.target.value !== selected.interaction!.message) updateInteraction({ message: event.target.value }) }} /></label>
+              <label className="three-field">{selected.interaction.action === 'dialogue' ? 'Falas (separe com |)' : 'Mensagem'}<textarea key={`msg-${selected.interaction.message}`} rows={selected.interaction.action === 'dialogue' ? 4 : 2} defaultValue={selected.interaction.message} maxLength={MAX_MESSAGE} onBlur={(event) => { if (event.target.value !== selected.interaction!.message) updateInteraction({ message: event.target.value }) }} /></label>
+              {selected.interaction.action === 'collect' && <label className="three-field">Item no inventário<input key={`item-${selected.interaction.item ?? ''}`} defaultValue={selected.interaction.item ?? ''} maxLength={40} placeholder="ex.: Chave dourada" onBlur={(event) => { if (event.target.value.trim() !== (selected.interaction!.item ?? '')) updateInteraction({ item: event.target.value.trim() }) }} /></label>}
+              <label className="three-field">Exige item<input key={`req-${selected.interaction.requires ?? ''}`} defaultValue={selected.interaction.requires ?? ''} maxLength={40} placeholder="vazio = livre" onBlur={(event) => { if (event.target.value.trim() !== (selected.interaction!.requires ?? '')) updateInteraction({ requires: event.target.value.trim() }) }} /></label>
+              {selected.interaction.action === 'powerup' && <SelectField label="Poder" value={selected.interaction.power ?? 'speed'} options={powerKinds.map((power) => [power, powerLabels[power]])} onChange={(power) => updateInteraction({ power })} />}
+              {['heal', 'powerup'].includes(selected.interaction.action) && <NumericField key={`amount-${selected.interaction.amount}`} label={selected.interaction.action === 'heal' ? 'Vida restaurada' : 'Duração (s)'} value={selected.interaction.amount ?? (selected.interaction.action === 'heal' ? 25 : 10)} min={0} max={1000} step={1} onChange={(amount) => updateInteraction({ amount })} />}
             </>}
+            <h3>Comportamento (modo jogo)</h3>
+            <SelectField label="Função" value={selected.behavior?.type ?? 'none'} options={[['none', 'Sem comportamento'], ...behaviorTypes.map((type): [string, string] => [type, behaviorLabels[type]])]}
+              onChange={(type) => updateBehavior(type === 'none' ? null : { type: type as SceneBehavior['type'] })} />
+            {selected.behavior && <>
+              <div className="three-material"><NumericField key={`bspeed-${selected.behavior.speed}`} label="Velocidade (m/s)" value={selected.behavior.speed} min={0} max={12} step={0.1} onChange={(speed) => updateBehavior({ speed })} />
+                <NumericField key={`brange-${selected.behavior.range}`} label={selected.behavior.type === 'launcher' ? 'Altura do lançamento (m)' : 'Alcance (m)'} value={selected.behavior.range} min={0.5} max={80} step={0.5} onChange={(range) => updateBehavior({ range })} /></div>
+              {['enemy', 'hazard'].includes(selected.behavior.type) && <NumericField key={`bdmg-${selected.behavior.damage}`} label="Dano" value={selected.behavior.damage} min={0} max={1000} step={1} onChange={(damage) => updateBehavior({ damage })} />}
+              {selected.behavior.type === 'enemy' && <>
+                <div className="three-material"><NumericField key={`bhp-${selected.behavior.health}`} label="Resistência (golpes)" value={selected.behavior.health ?? 1} min={1} max={100} step={1} onChange={(health) => updateBehavior({ health: Math.round(health) })} />
+                  <NumericField key={`bdelay-${selected.behavior.delay}`} label="Aparece após (s)" value={selected.behavior.delay ?? 0} min={0} max={3600} step={1} onChange={(delay) => updateBehavior({ delay })} /></div>
+                <SelectField label="Ataque" value={selected.behavior.attack ?? 'touch'} options={attackStyles.map((attack) => [attack, attackLabels[attack]])} onChange={(attack) => updateBehavior({ attack })} />
+                <label className="three-check"><input type="checkbox" checked={selected.behavior.flying ?? false} onChange={(event) => updateBehavior({ flying: event.target.checked })} /> Voa sobre o terreno</label>
+              </>}
+            </>}
+            <h3>Som posicional</h3>
+            <SelectField label="Som" value={selected.sound?.preset ?? 'none'} options={[['none', 'Sem som'], ...soundPresets.map((preset): [string, string] => [preset, soundLabels[preset]])]}
+              onChange={(preset) => updateSound(preset === 'none' ? null : { preset: preset as SceneSound['preset'] })} />
+            {selected.sound && <div className="three-material"><NumericField key={`svol-${selected.sound.volume}`} label="Volume" value={selected.sound.volume} min={0} max={1} step={0.05} onChange={(volume) => updateSound({ volume })} />
+              <NumericField key={`srad-${selected.sound.radius}`} label="Alcance (m)" value={selected.sound.radius} min={1} max={200} step={1} onChange={(radius) => updateSound({ radius })} /></div>}
             <div className="three-object-actions"><button type="button" onClick={duplicate}>Duplicar{selected.kind === 'group' ? ' grupo' : ''}</button>
               <button type="button" className="three-button--danger" onClick={remove}>Excluir{selected.kind === 'group' ? ' grupo' : ''}</button></div>
             {selected.kind === 'group' && <p className="three-hint">Duplicar e excluir incluem todos os descendentes.</p>}
@@ -623,6 +667,18 @@ export default function ThreeWorkspace({ active, provider, ready, onBusyChange, 
             <label className="three-check"><input type="checkbox" checked={env.reflections ?? true} onChange={(event) => updateEnvironment({ reflections: event.target.checked })} /> Reflexões do ambiente</label>
             <label className="three-check"><input type="checkbox" checked={env.grid} onChange={(event) => updateEnvironment({ grid: event.target.checked })} /> Grade de referência</label>
             <label className="three-check"><input type="checkbox" checked={env.wireframe} onChange={(event) => updateEnvironment({ wireframe: event.target.checked })} /> Wireframe</label>
+            <div className="three-material"><SelectField label="Clima" value={env.weather ?? 'none'} options={weatherKinds.map((kind) => [kind, weatherLabels[kind]])} onChange={(weather) => updateEnvironment({ weather })} />
+              <SelectField label="Gradação de cor" value={env.grade ?? 'none'} options={gradePresets.map((grade) => [grade, gradeLabels[grade]])} onChange={(grade) => updateEnvironment({ grade })} /></div>
+            <h3>Som</h3>
+            <div className="three-material"><SelectField label="Ambiência" value={audio.ambience} options={ambiencePresets.map((preset) => [preset, ambienceLabels[preset]])} onChange={(ambience) => updateEnvironment({ audio: { ...audio, ambience } })} />
+              <SelectField label="Música" value={audio.music} options={musicPresets.map((preset) => [preset, musicLabels[preset]])} onChange={(music) => updateEnvironment({ audio: { ...audio, music } })} /></div>
+            <NumericField key={`vol-${audio.volume}`} label="Volume geral" value={audio.volume} min={0} max={1} step={0.05} onChange={(volume) => updateEnvironment({ audio: { ...audio, volume } })} />
+            <p className="three-hint">Sons sintetizados localmente no modo jogo; M silencia.</p>
+            <h3>Objetivo</h3>
+            <div className="three-material"><SelectField label="Tipo" value={env.objective?.type ?? 'auto'} options={[['auto', 'Automático pela cena'], ...objectiveTypes.map((type): [string, string] => [type, objectiveLabels[type]])]}
+              onChange={(type) => { if (type === 'auto') { const { objective: _removed, ...rest } = env; commit({ ...doc, environment: rest }) } else updateEnvironment({ objective: { title: '', timeLimit: 0, ...env.objective, type: type as NonNullable<typeof env.objective>['type'] } }) }} />
+              {env.objective && <NumericField key={`limit-${env.objective.timeLimit}`} label="Tempo limite (s, 0 = livre)" value={env.objective.timeLimit} min={0} max={3600} step={5} onChange={(timeLimit) => updateEnvironment({ objective: { ...env.objective!, timeLimit } })} />}</div>
+            {env.objective && <label className="three-field">Título do objetivo<input key={`otitle-${env.objective.title}`} defaultValue={env.objective.title} maxLength={160} onBlur={(event) => { if (event.target.value !== env.objective!.title) updateEnvironment({ objective: { ...env.objective!, title: event.target.value } }) }} /></label>}
             <h3>Jogador</h3>
             <p className="three-hint">Início: {player.spawn ? player.spawn.map((value) => value.toFixed(1)).join(' · ') : 'automático, diante da cena'}{player.spawn ? ` · direção ${player.yaw.toFixed(0)}°` : ''}</p>
             <div className="three-object-actions"><button type="button" onClick={() => { const camera = viewport.current?.cameraSpawn(); if (camera) updatePlayer(camera) }}>Início na câmera atual</button>
@@ -630,6 +686,11 @@ export default function ThreeWorkspace({ active, provider, ready, onBusyChange, 
             <div className="three-material"><NumericField key={`speed-${player.speed}`} label="Velocidade (m/s)" value={player.speed} min={1} max={20} step={0.5} onChange={(speed) => updatePlayer({ speed })} />
               <NumericField key={`jump-${player.jumpHeight}`} label="Altura do pulo (m)" value={player.jumpHeight} min={0} max={5} step={0.1} onChange={(jumpHeight) => updatePlayer({ jumpHeight })} /></div>
             <SelectField label="Modo inicial" value={player.mode} options={[['walk', 'Caminhada com gravidade'], ['fly', 'Voo livre']]} onChange={(mode) => updatePlayer({ mode })} />
+            <div className="three-material"><SelectField label="Arma" value={player.weapon ?? 'none'} options={weaponKinds.map((weapon) => [weapon, weaponLabels[weapon]])} onChange={(weapon) => updatePlayer({ weapon })} />
+              <SelectField label="Avatar (3ª pessoa)" value={player.avatar ?? 'explorer'} options={avatarKinds.map((avatar) => [avatar, avatarLabels[avatar]])} onChange={(avatar) => updatePlayer({ avatar })} /></div>
+            <div className="three-material"><SelectField label="Câmera inicial" value={player.camera ?? 'first'} options={[['first', 'Primeira pessoa'], ['third', 'Terceira pessoa']]} onChange={(camera) => updatePlayer({ camera })} />
+              <NumericField key={`hp-${player.health}`} label="Vida" value={player.health ?? 100} min={1} max={1000} step={5} onChange={(health) => updatePlayer({ health })} /></div>
+            <label className="three-check"><input type="checkbox" checked={player.allowFly !== false} onChange={(event) => updatePlayer({ allowFly: event.target.checked })} /> Permitir voo (F)</label>
           </details>
           <div className="three-roadmap"><span className="workspace-eyebrow">PRONTO PARA JOGAR</span><p>Pressione P ou ▶ Jogar para explorar em primeira pessoa com colisão, interações e coletáveis. Colisões e inspeções usam aproximações declaradas; não há física de corpos rígidos.</p></div>
         </div>
@@ -644,6 +705,6 @@ export default function ThreeWorkspace({ active, provider, ready, onBusyChange, 
       <output aria-label="Tempo atual">{time.toFixed(1)} / {doc.timeline.duration} s</output>
       <span>{doc.nodes.filter((node) => node.animation.kind !== 'none').length} animações · {doc.nodes.filter((node) => node.interaction).length} interações</span>
     </div>
-    <footer className="three-statusbar" hidden={!studioOpen || playMode}><span><span className="three-dot" /> Three.js · local</span><span>{doc.nodes.filter((node) => hasSurface(node.kind)).length} malhas · {doc.nodes.filter((node) => node.kind === 'light').length} luzes</span><span role="status">{saveStatus}</span><span>Projeto JSON 1.2</span></footer>
+    <footer className="three-statusbar" hidden={!studioOpen || playMode}><span><span className="three-dot" /> Three.js · local</span><span>{doc.nodes.filter((node) => hasSurface(node.kind)).length} malhas · {doc.nodes.filter((node) => node.kind === 'light').length} luzes</span><span role="status">{saveStatus}</span><span>Projeto JSON 1.3</span></footer>
   </div>
 }

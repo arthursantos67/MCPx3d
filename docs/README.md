@@ -1,5 +1,6 @@
 # Documentação atual
 
+- [Mundos vivos — Three.js 0.5](threejs-living-worlds.md): contrato 1.3, personagens com rig, combate, inventário, NPCs, áudio sintetizado, clima e gradação.
 - [Estúdio Three.js](threejs-studio.md): modo jogo, interações, atalhos/gizmos, céu e pós-processamento, geometrias/terreno/luzes, GLB, edição/reparo contextual, animações e inspeção espacial.
 
 - [Melhorias gerais — continuação de 2026-10-08](project-improvements-2026-10-08.md): cancelamento, recursos compartilhados, curvas/molas/sweeps, acabamentos locais e avaliação com IA real.
@@ -15,4 +16,4 @@
 - [Biblioteca X3D e MCP opcional](x3d-mcp.md): dependência fixada e modos de operação.
 - [Histórico](archive/README.md): PRD, planejamento e auditorias anteriores.
 
-Contrato atual: [PRD.md](../PRD.md). Trabalho restante: [ISSUES.md](../ISSUES.md).
+Contrato atual: [PRD.md](../PRD.md). Trabalho restante: [ISSUES.md](../ISSUES.md). Marcos até a 1.0: [ROADMAP.md](../ROADMAP.md).

@@ -72,3 +72,15 @@ test('puzzles require a real action and effect, rather than a message or togglin
   const functional={...noAnimation,nodes:noAnimation.nodes.map(node=>node.id==='switch'?{...node,interaction:{...node.interaction!,action:'toggleVisibility' as const}}:node)}
   assert.deepEqual(reviewSceneDirection(functional,request),[])
 })
+
+test('new settings keep the expected topology and moving platform prefabs satisfy the moving-platform review',()=>{
+  for(const [request,topology] of [['Crie um coliseu com gladiadores','arena'],['Crie uma cripta com catacumbas','interior'],['Crie um cemitério assombrado à noite','landscape'],['Crie um castelo medieval com muralhas','open']] as const) {
+    assert.equal(sceneIntent(request).topology,topology,request)
+    assert.equal(sceneIntent(request).world,true,request)
+  }
+  const request='Crie um jogo de plataformas móveis com saltos e um portal de chegada.'
+  const platform=(id:string,x:number,y:number):SceneNode=>({...createNode('box'),id,position:[x,y,0],dimensions:[2,0.3,2]})
+  const stationary={...arena(),nodes:[...arena().nodes,platform('first',0,0.8),platform('second',3,1.4)]}
+  const prefab={...createNode('group'),id:'mover',position:[6,1,0] as [number,number,number],asset:{type:'movingPlatform' as const,size:1,seed:1,primary:null,secondary:null,text:'',lit:false,interactive:false}}
+  assert.ok(!reviewSceneDirection({...stationary,nodes:[...stationary.nodes,prefab]},request).some(issue=>issue.includes('apoios estão estáticos')))
+})

@@ -12,11 +12,14 @@ Estúdio jogável (2026-10-14): contrato 1.2 com luzes, terreno, texto, poliedro
 
 Ampliação temática e auditoria (2026-10-15): tópico de espaço sideral, superfícies planetárias e 13 famílias temáticas no guia do construtor; seis biomas e dezenove pré-fabricados novos verificados sem interseções/coplanaridade em várias variantes; planejamento que repara em vez de descartar; correções do runtime de jogo (pisão em inimigos, queda através de pisos, passagens ocultas, vitória indevida, histórico em ações assíncronas, GLB em milímetros). Detalhes em [docs/threejs-production-upgrade.md](docs/threejs-production-upgrade.md#ampliação-temática-e-correções-da-cadeia).
 
-Próximos incrementos desta frente:
+Mundos vivos (2026-10-22, versão 0.5): contrato 1.3, personagens com rig e animação procedural, armas e projéteis, inimigos com estilos de ataque/voo/resistência, NPCs com diálogo, inventário/chaves/bloqueios, curas e poderes, plataformas móveis e lançadores, sobrevivência por ondas, áudio sintetizado, clima, gradação, água animada, 25 objetos de mundo, direção criativa para a IA e quatro exemplos novos. Detalhes em [docs/threejs-living-worlds.md](docs/threejs-living-worlds.md); marcos até a 1.0 em [ROADMAP.md](ROADMAP.md).
+
+Próximos incrementos desta frente (detalhados no roteiro):
 
 0. Medir com o provedor real a fidelidade dos temas novos (espaço, floresta, praia, neve, subaquático, cidade) e a taxa de sobreposição (Codex/Claude) num conjunto fixo de pedidos, comparando pré-fabricados/layout automático com a receita peça a peça.
 1. Seleção múltipla, biblioteca de materiais e medição de FPS/memória/tempo de inspeção em cenas de 500/2.000 nós com GPU real antes de ampliar limites.
-2. Física de corpos rígidos opcional, áudio espacial, eventos encadeados, inimigos com variedade de ataques e plataformas móveis que carregam o jogador; colisão exata de objetos móveis.
+2. Física de corpos rígidos opcional, navmesh para inimigos/NPCs, eventos encadeados e missões de NPC; colisão exata de objetos móveis. Áudio espacial, variedade de ataques e plataformas móveis foram entregues na 0.5.
+2a. Personagens com malha contínua (`SkinnedMesh`) e importação de GLB com esqueleto/clipes mapeados ao rig do Forma; clima que respeita interiores; ouvir/ver áudio, clima e gradação em hardware real e ajustar.
 3. Pipeline de assets: mapas físicos/compressão/clipes de GLB importado, persistência IndexedDB/servidor e exportação HTML jogável autocontida.
 4. LOD e streaming com benchmark reproduzível por hardware; metas de escala dependem dessas medições.
 5. Planejamento incremental por etapas para cenas maiores e medição de conclusão/latência/fidelidade com IA real. Preservar aplicação atômica e proibição de JavaScript gerado.

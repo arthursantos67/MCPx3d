@@ -26,7 +26,7 @@ function door() {
 test('1.1 documents migrate to 1.2 with studio defaults and new contracts are validated', () => {
   const legacy = { ...createEmptyScene(), version: '1.1', environment: { background: '#ffffff', exposure: 1, lightIntensity: 1, grid: true, wireframe: false } }
   const migrated = parseScene(JSON.stringify(legacy))
-  assert.equal(migrated.version, '1.2')
+  assert.equal(migrated.version, '1.3')
   assert.equal(migrated.environment.sky, 'studio')
   assert.equal(migrated.environment.player!.spawn, null)
   const light = createNode('light')

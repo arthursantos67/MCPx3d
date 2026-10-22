@@ -103,3 +103,12 @@ test('the generation chain delivers a playable space scene even when the builder
   assert.ok(!scene.nodes.some((item) => item.kind === 'terrain'))
   assert.ok(calls <= 3)
 })
+
+test('briefs for new settings name the catalogue characters and props, up to five themes', () => {
+  assert.match(themeBrief('Uma masmorra com criptas'), /skeleton/)
+  assert.match(themeBrief('Uma enseada pirata'), /dock.*lighthouse/)
+  assert.match(themeBrief('Uma base lunar na superfície da lua'), /astronaut/)
+  assert.match(themeBrief('Uma feira medieval'), /marketStall/)
+  assert.ok(themeBrief('Floresta, deserto, neve, vulcão, oceano e caverna').split('\n').length === 5)
+  assert.match(directionBrief('Crie um cemitério assombrado com zumbis'), /ASSOMBRADO\/CEMITÉRIO/)
+})

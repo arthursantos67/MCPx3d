@@ -93,7 +93,7 @@ test('GLB imports real indexed geometry, preserves it in JSON and refuses unsupp
   await page.getByLabel('Importar modelo GLB').setInputFiles({ name: 'Cabine.glb', mimeType: 'model/gltf-binary', buffer: staticGlb() })
   await expect(page.getByText('Modelo GLB importado como malhas editáveis.', { exact: true })).toBeVisible()
   const doc = await exported(page)
-  expect(doc.version).toBe('1.2')
+  expect(doc.version).toBe('1.3')
   expect(doc.nodes).toHaveLength(2)
   const mesh = doc.nodes.find((node: { kind: string }) => node.kind === 'mesh')
   expect(mesh.geometry.vertices).toHaveLength(12)
