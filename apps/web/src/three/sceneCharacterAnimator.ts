@@ -5,7 +5,7 @@ import { hashNoise } from './sceneGeometrySpec.ts'
 import type { FaceState } from './sceneRuntimeTypes.ts'
 import { rigBob, rigCollapse, rigJoints, rigPose, rigRootJoint, rigUnit, strideRate, type RigBinding } from './sceneCharacterRig.ts'
 
-export type AnimState = 'locomotion' | 'jump' | 'fall' | 'land' | 'attack' | 'dodge' | 'hurt' | 'death' | 'interact' | 'talk' | 'activity'
+export type AnimState = 'locomotion' | 'climb' | 'jump' | 'fall' | 'land' | 'attack' | 'dodge' | 'hurt' | 'death' | 'interact' | 'talk' | 'activity'
 export type AnimActivity = 'sit' | 'work' | 'sleep' | 'chat' | 'perform' | 'guard'
 export type AnimMood = 'calm' | 'happy' | 'angry' | 'afraid'
 /** Events fired on the frame they happen, for footstep sounds, dust and hit timing. */
@@ -18,6 +18,7 @@ export interface AnimatorInput {
   dt: number; time: number; speed: number; grounded: boolean; verticalSpeed: number; dead: boolean; talk: boolean
   attack?: 'light' | 'heavy' | null; dodge?: boolean; hurt?: boolean; interact?: boolean; wave?: boolean; crouch?: boolean
   activity?: AnimActivity | null; mood?: AnimMood
+  climbing?: boolean; ranged?: boolean
 }
 /**
  * `joints`: delta Euler degrees added to each joint's rest rotation. `bob` metres (per rig unit) on the root joint; `collapse` 0..1 lowers the root as in a fall
@@ -38,6 +39,7 @@ export interface Animator {
   from: Frame | null; fade: number; span: number; last: Frame
   cycle: number; speed: number; crouch: number; flight: number; airTime: number; fallSpeed: number; landing: number
   combo: number; comboUntil: number; heavy: boolean; swing: Swing | null
+  queued: 'light' | 'heavy' | null; ranged: boolean
   roll: boolean; dodges: number; hurtAt: number; hurts: number; hurtLevel: number; hurtSide: number; waveAt: number; deathSide: number; fell: boolean
   fidgetAt: number; fidgetEnd: number; fidgetKind: number; fidgets: number; nextFidget: number
   blinkAt: number; nextBlink: number; blinks: number; gazeAt: number; gazes: number; gaze: [number, number]
@@ -65,13 +67,13 @@ export const animatorJoints: Record<RigKind, readonly string[]> = {
   hover: ['j_body', 'j_rotor0', 'j_rotor1', 'j_rotor2', 'j_rotor3'],
 }
 const aerial = (kind: RigKind) => kind === 'flyer' || kind === 'hover'
-const fadeTime: Record<AnimState, number> = { locomotion: 0.22, jump: 0.1, fall: 0.2, land: 0.1, attack: 0.1, dodge: 0.1, hurt: 0.15, death: 0.25, interact: 0.18, talk: 0.25, activity: 0.3 }
+const fadeTime: Record<AnimState, number> = { locomotion: 0.22, climb: 0.15, jump: 0.1, fall: 0.2, land: 0.1, attack: 0.1, dodge: 0.1, hurt: 0.15, death: 0.25, interact: 0.18, talk: 0.25, activity: 0.3 }
 
 export function createAnimator(kind: RigKind, phase: number, seed = Math.floor(fin(phase) * 2 ** 31)): Animator {
   const s = Math.abs(Math.floor(fin(seed))) % 2147483647, r = (k: number) => hashNoise(s, k, 9173), joints = animatorJoints[kind]
   return { kind, phase: fin(phase), seed: s, joints, state: 'locomotion', time: 0, clock: 0, activity: null, from: null, fade: 1, span: 0.2,
     last: { joints: Object.fromEntries(joints.map((joint) => [joint, [0, 0, 0] as V])), bob: 0, collapse: 0, seat: 0 },
-    cycle: 0, speed: 0, crouch: 0, flight: 0, airTime: 0, fallSpeed: 0, landing: 0, combo: 0, comboUntil: -1, heavy: false, swing: null,
+    cycle: 0, speed: 0, crouch: 0, flight: 0, airTime: 0, fallSpeed: 0, landing: 0, combo: 0, comboUntil: -1, heavy: false, swing: null, queued: null, ranged: false,
     roll: false, dodges: 0, hurtAt: -1e9, hurts: 0, hurtLevel: 0, hurtSide: 1, waveAt: -1e9, deathSide: r(1) < 0.5 ? -1 : 1, fell: false,
     fidgetAt: -1e9, fidgetEnd: -1e9, fidgetKind: 0, fidgets: 0, nextFidget: 2 + 5 * r(2),
     blinkAt: -1e9, nextBlink: 0.5 + 3 * r(3), blinks: 0, gazeAt: 0, gazes: 0, gaze: [0, 0],
@@ -97,9 +99,12 @@ const r3 = (a: Animator, k: number, j = 0) => hashNoise(a.seed + j * 7919, k, 54
 /** Builds a joint map from a compact literal; biped symmetric entries use `L`/`R` names directly. */
 const J = (entries: Record<string, V>): Joints => entries
 
-function swingFor(kind: RigKind, combo: number, heavy: boolean): Swing {
+function swingFor(kind: RigKind, combo: number, heavy: boolean, ranged = false): Swing {
   const S = (a: number, s: number, r: number, windup: Joints, strike: Joints, bobW = 0, bobS = 0): Swing => ({ a, s, r, windup, strike, bobW, bobS })
   if (kind === 'biped') {
+    if (ranged) return S(0.06, 0.04, 0.12,
+      J({ j_shoulderR: [-2, 0, 0], j_elbowR: [-1, 0, 0], j_spine: [1, 0, 0] }),
+      J({ j_shoulderR: [-9, 0, 0], j_elbowR: [-5, 0, 0], j_spine: [-3, 0, 0] }))
     if (heavy) return S(0.45, 0.12, 0.45,
       J({ j_shoulderR: [-170, 0, -10], j_shoulderL: [-160, 0, 10], j_elbowR: [-55, 0, 0], j_elbowL: [-55, 0, 0], j_spine: [-16, 0, 0], j_neck: [-5, 0, 0], j_head: [-10, 0, 0], j_hipL: [-12, 0, 0], j_kneeL: [14, 0, 0] }),
       J({ j_shoulderR: [-45, 0, -8], j_shoulderL: [-45, 0, 8], j_elbowR: [-10, 0, 0], j_elbowL: [-10, 0, 0], j_spine: [32, 0, 0], j_head: [12, 0, 0], j_hipL: [-30, 0, 0], j_kneeL: [38, 0, 0], j_kneeR: [22, 0, 0] }), 0.02, -0.12)
@@ -109,7 +114,7 @@ function swingFor(kind: RigKind, combo: number, heavy: boolean): Swing {
       J({ ...guard, j_shoulderR: [0, 115, -80], j_elbowR: [-15, 0, 0], j_spine: [6, 35, 0], j_hips: [0, 12, 0], j_head: [0, -15, 0] }))
     if (combo === 2) return S(0.1, 0.1, 0.3,
       J({ ...guard, j_shoulderR: [-150, 0, 30], j_elbowR: [-80, 0, 0], j_spine: [-8, 25, 0], j_hips: [0, 8, 0] }),
-      J({ ...guard, j_shoulderR: [-35, 0, -45], j_elbowR: [-10, 0, 0], j_spine: [14, -30, 0], j_hips: [0, -10, 0], j_kneeR: [12, 0, 0] }))
+      J({ ...guard, j_shoulderR: [-80, 0, 12], j_elbowR: [-5, 0, 0], j_spine: [14, 8, 0], j_hips: [0, -5, 0], j_kneeR: [12, 0, 0] }))
     return S(0.14, 0.1, 0.36,
       J({ ...guard, j_shoulderR: [15, 0, -20], j_elbowR: [-105, 0, 0], j_spine: [0, -28, 0], j_hipR: [6, 0, 0] }),
       J({ ...guard, j_shoulderR: [-85, 0, -5], j_elbowR: [-4, 0, 0], j_spine: [12, 22, 0], j_head: [-6, 0, 0], j_hipL: [-35, 0, 0], j_kneeL: [40, 0, 0], j_hipR: [18, 0, 0], j_kneeR: [10, 0, 0] }), 0, -0.06)
@@ -167,6 +172,12 @@ function locomotion(a: Animator, input: AnimatorInput): Frame {
   const idle = (1 - smooth(0.05, 0.8, a.speed)) * (flying && kind !== 'hover' ? 0.5 : 1), fid = fidget(a)
   if (fid.w > 0 && idle > 0) bob += fidgetPose(a, joints, fid.kind, fid.u, fid.w * idle)
   const c = a.crouch
+  if (input.ranged && kind === 'biped' && !input.climbing) {
+    blendTo(joints, 'j_shoulderR', [-85, 0, -3], 1)
+    blendTo(joints, 'j_elbowR', [-5, 0, 0], 1)
+    blendTo(joints, 'j_shoulderL', [-65, 20, 10], 0.8)
+    blendTo(joints, 'j_elbowL', [-35, 0, 0], 0.8)
+  }
   if (c > 0 && kind === 'biped') {
     for (const [s, side] of sides) { add(joints, `j_hip${s}`, -55, 0, 0, c); add(joints, `j_knee${s}`, 100, 0, 0, c); add(joints, `j_shoulder${s}`, -12, 0, side * 6, c); add(joints, `j_elbow${s}`, -25, 0, 0, c) }
     add(joints, 'j_spine', 22, 0, 0, c); add(joints, 'j_neck', -10, 0, 0, c); add(joints, 'j_head', -8, 0, 0, c); bob -= 0.3 * c
@@ -254,7 +265,7 @@ const landTime = (a: Animator) => 0.16 + 0.3 * a.landing
 
 function attackFrame(a: Animator, input: AnimatorInput): Frame {
   const frame = locomotion(a, input), sw = a.swing!, pose = swingPose(sw, a.time), walk = smooth(0.3, 1.5, a.speed), p = frame.joints
-  if (a.kind === 'biped') for (const joint of a.joints) {
+  if (a.kind === 'biped' && !a.ranged) for (const joint of a.joints) {
     if (UPPER.test(joint) && joint !== 'j_jaw') { const v = p[joint]; v[0] *= 0.25; v[1] *= 0.25 }
   }
   for (const joint in pose.joints) {
@@ -475,6 +486,25 @@ function waveLayer(a: Animator, p: Joints) {
 
 function baseFrame(a: Animator, input: AnimatorInput): Frame {
   switch (a.state) {
+    case 'climb': {
+      const joints = blank(a.joints), c = a.cycle * TAU
+      if (a.kind === 'biped') {
+        for (const [side, sign] of sides) {
+          const reach = Math.sin(c + (sign > 0 ? 0 : Math.PI)), lift = Math.max(0, -reach)
+          add(joints, `j_shoulder${side}`, -130 + 30 * reach, 0, sign * 8)
+          add(joints, `j_elbow${side}`, -35 - 25 * reach)
+          add(joints, `j_hip${side}`, -25 - 35 * lift)
+          add(joints, `j_knee${side}`, 35 + 55 * lift)
+        }
+        add(joints, 'j_spine', 8, 4 * Math.sin(c), 2 * Math.cos(c))
+        add(joints, 'j_head', -15)
+      } else {
+        const frame = locomotion(a, input)
+        add(frame.joints, rigRootJoint[a.kind], -20)
+        return frame
+      }
+      return { joints, bob: 0.01 * Math.cos(c * 2), collapse: 0, seat: 0 }
+    }
     case 'jump': case 'fall': return air(a, input)
     case 'land': return landing(a, input)
     case 'attack': return a.swing ? attackFrame(a, input) : locomotion(a, input)
@@ -506,13 +536,14 @@ export function updateAnimator(a: Animator, input: AnimatorInput): AnimatorPose 
   a.crouch = approach(a.crouch, input.crouch ? 1 : 0, 9, dt)
   if (flying) a.flight = approach(a.flight, input.grounded === false ? 1 : 0, 4, dt)
   const before = a.cycle + a.phase
-  a.cycle += strideRate(kind, a.speed) * dt
+  a.cycle += (input.climbing ? Math.abs(vy) * 0.65 : strideRate(kind, a.speed)) * dt
   const edge = (key: keyof Animator['previous'], value: boolean) => { const fired = value && !a.previous[key]; a.previous[key] = value; return fired }
   const attack = edge('attack', !!input.attack), dodge = edge('dodge', !!input.dodge), hurt = edge('hurt', !!input.hurt), interact = edge('interact', !!input.interact), wave = edge('wave', !!input.wave)
   const activity = input.activity ?? null
   if (activity !== a.activity) { a.activity = activity; if (a.state === 'activity') enter(a, 'activity') }
-  if (input.dead && a.state !== 'death') { enter(a, 'death'); a.swing = null; a.combo = 0; events.push('death') }
+  if (input.dead && a.state !== 'death') { enter(a, 'death'); a.swing = null; a.queued = null; a.combo = 0; events.push('death') }
   if (a.state !== 'death') {
+    if (input.climbing && a.state !== 'climb') { a.swing = null; a.queued = null; enter(a, 'climb') }
     if (hurt) { a.hurtAt = a.clock; a.hurts++; events.push('hurt') }
     if (wave) { const t = a.clock - a.waveAt; a.waveAt = t < 1.8 ? a.clock - Math.min(t, 0.3) : a.clock; events.push('wave') }
     if (!grounded) { a.airTime += dt; a.fallSpeed = Math.max(a.fallSpeed, -vy) }
@@ -520,17 +551,21 @@ export function updateAnimator(a: Animator, input: AnimatorInput): AnimatorPose 
       const sw = a.swing, end = swingTotal(sw)
       if (a.time - dt < sw.a && a.time >= sw.a) events.push('swing')
       if (a.time - dt < sw.a + sw.s * 0.6 && a.time >= sw.a + sw.s * 0.6) events.push('impact')
-      if (a.time >= end) { a.swing = null; a.comboUntil = a.clock + 0.3; enter(a, restState(a, input)) }
+      if (a.time >= end) { a.swing = null; a.comboUntil = a.clock + 1.1; enter(a, restState(a, input)) }
     }
     if (dodge && grounded && a.state !== 'dodge') {
-      a.dodges++; a.roll = kind === 'biped' && a.speed > 1.2; a.swing = null; a.combo = 0; enter(a, 'dodge'); events.push('dodge')
-    } else if (attack && a.state !== 'dodge' && a.state !== 'interact') {
-      const heavy = input.attack === 'heavy'
+      a.dodges++; a.roll = kind === 'biped' && a.speed > 1.2; a.swing = null; a.queued = null; a.combo = 0; enter(a, 'dodge'); events.push('dodge')
+    } else if ((attack || a.queued) && a.state !== 'dodge' && a.state !== 'interact' && !input.climbing) {
+      const request = attack ? input.attack! : a.queued!, heavy = request === 'heavy'
       if (a.state === 'attack' && a.swing) {
-        if (a.time >= a.swing.a + a.swing.s && a.combo < 3) { a.combo++; a.heavy = heavy; a.swing = swingFor(kind, a.combo, heavy); enter(a, 'attack', 0.08) }
+        a.queued = request
+        if (a.time >= a.swing.a + a.swing.s + a.swing.r * 0.65) {
+          a.combo = a.combo % 3 + 1; a.heavy = heavy; a.ranged = !!input.ranged; a.queued = null
+          a.swing = swingFor(kind, a.combo, heavy, a.ranged); enter(a, 'attack', 0.08); events.push('attackStart')
+        }
       } else {
         a.combo = a.clock <= a.comboUntil && a.combo < 3 ? a.combo + 1 : 1
-        a.heavy = heavy; a.swing = swingFor(kind, a.combo, heavy); enter(a, 'attack')
+        a.heavy = heavy; a.ranged = !!input.ranged; a.queued = null; a.swing = swingFor(kind, a.combo, heavy, a.ranged); enter(a, 'attack'); events.push('attackStart')
       }
     } else if (interact && !busy(a.state)) enter(a, 'interact')
     if (a.state === 'dodge' && a.time >= dodgeTime(a)) enter(a, restState(a, input))
@@ -538,7 +573,8 @@ export function updateAnimator(a: Animator, input: AnimatorInput): AnimatorPose 
     if (a.state === 'interact' && a.time - dt < 0.35 && a.time >= 0.35) events.push('interact')
     if (a.state === 'activity' && a.activity === 'work' && variant(a, 2, 3) === 0 && crossed((a.clock - dt) * 1.1, a.clock * 1.1, 0.72)) events.push('impact')
     if (!busy(a.state)) {
-      if (!grounded) {
+      if (input.climbing) { if (a.state !== 'climb') enter(a, 'climb'); a.airTime = 0; a.fallSpeed = 0 }
+      else if (!grounded) {
         if (a.state !== 'jump' && a.state !== 'fall') {
           if (vy > 0.8 && a.airTime < 0.2) { enter(a, 'jump'); events.push('jump') }
           else if (a.airTime > 0.15 || vy < -2.5) enter(a, 'fall')
@@ -587,7 +623,7 @@ export function updateAnimator(a: Animator, input: AnimatorInput): AnimatorPose 
     const v = joints[joint]
     out.set(joint, [bound(joint, v[0]), bound(joint, v[1]), bound(joint, v[2])])
   }
-  const ikTarget = a.state === 'jump' || a.state === 'fall' || a.state === 'death' || (a.state === 'dodge' && a.roll) || frame.seat > 0.5 || frame.collapse > 0.5 ? 0 : a.state === 'dodge' ? 0.5 : 1
+  const ikTarget = a.state === 'climb' || a.state === 'jump' || a.state === 'fall' || a.state === 'death' || (a.state === 'dodge' && a.roll) || frame.seat > 0.5 || frame.collapse > 0.5 ? 0 : a.state === 'dodge' ? 0.5 : 1
   const lookTarget = a.state === 'death' || a.state === 'dodge' || (a.state === 'activity' && (a.activity === 'sleep' || a.activity === 'work')) ? 0 : a.state === 'attack' ? 0.3 : a.state === 'jump' || a.state === 'fall' ? 0.5 : 1
   a.footIK = approach(a.footIK, ikTarget, 10, dt); a.look = approach(a.look, lookTarget, 6, dt)
   const state: AnimState = a.state === 'locomotion' && a.clock - a.hurtAt < 0.35 ? 'hurt' : a.state

@@ -1,5 +1,7 @@
 # Documentação atual
 
+- [Correções de movimento e combate — Three.js 0.6](threejs-motion-fixes.md): giro ao recuar, combos, escalada, equipamento, contato dos golpes e medição da IK.
+
 - [Mundos vivos — Three.js 0.5](threejs-living-worlds.md): contrato 1.3, personagens com rig, combate, inventário, NPCs, áudio sintetizado, clima e gradação.
 - [Estúdio Three.js](threejs-studio.md): modo jogo, interações, atalhos/gizmos, céu e pós-processamento, geometrias/terreno/luzes, GLB, edição/reparo contextual, animações e inspeção espacial.
 

@@ -11,9 +11,13 @@ export interface SkinPlan {
   bindTweak: Record<string, [number, number, number]>; blend: Record<string, number>; defaultBlend: number; slotOverride: Record<string, SlotMaterial>
   /** Body index per part (0 = main; 1 = separate jaw). */
   bodyOf: (id: string) => number; bodies: number
+  /** Primitive replacements (the palm becomes a rounded box). */
+  shape: Record<string, { kind: 'box' | 'sphere'; scale: [number, number, number] }>
   /** Parts used only by some LODs (fingers mitten for LOD2). */
   levels: Record<string, [number, number]>
   voxel: number; scale: number; weightBlend: number
+  /** Fraction of the voxel size every solid grows by in LOD1/LOD2, so thin limbs keep their topology. */
+  grow: number
   face: boolean; hair: boolean; fingers: boolean; tusks: boolean; cape: string | null; shell: { part: string; trim: string | null; long: boolean } | null
   avatar: string | null
 }
@@ -44,11 +48,11 @@ export function skinPlan(request: { type: string; parts: PrefabPart[]; avatar?: 
   const { parts } = request, present = new Set(parts.map((part) => part.id)), has = (ids: string[]) => ids.filter((id) => present.has(id))
   if (request.avatar === 'robot') return null
   const base = { wrap: [] as string[], inset: {} as Record<string, number>, bindTweak: {} as Record<string, [number, number, number]>, blend: {} as Record<string, number>, slotOverride: {} as Record<string, SlotMaterial>,
-    bodyOf: () => 0, bodies: 1, levels: {} as Record<string, [number, number]>, face: false, hair: false, fingers: false, tusks: false, cape: null as string | null, shell: null as SkinPlan['shell'], avatar: request.avatar ?? null }
+    bodyOf: () => 0, bodies: 1, grow: 0.12, shape: {} as SkinPlan['shape'], levels: {} as Record<string, [number, number]>, face: false, hair: false, fingers: false, tusks: false, cape: null as string | null, shell: null as SkinPlan['shell'], avatar: request.avatar ?? null }
   const humanoid = (skin: string[], extra: Partial<SkinPlan> & { only?: boolean } = {}): SkinPlan => {
     const { only, ...rest } = extra, list = has(skin), hidden = only ? has(extra.hidden ?? []) : [...new Set([...list, ...has(extra.hidden ?? [])])]
     const scale = extent(parts, new Set(has(['head', 'torso', ...LR('sole', 'foot')]))) / 1.75
-    return { ...base, kind: 'humanoid', skin: list, defaultBlend: 0.02, voxel: 0.024, weightBlend: 0.045, scale: Math.max(0.3, scale), bindTweak: A_POSE, levels: MITTEN, fingers: true, ...rest, hidden }
+    return { ...base, kind: 'humanoid', skin: list, defaultBlend: 0.02, voxel: 0.026, weightBlend: 0.045, scale: Math.max(0.3, scale), bindTweak: A_POSE, levels: MITTEN, fingers: true, shape: Object.fromEntries(LR('palm').map((id) => [id, { kind: 'box' as const, scale: [0.9, 0.86, 0.92] as [number, number, number] }])), ...rest, hidden }
   }
   switch (request.type) {
     case 'villager':
@@ -70,7 +74,7 @@ export function skinPlan(request: { type: string; parts: PrefabPart[]; avatar?: 
     }
     case 'spider': {
       const skin = has(['cephalothorax', 'carapace', 'pedicel', 'abdomen', 'spinneret', ...LR('chelicera', 'palp'), ...Array.from({ length: 8 }, (_, i) => ['coxa', 'femur', 'kneeBall', 'tibia', 'band'].map((name) => `${name}${i}`)).flat()])
-      return { ...base, kind: 'arachnid', skin, hidden: skin, defaultBlend: 0.025, blend: { carapace: 0.02, abdomen: 0.05, pedicel: 0.05 }, voxel: 0.017, weightBlend: 0.04, scale: Math.max(0.3, extent(parts, new Set(skin)) / 1.75) }
+      return { ...base, kind: 'arachnid', skin, hidden: skin, defaultBlend: 0.025, blend: { carapace: 0.02, abdomen: 0.05, pedicel: 0.05 }, voxel: 0.026, weightBlend: 0.04, grow: 0.3, inset: Object.fromEntries(Array.from({ length: 8 }, (_, i) => [`tibia${i}`, -0.006])), scale: Math.max(0.3, extent(parts, new Set(skin)) / 1.75) }
     }
     case 'dragon': {
       const skin = has(['body', 'belly', 'neck', 'neckBelly', 'skull', 'tail', 'tail2', ...LR('wingRoot', 'humerus', 'radius'), ...legs('upper', 'lower', 'foot')])

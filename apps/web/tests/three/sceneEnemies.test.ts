@@ -163,7 +163,7 @@ test('melee enemies approach, wind up and strike only if the player stays in rea
   const player = new THREE.Vector3(5, 0, 0), strikes: number[] = []
   for (let i = 0; i < 60; i++) if (stepEnemyMotion(knight, melee, player, empty(), 0.1).attack === 'melee') strikes.push(i)
   const gap = Math.hypot(player.x - knight.position.x, player.z - knight.position.z)
-  assert.ok(gap > 0.9 && gap <= 1.45, `stops in reach: ${gap}`)
+  assert.ok(gap >= 0.7 && gap <= 1.45, `approaches close enough for limb contact without overlapping the player capsule: ${gap}`)
   assert.ok(strikes.length >= 2, `strikes ${strikes}`)
   assert.ok(strikes[1] - strikes[0] >= 10, 'cooldown between strikes')
   const dodger = createEnemyMotion(new THREE.Vector3(4, 0, 0), 0), near = new THREE.Vector3(5, 0, 0)

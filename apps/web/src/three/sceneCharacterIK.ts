@@ -27,14 +27,14 @@ function rotateWorld(object: THREE.Object3D, rotation: THREE.Quaternion) {
   const parent = object.parent
   if (parent) { parent.getWorldQuaternion(q3); object.quaternion.premultiply(q3.clone().invert().multiply(rotation).multiply(q3)) }
   else object.quaternion.premultiply(rotation)
-  object.updateWorldMatrix(false, true)
+  object.updateWorldMatrix(false, false)
 }
 function setWorldY(object: THREE.Object3D, dy: number) {
   object.getWorldPosition(v1)
   v1.y += dy
   if (object.parent) object.parent.worldToLocal(v1)
   object.position.copy(v1)
-  object.updateWorldMatrix(false, true)
+  object.updateWorldMatrix(false, false)
 }
 
 interface Leg { hip: THREE.Object3D; knee: THREE.Object3D; foot: THREE.Vector3; ankle: THREE.Vector3; front: boolean }
@@ -81,7 +81,7 @@ export function solveLeg(hip: THREE.Object3D, knee: THREE.Object3D, foot: THREE.
 export function solveFootIK(binding: RigBinding, holders: Map<string, THREE.Object3D>, ground: GroundSampler, weight = 1, memory?: FootIKMemory, dt?: number): { pelvis: number } {
   const pelvis = holderOf(binding, holders, rigRootJoint[binding.kind]), root = characterRoot(binding, holders), w = clamp(fin(weight), 0, 1)
   if (!root || !pelvis || !(binding.feet ?? []).length) return { pelvis: 0 }
-  root.updateWorldMatrix(true, true)
+  root.updateWorldMatrix(true, false)
   const list = legs(binding, holders)
   if (!list.length) return { pelvis: 0 }
   const base = root.getWorldPosition(new THREE.Vector3()).y, feet = list.map((leg) => leg.knee.localToWorld(leg.foot.clone()))
@@ -128,7 +128,7 @@ const lookRotation = (yaw: number, pitch: number) => new THREE.Quaternion().setF
 export function solveLookAt(binding: RigBinding, holders: Map<string, THREE.Object3D>, target: THREE.Vector3 | null, weight: number, memory?: LookMemory, dt?: number): { yaw: number; pitch: number } {
   const root = characterRoot(binding, holders), neck = holderOf(binding, holders, 'j_neck'), head = holderOf(binding, holders, 'j_head')
   if (!root || !head) return { yaw: 0, pitch: 0 }
-  root.updateWorldMatrix(true, true)
+  root.updateWorldMatrix(true, false)
   const body = root.getWorldQuaternion(new THREE.Quaternion()), [yaw0, pitch0] = facing(head, body)
   let yaw = 0, pitch = 0, w = 0
   if (target && Number.isFinite(target.x + target.y + target.z)) {

@@ -22,33 +22,36 @@ export interface PrimSource { kind: 'sphere' | 'capsule' | 'lathe' | 'cylinder' 
 function rotation(m: ArrayLike<number>): Float64Array {
   return new Float64Array([m[0], m[1], m[2], m[4], m[5], m[6], m[8], m[9], m[10], m[12], m[13], m[14]])
 }
+/** Every primitive shares one object shape, which keeps the hot distance loop monomorphic. */
+function makePrim(kind: number, r: Float64Array, sx: number, sy: number, sz: number, poly: Float64Array | null, round: number, cx: number, cy: number, cz: number, radius: number): Prim {
+  return { kind, r, sx, sy, sz, poly, round, cx, cy, cz, radius }
+}
 /** Builds a primitive matching the normalized node geometry of sceneGeometry.ts (dimensions are the exact local bounding box). */
 export function primFrom(source: PrimSource): Prim {
-  const [w, h, d] = source.dimensions, r = rotation(source.matrix), base = { r, cx: r[9], cy: r[10], cz: r[11], radius: 0.5 * Math.hypot(w, h, d), poly: null as Float64Array | null, round: 0 }
+  const [w, h, d] = source.dimensions, r = rotation(source.matrix), radius = 0.5 * Math.sqrt(w * w + h * h + d * d)
   switch (source.kind) {
-    case 'sphere': return { ...base, kind: PRIM_ELLIPSOID, sx: w / 2, sy: h / 2, sz: d / 2 }
-    case 'capsule': return { ...base, kind: PRIM_CAPSULE, sx: w / 2, sy: h / 4, sz: d / 2 }
-    case 'box': return { ...base, kind: PRIM_BOX, sx: w / 2, sy: h / 2, sz: d / 2, round: Math.min(w, h, d) * 0.3 }
-    case 'cylinder': return { ...base, kind: PRIM_CYLINDER, sx: w / 2, sy: h / 2, sz: d / 2, round: Math.min(w, d, h) * 0.18 }
+    case 'sphere': return makePrim(PRIM_ELLIPSOID, r, w / 2, h / 2, d / 2, null, 0, r[9], r[10], r[11], radius)
+    case 'capsule': return makePrim(PRIM_CAPSULE, r, w / 2, h / 4, d / 2, null, 0, r[9], r[10], r[11], radius)
+    case 'box': return makePrim(PRIM_BOX, r, w / 2, h / 2, d / 2, null, Math.min(w, h, d) * 0.3, r[9], r[10], r[11], radius)
+    case 'cylinder': return makePrim(PRIM_CYLINDER, r, w / 2, h / 2, d / 2, null, Math.min(w, d, h) * 0.18, r[9], r[10], r[11], radius)
     default: {
       const profile = source.kind === 'cone' ? [[0, 0], [1, 0], [0, 1]] as [number, number][] : source.profile ?? [[0, 0], [1, 0], [1, 1], [0, 1]]
       const rmax = Math.max(...profile.map((p) => p[0])) || 1, t0 = Math.min(...profile.map((p) => p[1])), t1 = Math.max(...profile.map((p) => p[1])), mean = (w + d) / 4
       const poly = new Float64Array(profile.length * 2)
-      profile.forEach(([radius, t], i) => { poly[i * 2] = radius / rmax * mean; poly[i * 2 + 1] = ((t - t0) / ((t1 - t0) || 1) - 0.5) * h })
-      return { ...base, kind: PRIM_LATHE, sx: w / 2, sy: h / 2, sz: d / 2, poly }
+      profile.forEach(([pr, t], i) => { poly[i * 2] = pr / rmax * mean; poly[i * 2 + 1] = ((t - t0) / ((t1 - t0) || 1) - 0.5) * h })
+      return makePrim(PRIM_LATHE, r, w / 2, h / 2, d / 2, poly, 0, r[9], r[10], r[11], radius)
     }
   }
 }
 /** Tapered capsule between two world points (radii ra → rb). */
 export function segmentPrim(a: [number, number, number], b: [number, number, number], ra: number, rb: number): Prim {
-  const poly = new Float64Array([a[0], a[1], a[2], b[0] - a[0], b[1] - a[1], b[2] - a[2], ra, rb])
-  return { kind: PRIM_SEGMENT, r: new Float64Array(12), sx: 0, sy: 0, sz: 0, poly, round: 0, cx: (a[0] + b[0]) / 2, cy: (a[1] + b[1]) / 2, cz: (a[2] + b[2]) / 2,
-    radius: Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]) / 2 + Math.max(ra, rb) }
+  const poly = new Float64Array([a[0], a[1], a[2], b[0] - a[0], b[1] - a[1], b[2] - a[2], ra, rb]), l = Math.sqrt((b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2 + (b[2] - a[2]) ** 2)
+  return makePrim(PRIM_SEGMENT, new Float64Array(12), 0, 0, 0, poly, 0, (a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2, l / 2 + Math.max(ra, rb))
 }
-/** Ellipsoid with explicit world center and rotation matrix (column-major 4x4 or 3x3 inside a 4x4). */
+/** Ellipsoid with explicit world center and rotation matrix (column-major 4x4). */
 export function ellipsoidPrim(matrix: ArrayLike<number>, radii: [number, number, number]): Prim {
   const r = rotation(matrix)
-  return { kind: PRIM_ELLIPSOID, r, sx: radii[0], sy: radii[1], sz: radii[2], poly: null, round: 0, cx: r[9], cy: r[10], cz: r[11], radius: Math.max(...radii) }
+  return makePrim(PRIM_ELLIPSOID, r, radii[0], radii[1], radii[2], null, 0, r[9], r[10], r[11], Math.max(...radii))
 }
 
 /** 2D distance to a lathe profile in (ρ, y); returns signed distance and fills `out` with the outward direction. */
@@ -126,7 +129,8 @@ const smin = (a: number, b: number, k: number) => { if (k <= 0) return Math.min(
 const smax = (a: number, b: number, k: number) => -smin(-a, -b, k)
 
 /** Builds a field with per-bin operation lists so evaluations only touch nearby solids. Values farther than `cut` are clamped. */
-export function createField(ops: FieldOp[], cut: number): Field {
+export function createField(input: FieldOp[], cut: number): Field {
+  const ops: FieldOp[] = input.map((op) => ({ prim: op.prim, op: op.op, k: op.k, offset: op.offset, region: op.region, regionFade: op.regionFade ?? 0.01 }))
   const min: [number, number, number] = [Infinity, Infinity, Infinity], max: [number, number, number] = [-Infinity, -Infinity, -Infinity]
   for (const op of ops) if (op.op === OP_UNION) {
     const p = op.prim, r = p.radius + op.k
@@ -145,7 +149,7 @@ export function createField(ops: FieldOp[], cut: number): Field {
     const k0 = Math.max(0, Math.floor((p.cz - reach - min[2]) / bin)), k1 = Math.min(nz - 1, Math.floor((p.cz + reach - min[2]) / bin))
     for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) for (let k = k0; k <= k1; k++) {
       const x = min[0] + (i + 0.5) * bin, y = min[1] + (j + 0.5) * bin, z = min[2] + (k + 0.5) * bin
-      if (Math.hypot(x - p.cx, y - p.cy, z - p.cz) <= reach) lists[(k * ny + j) * nx + i].push(op)
+      if ((x - p.cx) ** 2 + (y - p.cy) ** 2 + (z - p.cz) ** 2 <= reach * reach) lists[(k * ny + j) * nx + i].push(op)
     }
   })
   const empty: FieldOp[] = []
@@ -179,7 +183,7 @@ export interface RawMesh { positions: number[]; indices: number[] }
  * Narrow-band surface nets: a coarse pass (4h) finds cells near the surface, the fine grid (h) is evaluated lazily there.
  * Checkerboard faces are resolved before meshing, so every edge of the output is shared by exactly two triangles.
  */
-export function surfaceNets(field: Field, h: number): RawMesh {
+export function surfaceNets(field: Field, h: number, block = 4): RawMesh {
   const [x0, y0, z0] = field.min, nx = Math.ceil((field.max[0] - x0) / h) + 1, ny = Math.ceil((field.max[1] - y0) / h) + 1, nz = Math.ceil((field.max[2] - z0) / h) + 1
   const sy = nx + 1, sz = (nx + 1) * (ny + 1), corners = new Float32Array(sz * (nz + 1)).fill(Number.NaN)
   const corner = (index: number) => {
@@ -190,7 +194,7 @@ export function surfaceNets(field: Field, h: number): RawMesh {
     }
     return v
   }
-  const C = 4, cx = Math.ceil(nx / C), cy = Math.ceil(ny / C), cz = Math.ceil(nz / C), H = h * C, active: number[] = []
+  const C = block, cx = Math.ceil(nx / C), cy = Math.ceil(ny / C), cz = Math.ceil(nz / C), H = h * C, active: number[] = []
   for (let k = 0; k < cz; k++) for (let j = 0; j < cy; j++) for (let i = 0; i < cx; i++) {
     const v = field.value(x0 + (i + 0.5) * H, y0 + (j + 0.5) * H, z0 + (k + 0.5) * H)
     if (Math.abs(v) < H * 1.05) active.push(i, j, k)
@@ -201,35 +205,44 @@ export function surfaceNets(field: Field, h: number): RawMesh {
     if (bi >= nx || bj >= ny || bk >= nz) continue
     if (Math.abs(field.value(x0 + (bi + S / 2) * h, y0 + (bj + S / 2) * h, z0 + (bk + S / 2) * h)) < threshold) fine.push(bi, bj, bk)
   }
-  const each = (visit: (index: number) => void) => {
+  const each = (visit: (index: number) => void, margin = 0) => {
     for (let a = 0; a < fine.length; a += 3) {
-      const i0 = Math.max(1, fine[a]), i1 = Math.min(nx - 1, fine[a] + S - 1), j0 = Math.max(1, fine[a + 1]), j1 = Math.min(ny - 1, fine[a + 1] + S - 1)
-      const k0 = Math.max(1, fine[a + 2]), k1 = Math.min(nz - 1, fine[a + 2] + S - 1)
+      const i0 = Math.max(1, fine[a] - margin), i1 = Math.min(nx - 2, fine[a] + S - 1 + margin), j0 = Math.max(1, fine[a + 1] - margin), j1 = Math.min(ny - 2, fine[a + 1] + S - 1 + margin)
+      const k0 = Math.max(1, fine[a + 2] - margin), k1 = Math.min(nz - 2, fine[a + 2] + S - 1 + margin)
       for (let k = k0; k <= k1; k++) for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) visit(i + j * sy + k * sz)
     }
   }
-  const steps = [1, sy, sz]
+  const steps = [1, sy, sz], CORNER = [0, 1, sy, 1 + sy, sz, 1 + sz, sy + sz, 1 + sy + sz]
+  let used: Int32Array | null = null, done: Uint8Array | null = null
+  const free = (index: number) => { if (!used) return true; for (const o of CORNER) if (used[index - o] >= 0) return false; return true }
+  const fix = (index: number) => {
+    let changed = false
+    for (let f = 0; f < 3; f++) {
+      const u = steps[f === 2 ? 1 : 0], v = steps[f === 0 ? 1 : 2]
+      const c00 = corner(index), c10 = corner(index + u), c01 = corner(index + v), c11 = corner(index + u + v)
+      if ((c00 < 0) === (c11 < 0) && (c10 < 0) === (c01 < 0) && (c00 < 0) !== (c10 < 0)) {
+        const values = [c00, c10, c01, c11], offsets = [0, u, v, u + v]
+        let weakest = -1
+        for (let n = 0; n < 4; n++) if (free(index + offsets[n]) && (weakest < 0 || Math.abs(values[n]) < Math.abs(values[weakest]))) weakest = n
+        if (weakest < 0) continue
+        const at = index + offsets[weakest]
+        corners[at] = -values[weakest] || 1e-7
+        if (done) { done[at] = 0; done[at - 1] &= ~1; done[at - sy] &= ~2; done[at - sz] &= ~4 }
+        changed = true
+      }
+    }
+    return changed
+  }
   for (let pass = 0; pass < 3; pass++) {
     let changed = false
-    each((index) => {
-      for (let f = 0; f < 3; f++) {
-        const u = steps[f === 2 ? 1 : 0], v = steps[f === 0 ? 1 : 2]
-        const c00 = corner(index), c10 = corner(index + u), c01 = corner(index + v), c11 = corner(index + u + v)
-        if ((c00 < 0) === (c11 < 0) && (c10 < 0) === (c01 < 0) && (c00 < 0) !== (c10 < 0)) {
-          const values = [c00, c10, c01, c11], offsets = [0, u, v, u + v]
-          let weakest = 0
-          for (let n = 1; n < 4; n++) if (Math.abs(values[n]) < Math.abs(values[weakest])) weakest = n
-          corners[index + offsets[weakest]] = -values[weakest] || 1e-7
-          changed = true
-        }
-      }
-    })
+    each((index) => { if (fix(index)) changed = true }, 1)
     if (!changed) break
   }
   const cellVertex = new Int32Array(corners.length).fill(-1), vertexCell: number[] = [], positions: number[] = [], indices: number[] = []
   const vertexOf = (cell: number): number => {
     const known = cellVertex[cell]
     if (known >= 0) return known
+    if (used) { fix(cell); fix(cell + 1); fix(cell + sy); fix(cell + sz) }
     let px = 0, py = 0, pz = 0, count = 0
     for (let e = 0; e < 12; e++) {
       const a = EDGES[e][0], b = EDGES[e][1], va = corner(cell + CORNER[a]), vb = corner(cell + CORNER[b])
@@ -243,7 +256,6 @@ export function surfaceNets(field: Field, h: number): RawMesh {
     vertexCell.push(cell)
     return index
   }
-  const CORNER = [0, 1, sy, 1 + sy, sz, 1 + sz, sy + sz, 1 + sy + sz]
   const quad = (a: number, b: number, c: number, d: number, flip: boolean) => {
     const pa = a * 3, pb = b * 3, pc = c * 3, pd = d * 3
     const ac = (positions[pa] - positions[pc]) ** 2 + (positions[pa + 1] - positions[pc + 1]) ** 2 + (positions[pa + 2] - positions[pc + 2]) ** 2
@@ -251,12 +263,14 @@ export function surfaceNets(field: Field, h: number): RawMesh {
     if (ac < bd) { if (flip) indices.push(a, c, b, a, d, c); else indices.push(a, b, c, a, c, d) }
     else if (flip) indices.push(a, d, b, b, d, c); else indices.push(a, b, d, b, c, d)
   }
-  const done = new Uint8Array(corners.length)
+  const flags = new Uint8Array(corners.length)
+  done = flags
+  used = cellVertex
   const edges = (index: number) => {
     const v0 = corner(index)
     for (let axis = 0; axis < 3; axis++) {
-      if (done[index] & (1 << axis)) continue
-      done[index] |= 1 << axis
+      if (flags[index] & (1 << axis)) continue
+      flags[index] |= 1 << axis
       const v1 = corner(index + steps[axis])
       if ((v0 < 0) === (v1 < 0)) continue
       const u = steps[axis === 0 ? 1 : 0], v = steps[axis === 2 ? 1 : 2], flip = axis === 1 ? v0 < 0 : v0 > 0
@@ -271,10 +285,13 @@ export function surfaceNets(field: Field, h: number): RawMesh {
     const cells = new Set<number>()
     for (const [key, n] of count) if (n !== 2) { cells.add(vertexCell[Math.floor(key / V)]); cells.add(vertexCell[key % V]) }
     if (!cells.size) break
+    const around: number[] = []
     for (const cell of cells) for (let dk = -1; dk <= 2; dk++) for (let dj = -1; dj <= 2; dj++) for (let di = -1; di <= 2; di++) {
       const index = cell + di + dj * sy + dk * sz, k = Math.floor(index / sz), j = Math.floor((index - k * sz) / sy), i = index - k * sz - j * sy
-      if (i >= 1 && j >= 1 && k >= 1 && i < nx && j < ny && k < nz) edges(index)
+      if (i >= 1 && j >= 1 && k >= 1 && i < nx - 1 && j < ny - 1 && k < nz - 1) around.push(index)
     }
+    for (const index of around) fix(index)
+    for (const index of around) edges(index)
   }
   return { positions, indices }
 }
@@ -341,7 +358,7 @@ export function refine(mesh: RawMesh, field: Field, inside: (x: number, y: numbe
     else if (count === 3) { const ab = mid(v[0], v[1]), bc = mid(v[1], v[2]), ca = mid(v[2], v[0]); out.push(v[0], ab, ca, ab, v[1], bc, ca, bc, v[2], ab, bc, ca) }
     else { const s = split.indexOf(true), a = v[s], b = v[(s + 1) % 3], c = v[(s + 2) % 3], m = mid(a, b); out.push(a, m, c, m, b, c) }
   }
-  project(field, positions, start, e, limit, 3)
+  project(field, positions, start, e, limit, 2)
   return { positions, indices: out }
 }
 
@@ -403,4 +420,25 @@ export function topology(indices: ArrayLike<number>, count: number): { openEdges
   const used = new Set<number>()
   for (let t = 0; t < indices.length; t++) used.add(find(indices[t]))
   return { openEdges, components: used.size }
+}
+
+/** Removes connected components smaller than `fraction` of the largest one (polygonizer crumbs at thin tips). */
+export function dropFragments(mesh: RawMesh, fraction: number): RawMesh {
+  const count = mesh.positions.length / 3, parent = Int32Array.from({ length: count }, (_, i) => i), I = mesh.indices
+  const find = (i: number): number => { while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i] } return i }
+  for (let t = 0; t < I.length; t += 3) { const a = find(I[t]); parent[find(I[t + 1])] = a; parent[find(I[t + 2])] = a }
+  const size = new Map<number, number>()
+  for (let t = 0; t < I.length; t += 3) { const r = find(I[t]); size.set(r, (size.get(r) ?? 0) + 1) }
+  const largest = Math.max(0, ...size.values()), keep = new Set([...size].filter(([, n]) => n >= largest * fraction).map(([r]) => r))
+  if (keep.size === size.size) return mesh
+  const remap = new Int32Array(count).fill(-1), positions: number[] = [], indices: number[] = []
+  for (let t = 0; t < I.length; t += 3) {
+    if (!keep.has(find(I[t]))) continue
+    for (let e = 0; e < 3; e++) {
+      const v = I[t + e]
+      if (remap[v] < 0) { remap[v] = positions.length / 3; positions.push(mesh.positions[v * 3], mesh.positions[v * 3 + 1], mesh.positions[v * 3 + 2]) }
+      indices.push(remap[v])
+    }
+  }
+  return { positions, indices }
 }

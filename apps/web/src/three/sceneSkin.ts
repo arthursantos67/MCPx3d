@@ -24,8 +24,10 @@ function geometryOf(lod: SkinLod): THREE.BufferGeometry {
   geometry.setAttribute('skinWeight', new THREE.BufferAttribute(lod.skinWeight, 4))
   geometry.setAttribute('slotA', new THREE.BufferAttribute(lod.slotA, 4))
   geometry.setAttribute('slotB', new THREE.BufferAttribute(lod.slotB, 4))
+  geometry.setAttribute('slotC', new THREE.BufferAttribute(lod.slotC, 4))
   geometry.setIndex(new THREE.BufferAttribute(lod.indices, 1))
   for (const group of lod.groups) geometry.addGroup(group.start, group.count, group.material)
+  geometry.userData.components = lod.components
   geometry.computeBoundingBox()
   geometry.computeBoundingSphere()
   return geometry
@@ -107,7 +109,7 @@ export function skinCharacter(rootId: string, spec: PrefabSpec, holders: Map<str
   lod.name = 'Pele contínua'
   lod.userData.nodeId = rootId
   root.add(lod)
-  lod.updateMatrixWorld(true)
+  root.updateMatrixWorld(true)
   for (const mesh of meshes) mesh.bind(skeleton, root.matrixWorld.clone())
   const hidden = new Set(model.hidden.map((id) => parts.get(id)).filter((id): id is string => !!id))
   const springs: SpringChainSpec[] = model.springs.map((chain) => ({ bones: chain.bones.map((index) => bones[index]), stiffness: chain.stiffness, damping: chain.damping, gravity: chain.gravity, limit: chain.limit, wind: chain.wind }))
@@ -129,7 +131,7 @@ export function skinCharacter(rootId: string, spec: PrefabSpec, holders: Map<str
     face.eyes.forEach((eye) => pose(eye, -pitch, yaw, 0))
     face.lids.forEach((lid) => pose(lid, blink * face.lidClosed + Math.max(0, -pitch) * 0.15, 0, 0))
     face.brows.forEach((index, i) => { const side = i === 0 ? 1 : -1; pose(index, 0, 0, side * Math.max(0, -brow) * 0.22, [0, brow * 0.007 * s, 0]) })
-    face.corners.forEach((index, i) => { const side = i === 0 ? 1 : -1; pose(index, 0, 0, 0, [side * smile * 0.003 * s, smile * 0.005 * s, -Math.abs(smile) * 0.002 * s]) })
+    face.corners.forEach((index, i) => { const side = i === 0 ? 1 : -1; pose(index, 0, 0, 0, [side * smile * 0.004 * s, smile * 0.007 * s, -Math.abs(smile) * 0.002 * s]) })
   }
   setFace(neutral)
   return {

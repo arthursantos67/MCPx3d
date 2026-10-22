@@ -53,6 +53,8 @@ flowchart LR
 
 ## Three.js
 
+No runtime da 0.6, `sceneCharacterAnimator.ts` inclui combos com entrada antecipada e escalada articulada; `scenePlayer.ts` separa orientação visual da câmera e valida a passagem da escada ao patamar. `sceneEquipment.ts` mantém equipamento efêmero e origens visuais dos disparos, e `sceneCombat.ts` verifica a trajetória do golpe contra caixas do corpo durante a fase de contato. A IK atualiza somente caminhos necessários; HUD React e estatísticas têm frequência limitada. Esses comportamentos não alteram o documento e se aplicam a qualquer origem da cena. [Limites e medição](threejs-motion-fixes.md).
+
 `WorkspaceShell` carrega `ThreeWorkspace` sob demanda, preservando o estado e passando `active` para suspender o viewport. Edição e renderização rodam no navegador e não dependem da saúde da API nem de IA. A geração usa o `AgentProvider` compartilhado, bloqueando navegação/edições durante a ação.
 
 `src/three/sceneDocument.ts` define e valida `ThreeSceneDocument` 1.3 (migra 1.0–1.2): nós com IDs/parentId, transformação local, materiais, geometria, animação, `collidable`, luz e interação declarativas, mais ambiente (céu, sol, neblina, efeitos e jogador). O documento não serializa objetos internos do Three.js nem código executável. Importações e recuperação local usam a mesma validação de tipos, limites, referências de interação e árvore acíclica. Histórico é local à aba e o rascunho único usa uma chave própria de localStorage.

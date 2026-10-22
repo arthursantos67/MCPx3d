@@ -1,14 +1,14 @@
 import * as THREE from 'three'
 import type { weaponKinds } from './sceneDocument.ts'
 import { enemyCanSee } from './sceneEnemies.ts'
-import { PLAYER_HEIGHT, PLAYER_RADIUS, type PlayerBox, type PlayerCollider } from './scenePlayer.ts'
+import { capsuleTouches, PLAYER_HEIGHT, PLAYER_RADIUS, type PlayerBox, type PlayerCollider } from './scenePlayer.ts'
 
 export type WeaponKind = typeof weaponKinds[number]
-/** Melee weapons strike every target within `range` inside `arc` degrees; projectiles fly at `speed` m/s for `range` metres, falling with `gravity`. */
+/** Melee range guides targeting; damage requires animated contact. Projectiles fly at `speed` m/s for `range` metres. */
 export interface WeaponStats { kind: 'melee' | 'projectile'; damage: number; cooldown: number; range: number; arc?: number; speed?: number; radius?: number; color: string; gravity?: number }
 export const weaponStats: Record<WeaponKind, WeaponStats> = {
-  none: { kind: 'melee', damage: 1, cooldown: 0.45, range: 2.8, arc: 50, color: '#ffd27a' },
-  sword: { kind: 'melee', damage: 2, cooldown: 0.5, range: 3.2, arc: 110, color: '#dfe8ff' },
+  none: { kind: 'melee', damage: 1, cooldown: 0.45, range: 0.85, arc: 50, color: '#ffd27a' },
+  sword: { kind: 'melee', damage: 2, cooldown: 0.5, range: 1.6, arc: 110, color: '#dfe8ff' },
   blaster: { kind: 'projectile', damage: 1, cooldown: 0.22, range: 45, speed: 42, radius: 0.08, color: '#5ff2ff' },
   bow: { kind: 'projectile', damage: 2, cooldown: 0.75, range: 60, speed: 30, radius: 0.06, gravity: 12, color: '#d9b98c' },
   staff: { kind: 'projectile', damage: 2, cooldown: 0.9, range: 30, speed: 14, radius: 0.3, color: '#b57bff' },
@@ -95,6 +95,31 @@ function closestOnBox(point: THREE.Vector3, box: PlayerBox): THREE.Vector3 {
   const offset = point.clone().sub(box.center), result = box.center.clone()
   for (let i = 0; i < 3; i++) { const half = box.half.getComponent(i); result.addScaledVector(box.axes[i], Math.max(-half, Math.min(half, offset.dot(box.axes[i])))) }
   return result
+}
+
+export function sweptMeleeTargets(previous: THREE.Line3, current: THREE.Line3, radius: number, targets: CombatTarget[], collider?: PlayerCollider, source = current.start): string[] {
+  if (Math.max(previous.start.distanceTo(current.start), previous.end.distanceTo(current.end)) > 3) previous = current
+  const motion = Math.max(previous.start.distanceTo(current.start), previous.end.distanceTo(current.end))
+  const steps = Math.max(1, Math.ceil(motion / Math.max(0.02, radius))), hits = new Set<string>()
+  for (let i = 0; i <= steps; i++) {
+    const start = previous.start.clone().lerp(current.start, i / steps), end = previous.end.clone().lerp(current.end, i / steps)
+    const direction = end.clone().sub(start), length = direction.length()
+    if (length < 1e-8) continue
+    direction.divideScalar(length)
+    for (const { id, box } of targets) {
+      if (hits.has(id)) continue
+      const entry = boxEntry(start, direction, box, radius)
+      if (entry === null || entry > length) continue
+      const contact = start.clone().addScaledVector(direction, entry)
+      if (collider && !enemyCanSee(source, contact, collider)) continue
+      hits.add(id)
+    }
+  }
+  return [...hits]
+}
+
+export function meleePlayerContact(feet: THREE.Vector3, striking: PlayerBox[], source: THREE.Vector3, collider: PlayerCollider): boolean {
+  return striking.some((box) => capsuleTouches(feet, box, 0.02)) && enemyCanSee(source, feet.clone().add(new THREE.Vector3(0, 0.9, 0)), collider)
 }
 
 /** Target ids within `range` (to the nearest box point) inside a cone of `arcDegrees`, nearest first; a collider adds a line-of-sight check. */

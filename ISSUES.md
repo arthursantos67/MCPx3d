@@ -4,6 +4,8 @@ Baseline de 2026-10-02, alinhada ao [PRD](PRD.md). O planejamento antigo permane
 
 ## Three.js — frente iniciada em 2026-10-13
 
+Correções da 0.6 (2026-10-22): recuo com giro corporal, combos com entrada antecipada, escalada com passagem ao patamar, equipamento/disparos vinculados à pose e contato físico dos golpes no runtime comum. IK evita travessias repetidas, HUD tem frequência limitada e a qualidade controla a resolução interna. Pendentes: medir FPS em GPU física e colisão da pele deformada por triângulo. [Detalhes e benchmark](docs/threejs-motion-fixes.md).
+
 Primeira entrega: terceiro menu, viewport local, pavilhão demonstrativo, primitivas/grupos, hierarquia, seleção, inspector PBR, iluminação, histórico e JSON com validação/rascunho local. Incremento prioritário: geração por descrição, expansão procedural e animações declarativas com timeline. Correção após timeout com Codex: prazo padrão de 5 minutos (opções 2/5/10), progresso por etapa, relógio e histórico de diagnóstico; o limite de 300 s por chamada da ponte local continua independente. Critérios e arquitetura em [docs/threejs-studio.md](docs/threejs-studio.md).
 
 Revisão de 2026-10-14: catálogo ampliado para perfis/curvas/malhas, GLB estático, materiais físicos/texturas/reflexões/sombras, tela cheia e edição/reparo contextual com inspeção geométrica em worker. Inserção/duplicação posicionam objetos fora dos limites dos anteriores. Escopo e limites no documento do estúdio.

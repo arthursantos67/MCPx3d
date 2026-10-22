@@ -150,7 +150,7 @@ test('game systems: hazards hurt, third-person camera, enemies are defeated and 
     const prefab = (id: string, type: string, position: number[], size = 1) => ({ ...base, id, name: id, kind: 'group', position, prefab: { type, size, seed: 1, primary: null, secondary: null, text: '', lit: false, interactive: true } })
     return JSON.stringify(expandSceneRecipe({ name: 'Arena de teste', background: '#223344', exposure: 1, lightIntensity: 1.5, duration: 10,
       environment: { objective: { type: 'defeatEnemies', title: 'Derrote o slime', timeLimit: 0 }, player: { spawn: [0, 0, 0], yaw: 0, speed: 4, jumpHeight: 1, mode: 'walk', allowFly: false, health: 100, camera: 'first' } },
-      nodes: [{ ...base, id: 'floor', name: 'Piso', kind: 'box', position: [0, -0.1, 0], dimensions: [40, 0.2, 40] }, prefab('spikes', 'spikes', [0, 0, 0]), prefab('slime', 'enemy', [0, 0, -2.4], 2)] }))
+      nodes: [{ ...base, id: 'floor', name: 'Piso', kind: 'box', position: [0, -0.1, 0], dimensions: [40, 0.2, 40] }, prefab('spikes', 'spikes', [0, 0, 0]), prefab('slime', 'enemy', [0, 0, -1.2], 2)] }))
   })
   const doc = JSON.parse(json)
   await load(page, doc)

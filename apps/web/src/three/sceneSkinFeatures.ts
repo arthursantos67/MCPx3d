@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import { hashNoise } from './sceneGeometrySpec.ts'
 import type { PrefabPart } from './scenePrefabs.ts'
-import { createField, ellipsoidPrim, fieldNormals, OP_SUBTRACT, OP_UNION, project, relax, segmentPrim, surfaceNets, type Field, type FieldOp } from './sceneSkinGeometry.ts'
+import { createField, dropFragments, ellipsoidPrim, fieldNormals, OP_SUBTRACT, OP_UNION, project, relax, segmentPrim, surfaceNets, type Field, type FieldOp } from './sceneSkinGeometry.ts'
 import { emptyPiece, MATERIAL_BODY, MATERIAL_EYE, MATERIAL_HAIR, MATERIAL_SHELL, normalAt, overrideSlot, PATTERN, singleSlot, slotOf, surfaceAlong, type Piece, type SlotMaterial, type SlotTable } from './sceneSkinMesh.ts'
 import type { FaceRig, SkinBone, SkinPart, SkinRequest, SpringPlan } from './sceneSkinModel.ts'
 import type { SkinPlan } from './sceneSkinPlan.ts'
@@ -114,7 +114,7 @@ function face(ctx: FeatureContext, builders: Builder[], decorators: Decorator[])
   const eyeY = (ctx.byId.get('eyeL')?.position[1] ?? c[1] + 0.005 * hs), eyeX = Math.abs(ctx.byId.get('eyeL')?.position[0] ?? 0.048 * hs)
   const mouthY = ctx.byId.get('mouth')?.position[1] ?? c[1] - 0.07 * hs
   if (!ctx.byId.has('chin')) uni(ellipsoid([c[0], c[1] - 0.085 * hs, c[2] + 0.058 * hs], [0.044, 0.034, 0.045]), 0.03)
-  for (const side of [1, -1]) uni(ellipsoid([c[0] + side * 0.05 * hs, c[1] - 0.012 * hs, c[2] + 0.064 * hs], [0.034, 0.026, 0.034]), 0.02)
+  for (const side of [1, -1]) uni(ellipsoid([c[0] + side * 0.05 * hs, c[1] - 0.014 * hs, c[2] + 0.062 * hs], [0.03, 0.022, 0.032]), 0.022)
   let field = createField([...baseOps, ...unions], 0.1 * hs)
   const surface = (x: number, y: number, depth = 0): V3 => {
     const from = world([x, y, c[2]]), hit = surfaceAlong(field, from, forward, R[2] * 2.2, R[2] * 0.06)
@@ -136,7 +136,7 @@ function face(ctx: FeatureContext, builders: Builder[], decorators: Decorator[])
     const pts = [-1, -0.45, 0.45, 1].map((t) => { const p = surface(t * 0.024 * hs, mouthY + dy * hs); return [p[0], p[1] - Math.abs(t) * 0.002 * hs, p[2] + push * hs * (1 - t * t * 0.6)] as V3 })
     for (let i = 0; i < 3; i++) uni(seg(pts[i], pts[i + 1], r * (i === 1 ? 1 : 0.8), r * (i === 1 ? 1 : 0.8)), 0.007)
   }
-  lip(0.0048, 0.0034, -0.0006); lip(-0.0055, 0.004, -0.001)
+  lip(0.0045, 0.0026, -0.0022); lip(-0.005, 0.003, -0.0024)
   const glowEyes = !!ctx.byId.get('eyeL')?.material?.emissive
   const eyes: { center: V3; forward: V3; side: number }[] = []
   for (const side of [1, -1]) {
@@ -144,11 +144,12 @@ function face(ctx: FeatureContext, builders: Builder[], decorators: Decorator[])
     eyes.push({ center, forward: f, side })
     carves.push({ prim: ellipsoidPrim(new THREE.Matrix4().copy(H).multiply(translation(add(center, mul(f, re * 0.1)))).elements, [re * 1.42, re * 1.12, re * 1.2]), op: OP_SUBTRACT, k: re * 0.45, offset: 0 })
   }
-  const groove = { a: [-0.022 * hs, mouthY, mouth[2] - 0.0012 * hs] as V3, b: [0.022 * hs, mouthY, mouth[2] - 0.0012 * hs] as V3, r: 0.0024 * hs }
-  carves.push({ prim: segmentPrim(world(groove.a), world(groove.b), groove.r, groove.r), op: OP_SUBTRACT, k: 0.0025 * hs, offset: 0 })
+  const groove = { a: [-0.021 * hs, mouthY, mouth[2] - 0.0008 * hs] as V3, b: [0.021 * hs, mouthY, mouth[2] - 0.0008 * hs] as V3, r: 0.0019 * hs }
+  const nostrils: V3[] = []
   if (nose && nose.kind === 'sphere') for (const side of [1, -1]) {
-    const tip = nose.position as V3
-    carves.push({ prim: ellipsoidPrim(new THREE.Matrix4().copy(H).multiply(translation([tip[0] + side * 0.0095 * hs, tip[1] - nose.dimensions[1] * 0.4, tip[2] + nose.dimensions[2] * 0.12])).elements, [0.0045 * hs, 0.003 * hs, 0.0045 * hs]), op: OP_SUBTRACT, k: 0.002 * hs, offset: 0 })
+    const tip = nose.position as V3, at: V3 = [tip[0] + side * 0.0095 * hs, tip[1] - nose.dimensions[1] * 0.4, tip[2] + nose.dimensions[2] * 0.12]
+    nostrils.push(at)
+    carves.push({ prim: ellipsoidPrim(new THREE.Matrix4().copy(H).multiply(translation(at)).elements, [0.0045 * hs, 0.003 * hs, 0.0045 * hs]), op: OP_SUBTRACT, k: 0.002 * hs, offset: 0 })
   }
   for (const op of [...unions, ...carves]) ctx.extraOps.push({ body: 0, op })
   // Bones of the face: jaw, eyes, lids, brows and mouth corners hang from the head bone.
@@ -168,7 +169,7 @@ function face(ctx: FeatureContext, builders: Builder[], decorators: Decorator[])
   const beardPart = ctx.byId.get('beard'), beardColor = partColor(beardPart, hairColor), browColor = partColor(ctx.byId.get('browL'), hexMix(hairColor, '#000000', 0.25))
   const hairSlotMat: SlotMaterial = { color: hairColor, roughness: 0.62, metalness: 0, sheen: 0.7, clearcoat: 0, emissive: '#000000', emissiveIntensity: 0, pattern: PATTERN.hair }
   const capSlot = ctx.slots.add({ ...hairSlotMat, color: hexMix(hairColor, '#000000', 0.18) })
-  const lipSlot = ctx.slots.add({ ...slotOf(ctx.byId.get('head')?.material), color: hexMix(skinColor, '#b0484a', 0.2), roughness: 0.45 })
+  const lipSlot = ctx.slots.add({ ...slotOf(ctx.byId.get('head')?.material), color: hexMix(skinColor, '#9a4442', 0.22), roughness: 0.58 })
   const mouthSlot = ctx.slots.add({ color: '#3a1416', roughness: 0.5, metalness: 0, sheen: 0, clearcoat: 0.3, emissive: '#000000', emissiveIntensity: 0, pattern: PATTERN.plain })
   const lashSlot = ctx.slots.add({ color: hexMix(browColor, '#000000', 0.4), roughness: 0.8, metalness: 0, sheen: 0.3, clearcoat: 0, emissive: '#000000', emissiveIntensity: 0, pattern: PATTERN.plain })
   const ivorySlot = ctx.slots.add({ ...slotOf(ctx.byId.get('tuskL')?.material), pattern: PATTERN.plain })
@@ -180,6 +181,7 @@ function face(ctx: FeatureContext, builders: Builder[], decorators: Decorator[])
     { color: '#0a0807', roughness: 0.15, metalness: 0, sheen: 0, clearcoat: 1, emissive: '#000000', emissiveIntensity: 0, pattern: PATTERN.plain })
   // Refinement: the whole head once, the front of the face twice (LOD0).
   ctx.refineRegions.push({ body: 0, levels: 2, center: world([c[0], c[1] - 0.015 * hs, c[2] + 0.045 * hs]), radius: 0.125 * hs, inner: { center: world([c[0], c[1] - 0.028 * hs, c[2] + 0.085 * hs]), radius: 0.062 * hs } })
+  ctx.refineRegions.push({ body: 0, levels: 1, center: world([c[0], mouthY, mouth[2]]), radius: 0.034 * hs })
   const hairlineFront = style.receding ? 0.62 : 0.5
   const hairline = (az: number) => { const k = Math.cos(az); return k > 0 ? 0.06 + (hairlineFront - 0.06) * k * k : 0.06 + 0.62 * k }
   const ellipse = (p: V3) => { const q: V3 = [(p[0] - c[0]) / R[0], (p[1] - c[1]) / R[1], (p[2] - c[2]) / R[2]]; return { q, r: len(q), elevation: Math.asin(Math.max(-1, Math.min(1, q[1] / (len(q) || 1)))), az: Math.atan2(q[0], q[2]) } }
@@ -195,8 +197,9 @@ function face(ctx: FeatureContext, builders: Builder[], decorators: Decorator[])
   const inBeard = (p: V3) => {
     if (!beardOn) return -1
     const { elevation, az } = ellipse(p), front = Math.cos(az)
-    const chin = p[1] < mouthY - 0.012 * hs && front > -0.15, sideburn = Math.abs(az) > 0.85 && Math.abs(az) < 1.75 && elevation < 0.05 && p[1] < eyeY - 0.01 * hs
-    return chin || sideburn ? 0.02 : -1
+    const chin = Math.min((mouthY - 0.012 * hs - p[1]) / R[1], front + 0.15)
+    const sideburn = Math.min(Math.abs(az) - 0.85, 1.75 - Math.abs(az), 0.05 - elevation, (eyeY - 0.01 * hs - p[1]) / R[1])
+    return Math.max(chin, sideburn)
   }
   decorators.push((piece, level, _field, body) => {
     if (body !== 0) return
@@ -206,13 +209,15 @@ function face(ctx: FeatureContext, builders: Builder[], decorators: Decorator[])
       for (let i = 0; i < 4; i++) if (piece.bones[v * 4 + i] === headBone) wHead += piece.weights[v * 4 + i]
       if (wHead < 0.05) continue
       const p = local([piece.positions[v * 3], piece.positions[v * 3 + 1], piece.positions[v * 3 + 2]]), { r } = ellipse(p)
-      const scalp = r < 1.12 && wHead > 0.5
-      if (scalp) { const g = inHair(p); if (g > -0.08) overrideSlot(piece, v, capSlot, -g * R[1] * 0.6) }
-      if (scalp && beardOn) { const g = inBeard(p); if (g > 0) overrideSlot(piece, v, capSlot, -g * hs) }
-      const lx = p[0] / (0.031 * hs), ly = (p[1] - mouthY) / (0.0155 * hs)
-      if (p[2] > c[2] && Math.abs(lx) < 2) overrideSlot(piece, v, lipSlot, (Math.sqrt(lx * lx + ly * ly) - 1) * 0.008 * hs)
-      const t = Math.max(0, Math.min(1, (p[0] - groove.a[0]) / (groove.b[0] - groove.a[0]))), gp = mix(groove.a, groove.b, t), gd = len(sub(p, gp)) - groove.r * 1.55
-      if (gd < groove.r * 2) overrideSlot(piece, v, mouthSlot, gd)
+      const ear = (r - 1.1) * 0.6
+      let g = Math.min(inHair(p), -ear)
+      if (beardOn) g = Math.max(g, Math.min(inBeard(p), -ear))
+      overrideSlot(piece, v, capSlot, -g * R[1] * 0.6)
+      const lu = p[0] / (groove.b[0] * 1.08), lip = Math.max(Math.abs(p[1] - mouthY) - (p[1] > mouthY ? 0.0042 : 0.0052) * hs * Math.sqrt(Math.max(0, 1 - lu * lu)), (Math.abs(lu) - 1) * 0.01 * hs)
+      if (p[2] > c[2] && lip < 0.006 * hs) overrideSlot(piece, v, lipSlot, lip)
+      const u = p[0] / groove.b[0], line = Math.max(Math.abs(p[1] - mouthY - 0.0012 * hs * u * u) - 0.0009 * hs * (1 - u * u * 0.6), (Math.abs(u) - 1) * groove.b[0])
+      if (p[2] > c[2] && line < 0.004 * hs) overrideSlot(piece, v, mouthSlot, line)
+      for (const at of nostrils) { const d = len(sub(p, at)) - 0.0042 * hs; if (d < 0.004 * hs) overrideSlot(piece, v, mouthSlot, d) }
       // Facial bones take their share of the head weight.
       const jawShare = smooth(mouthY + 0.004 * hs, mouthY - 0.009 * hs, p[1]) * smooth(c[2] - 0.05 * hs, c[2] + 0.02 * hs, p[2])
       const shares = new Map<number, number>()
@@ -229,11 +234,28 @@ function face(ctx: FeatureContext, builders: Builder[], decorators: Decorator[])
       const list = [...map].filter(([, w]) => w > 1e-4).sort((a, b) => b[1] - a[1]).slice(0, 4), sum = list.reduce((s, [, w]) => s + w, 0) || 1
       for (let i = 0; i < 4; i++) { piece.bones[v * 4 + i] = list[i]?.[0] ?? 0; piece.weights[v * 4 + i] = list[i] ? list[i][1] / sum : 0 }
     }
-    void level
+    if (level <= 1) splitMouth(piece, local, world, { mouthY, half: groove.b[0] * 0.92, front: mouth[2] - 0.012 * hs, radius: groove.r * 1.9, jaw, headBone, curve: (x) => 0.0012 * hs * (x / groove.b[0]) ** 2 })
+  })
+  const teethSlot = ctx.slots.add({ color: '#ece4d4', roughness: 0.3, metalness: 0, sheen: 0, clearcoat: 0.6, emissive: '#000000', emissiveIntensity: 0, pattern: PATTERN.plain })
+  builders.push((level) => {
+    if (level > 1) return []
+    const bag = emptyPiece('boca', MATERIAL_BODY), center: V3 = [c[0], mouthY - 0.004 * hs, mouth[2] - 0.022 * hs], radii: V3 = [0.022 * hs, 0.016 * hs, 0.016 * hs], rows = 7, cols = 12, start = 0
+    for (let r = 0; r <= rows; r++) for (let k = 0; k < cols; k++) {
+      const a = (r / rows) * Math.PI, b = (k / cols) * Math.PI * 2, dir: V3 = [Math.sin(a) * Math.cos(b), Math.cos(a), Math.sin(a) * Math.sin(b)], p = add(center, [dir[0] * radii[0], dir[1] * radii[1], dir[2] * radii[2]])
+      const lower = smooth(mouthY + 0.003 * hs, mouthY - 0.006 * hs, p[1])
+      vertex(bag, world(p), rotate(H, mul(dir, -1)), [k / cols, r / rows], 0.6, [[headBone, 1 - lower], [jaw, lower]], singleSlot(mouthSlot))
+    }
+    grid(bag, start, rows + 1, cols, true)
+    for (const [dy, bone] of [[0.0026, headBone], [-0.0034, jaw]] as const) {
+      const path: V3[] = []
+      for (let k = 0; k <= 6; k++) { const u = k / 6 * 2 - 1; path.push([u * 0.0155 * hs, mouthY + dy * hs, mouth[2] - 0.011 * hs - u * u * 0.007 * hs]) }
+      ribbon(bag, path.map(world), path.map(() => 0.0052 * hs), path.map(() => rotate(H, [0, 0, 1])), [[bone, 1]], singleSlot(teethSlot), 1, 0.15)
+    }
+    return [bag]
   })
   builders.push((level, fields, h) => {
     const eyesPiece = emptyPiece('olhos', MATERIAL_EYE), lids = emptyPiece('pálpebras', MATERIAL_BODY), brows = emptyPiece('sobrancelhas', MATERIAL_HAIR)
-    const rings = [16, 11, 7][level], segments = [20, 14, 9][level], alphaIris = realistic ? 0.5 : 0.6, alphaPupil = alphaIris * (glowEyes ? 0.3 : 0.45)
+    const rings = [12, 9, 6][level], segments = [16, 12, 8][level], alphaIris = realistic ? 0.5 : 0.6, alphaPupil = alphaIris * (glowEyes ? 0.3 : 0.45)
     eyes.forEach((eye, i) => {
       const f = eye.forward, up = norm(sub([0, 1, 0], mul(f, f[1]))), right = cross(up, f), start = eyesPiece.positions.length / 3
       for (let r = 0; r <= rings; r++) {
@@ -242,7 +264,7 @@ function face(ctx: FeatureContext, builders: Builder[], decorators: Decorator[])
           const phi = (s / segments) * Math.PI * 2, dir = norm(add(mul(f, Math.cos(alpha)), add(mul(up, Math.sin(alpha) * Math.cos(phi)), mul(right, Math.sin(alpha) * Math.sin(phi)))))
           const bulge = 1 + 0.07 * Math.max(0, (Math.cos(alpha) - Math.cos(alphaIris)) / (1 - Math.cos(alphaIris)))
           const lateral = dot(dir, right), vertical = dot(dir, up), slit = glowEyes ? Math.sqrt((lateral * 3) ** 2 + vertical ** 2) : Math.sin(alpha)
-          const slots = [0, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05]
+          const slots = singleSlot(0)
           const gIris = (alpha - alphaIris) * re, gPupil = (cos0(alpha) ? (slit - Math.sin(alphaPupil)) : 1) * re
           slots[1] = gIris; slots[2] = gIris + gPupil
           const shade = alpha < alphaIris ? 0.7 + 0.5 * (1 - alpha / alphaIris) : 1
@@ -253,28 +275,28 @@ function face(ctx: FeatureContext, builders: Builder[], decorators: Decorator[])
         const a = start + r * segments + s, b = start + r * segments + (s + 1) % segments, d = a + segments, e = b + segments
         eyesPiece.indices.push(a, b, d, b, e, d)
       }
-      const lidStart = lids.positions.length / 3, lidRows = [6, 4, 3][level]
+      const lidStart = lids.positions.length / 3, lidRows = [4, 3, 2][level]
       for (let r = 0; r <= lidRows + 1; r++) {
-        const theta = r <= lidRows ? (r / lidRows) * lidOpen : lidOpen + 0.03, radius = r <= lidRows ? 1.06 : 0.98
-        for (let s = 0; s < segments; s++) {
-          const phi = (s / segments) * Math.PI * 2, dir = norm(add(mul(up, Math.cos(theta)), add(mul(f, Math.sin(theta) * Math.cos(phi)), mul(right, Math.sin(theta) * Math.sin(phi)))))
+        const theta = r <= lidRows ? (r / lidRows) * lidOpen : lidOpen + 0.03, radius = r <= lidRows ? 1.13 : 1.04
+        for (let s = 0; s <= segments; s++) {
+          const phi = (s / segments - 0.5) * 3.6, dir = norm(add(mul(up, Math.cos(theta)), add(mul(f, Math.sin(theta) * Math.cos(phi)), mul(right, Math.sin(theta) * Math.sin(phi)))))
           const slots = singleSlot(headSlot)
           if (theta > lidOpen - 0.12) slots[lashSlot] = -0.001
           vertex(lids, world(add(eye.center, mul(dir, re * radius))), rotate(H, dir), [s / segments, r / lidRows], 1, [[lidBones[i], 1]], slots)
         }
       }
-      grid(lids, lidStart, lidRows + 2, segments, true, true)
-      const lowStart = lids.positions.length / 3, lowRows = [4, 3, 2][level], lowOpen = 1.2
+      grid(lids, lidStart, lidRows + 2, segments + 1, false)
+      const lowStart = lids.positions.length / 3, lowRows = [3, 2, 1][level], lowOpen = 1.2
       for (let r = 0; r <= lowRows + 1; r++) {
-        const theta = r <= lowRows ? (r / lowRows) * lowOpen : lowOpen + 0.03, radius = r <= lowRows ? 1.05 : 0.98
-        for (let s = 0; s < segments; s++) {
-          const phi = (s / segments) * Math.PI * 2, dir = norm(add(mul(up, -Math.cos(theta)), add(mul(f, Math.sin(theta) * Math.cos(phi)), mul(right, Math.sin(theta) * Math.sin(phi)))))
+        const theta = r <= lowRows ? (r / lowRows) * lowOpen : lowOpen + 0.03, radius = r <= lowRows ? 1.11 : 1.04
+        for (let s = 0; s <= segments; s++) {
+          const phi = (s / segments - 0.5) * 3.6, dir = norm(add(mul(up, -Math.cos(theta)), add(mul(f, Math.sin(theta) * Math.cos(phi)), mul(right, Math.sin(theta) * Math.sin(phi)))))
           const slots = singleSlot(headSlot)
           if (theta > lowOpen - 0.07) slots[lashSlot] = -0.001
           vertex(lids, world(add(eye.center, mul(dir, re * radius))), rotate(H, dir), [s / segments, r / lowRows], 1, [[headBone, 1]], slots)
         }
       }
-      grid(lids, lowStart, lowRows + 2, segments, true)
+      grid(lids, lowStart, lowRows + 2, segments + 1, false)
     })
     // Brows: three tapered strands per side lying on the brow ridge.
     browCenters.forEach((_, i) => {
@@ -285,7 +307,7 @@ function face(ctx: FeatureContext, builders: Builder[], decorators: Decorator[])
           const t = j / n, x = side * (0.016 + 0.052 * t) * hs, y = eyeY + (0.033 + 0.012 * Math.sin(Math.PI * t * 0.9) - 0.006 * t + (k - 1) * 0.0035 - (angry ? 0.014 * (1 - t) : 0)) * hs
           pts.push(add(surface(x, y), [0, 0, 0.0018 * hs]))
         }
-        ribbon(brows, pts.map(world), pts.map((_, j) => (0.0105 - 0.005 * j / n) * hs * (k === 1 ? 1 : 0.7)), pts.map((p) => rotate(H, norm(sub(p, c)))), [[browBones[i], 1]], singleSlot(1), 0.9 + 0.1 * k)
+        ribbon(brows, pts.map(world), pts.map((_, j) => (0.0072 - 0.0034 * j / n) * hs * (k === 1 ? 1 : 0.75)), pts.map((p) => rotate(H, norm(sub(p, c)))), [[browBones[i], 1]], singleSlot(1), 0.9 + 0.1 * k)
       }
     })
     const pieces = [eyesPiece, lids, brows]
@@ -382,12 +404,13 @@ function hairPieces(ctx: FeatureContext, level: number, field: Field, frame: Hea
   const strands: { path: V3[]; width: number; weights: (p: V3) => [number, number][]; slot: number; shade: number; taper: number }[] = []
   const add3 = (_piece: Piece, path: V3[], width: number, weights: (p: V3) => [number, number][], slot: number, shade: number, taper = 0.85) => { strands.push({ path, width, weights, slot, shade, taper }) }
   if (style.kind !== 'bald' && style.kind !== 'none') {
-    const count = [130, 70, 32][level], steps = [6, 4, 3][level], back: V3 = [c[0], c[1] - 1.3 * R[1], c[2] - 1.2 * R[2]], over: V3 = [c[0], c[1] + 1.5 * R[1], c[2] - 1.3 * R[2]]
+    const count = [96, 56, 28][level], steps = [5, 4, 3][level], back: V3 = [c[0], c[1] - 1.3 * R[1], c[2] - 1.2 * R[2]], over: V3 = [c[0], c[1] + 1.5 * R[1], c[2] - 1.3 * R[2]]
     const long = style.kind === 'long', tie: V3 | null = style.kind === 'ponytail' ? scalp([0, 0.15, -1], 0.08) : style.kind === 'topknot' || style.kind === 'bun' ? scalp([0, 0.75, -0.66], 0.06) : null
     const hang = long ? 0.36 * hs * 1.6 : 0, napeY = c[1] - 0.35 * R[1]
     const longChain = long ? chain(ctx, frame, 'hair', [c[0], napeY, c[2] - R[2] * 0.85], hang, 3) : null
-    for (let n = 0; n < count * 2.4; n++) {
-      const y = 1 - (n + 0.5) / (count * 2.4) * 2, ring = Math.sqrt(1 - y * y), a = n * 2.399963 + rnd(n) * 0.3
+    const total = Math.floor(count * 2.4)
+    for (let n = 0; n < total; n++) {
+      const y = 1 - (n + 0.5) / total * 2, ring = Math.sqrt(Math.max(0, 1 - y * y)), a = n * 2.399963 + rnd(n) * 0.3
       const dir: V3 = [ring * Math.sin(a), y, ring * Math.cos(a)], root = scalp(dir, 0.01)
       if (frame.inHair(root) < 0.02) continue
       const path: V3[] = [root]
@@ -407,7 +430,7 @@ function hairPieces(ctx: FeatureContext, level: number, field: Field, frame: Hea
         path.push(p)
       }
       if (long && p[1] < c[1] + 0.1 * R[1] && p[2] < c[2] - 0.25 * R[2]) {
-        const drop = hang * (0.7 + rnd(n + 11) * 0.3), extra = [3, 2, 1][level]
+        const drop = hang * (0.7 + rnd(n + 11) * 0.3), extra = [2, 2, 1][level]
         for (let s = 1; s <= extra; s++) { p = keepOut(add(p, [0, -drop / extra, -0.012 * hs]), 0.012 * hs); path.push(p) }
       }
       const width = (style.kind === 'mohawk' ? 0.03 : 0.042) * hs * (0.8 + rnd(n + 5) * 0.4)
@@ -439,15 +462,15 @@ function hairPieces(ctx: FeatureContext, level: number, field: Field, frame: Hea
     }
   }
   if (frame.beardPart) {
-    const beard = frame.beardLong, rows = [7, 5, 3][level], columns = [13, 9, 5][level], jawBone = ctx.face!.jaw
+    const beard = frame.beardLong, rows = [5, 4, 3][level], columns = [10, 7, 5][level], jawBone = ctx.face!.jaw
     for (let i = 0; i < rows; i++) for (let j = 0; j < columns; j++) {
       const u = (j / (columns - 1)) * 2 - 1, v = i / (rows - 1), x = u * 0.085 * hs, yTop = frame.mouthY - 0.016 * hs + Math.abs(u) ** 1.5 * 0.07 * hs
       const y = yTop - v * (frame.mouthY - 0.016 * hs - (c[1] - R[1] * 0.98)) * (1 - Math.abs(u) * 0.35)
       if (Math.abs(x) > R[0] * 0.95) continue
-      const root = frame.surface(x * (1 - v * 0.2), y, -0.002 * hs), path: V3[] = [root], length = (beard ? 0.26 : 0.045) * hs * (0.8 + rnd(i * 31 + j) * 0.4) * (beard ? 1 - Math.abs(u) * 0.4 : 1), steps = beard ? [6, 4, 3][level] : 3
+      const root = frame.surface(x * (1 - v * 0.2), y, -0.002 * hs), path: V3[] = [root], length = (beard ? 0.26 : 0.045) * hs * (0.8 + rnd(i * 31 + j) * 0.4) * (beard ? 1 - Math.abs(u) * 0.4 : 1), steps = beard ? [4, 3, 2][level] : 2
       let p = root
       for (let s = 1; s <= steps; s++) { p = keepOut(add(p, [-u * 0.004 * hs, -length / steps, (beard ? 0.012 : 0.008) * hs * (1 - s / steps)]), 0.006 * hs); path.push(p) }
-      add3(hair, path, 0.028 * hs, (q) => [[jawBone, q[1] < frame.mouthY - 0.02 * hs ? 1 : 0.6], [frame.headBone, q[1] < frame.mouthY - 0.02 * hs ? 0 : 0.4]], 2, 0.9 + rnd(i * 17 + j) * 0.2, 0.75)
+      add3(hair, path, 0.036 * hs, (q) => [[jawBone, q[1] < frame.mouthY - 0.02 * hs ? 1 : 0.6], [frame.headBone, q[1] < frame.mouthY - 0.02 * hs ? 0 : 0.4]], 2, 0.9 + rnd(i * 17 + j) * 0.2, 0.75)
     }
     if (ctx.byId.has('moustache')) for (const side of [1, -1]) for (let k = 0; k < [3, 2, 1][level]; k++) {
       const path: V3[] = []
@@ -474,12 +497,12 @@ function hands(ctx: FeatureContext, builders: Builder[]) {
       const side = s === 'L' ? 1 : -1, m = ctx.bind.get(`palm${s}`)!, bone = ctx.skinParts.find((part) => part.id === `palm${s}`)?.bone ?? 0
       const [w, h, d] = palm.dimensions, slot = ctx.skinParts.find((part) => part.id === `palm${s}`)?.slot ?? 0
       const gloved = (palm.material?.metalness ?? 0) > 0.3 || palm.material?.texture === 'fabric', nail = gloved ? slot : ctx.slots.add({ ...slotOf(palm.material), color: hexMix(palm.material?.color ?? '#e3b08c', '#ffe8e0', 0.35), roughness: 0.3, clearcoat: 0.5 })
-      const fist = holding.has(s), curl = fist ? [1.15, 1.45, 0.95] : [0.22, 0.32, 0.22], L = (fingers?.dimensions[1] ?? h * 0.85) * 1.05, sides = level ? 5 : 7
+      const fist = holding.has(s), curl = fist ? [1.2, 1.45, 0.95] : [0.32, 0.45, 0.3], L = (fingers?.dimensions[1] ?? h * 0.85) * 0.92, sides = level ? 5 : 7
       const palmSide: V3 = [-side, 0, 0]
       ;[[0.29, 0.93, 1, 0.07], [0.1, 1, 1.04, 0.02], [-0.1, 0.95, 0.98, -0.03], [-0.29, 0.77, 0.86, -0.09]].forEach(([z, length, girth, spread]) => {
-        const r = d * 0.105 * girth, path: V3[] = [[side * w * 0.05, -h * 0.3, z * d * 0.92]]
+        const r = d * 0.122 * girth, path: V3[] = [[side * w * 0.05, -h * 0.26, z * d * 0.88]]
         let direction: V3 = norm([0, -1, spread]), angle = 0
-        path.push(add(path[0], mul(direction, h * 0.14)))
+        path.push(add(path[0], mul(direction, h * 0.16)))
         for (let j = 0; j < 3; j++) {
           angle += curl[j]
           direction = norm(add(mul([0, -1, spread], Math.cos(angle)), mul(palmSide, Math.sin(angle))))
@@ -494,11 +517,17 @@ function hands(ctx: FeatureContext, builders: Builder[]) {
         })
       })
       if (thumb) {
-        const t = ctx.bind.get(`thumb${s}`)!, [tw, tl] = thumb.dimensions, path: V3[] = []
-        for (let j = 0; j <= 4; j++) { const k = j / 4; path.push(apply(t, [-side * Math.sin(k * (fist ? 1 : 0.4)) * tl * 0.25, (k - 0.55) * tl * 1.1, 0])) }
-        tube(piece, path, path.map((_, j): [number, number] => [tw * 0.42 * (1 - j * 0.04), tw * 0.46 * (1 - j * 0.04)]), rotate(t, [0, 0, 1]), sides, () => [[bone, 1]], (i, around) => {
+        const [tw] = thumb.dimensions, path: V3[] = [], base: V3 = [-side * w * 0.12, h * 0.12, d * 0.3]
+        let direction: V3 = norm([-side * 0.3, -0.9, 0.38]), point = base
+        path.push(point)
+        for (let j = 0; j < 4; j++) {
+          point = add(point, mul(direction, h * [0.2, 0.17, 0.14, 0.11][j]))
+          path.push(point)
+          direction = norm(add(direction, mul([-side, -0.2, 0.1], fist ? 0.45 : 0.16)))
+        }
+        tube(piece, path.map((p) => apply(m, p)), path.map((_, j): [number, number] => [tw * 0.48 * (1 - j * 0.07), tw * 0.52 * (1 - j * 0.07)]), rotate(m, [0, 0, 1]), sides, () => [[bone, 1]], (i, around) => {
           const slots = singleSlot(slot)
-          if (!gloved && i >= path.length - 2) { const back = dot(around, rotate(t, [0, 0, 1])); slots[nail] = Math.min(slots[nail], (0.4 - back) * tw) }
+          if (!gloved && i >= path.length - 2) { const back = dot(around, rotate(m, [side, 0, 0.4])); slots[nail] = Math.min(slots[nail], (0.4 - back) * tw) }
           return slots
         })
       }
@@ -593,8 +622,8 @@ function sculptedHair(ctx: FeatureContext, frame: HeadFrame, strands: { path: V3
       tags.set(prim, { strand: index, i, a: world(a), b: world(b) })
     }
   })
-  const hh = h * [0.4, 0.5, 0.62][level], field = createField(ops, hh * 5), e = hh * 0.08
-  const mesh = surfaceNets(field, hh)
+  const hh = h * [0.58, 0.85, 1.1][level], field = createField(ops, hh * 2.6), e = hh * 0.08
+  const mesh = dropFragments(surfaceNets(field, hh, 2), 0.01)
   project(field, mesh.positions, 0, e, hh * 0.75, 2)
   relax(mesh, field, 1, e, hh * 0.75)
   const piece = emptyPiece('cabelo', MATERIAL_HAIR)
@@ -620,4 +649,33 @@ function sculptedHair(ctx: FeatureContext, frame: HeadFrame, strands: { path: V3
   }
   void ctx
   return piece
+}
+
+/** Cuts the closed mouth line so the lips part when the jaw opens: groove vertices are duplicated for the lower lip. */
+function splitMouth(piece: Piece, local: (p: V3) => V3, world: (p: V3) => V3, o: { mouthY: number; half: number; front: number; radius: number; jaw: number; headBone: number; curve: (x: number) => number }) {
+  const count = piece.positions.length / 3, copy = new Map<number, number>(), localOf = (v: number) => local([piece.positions[v * 3], piece.positions[v * 3 + 1], piece.positions[v * 3 + 2]])
+  for (let v = 0; v < count; v++) {
+    const p = localOf(v)
+    if (Math.abs(p[0]) > o.half || p[2] < o.front || Math.abs(p[1] - o.mouthY) > o.radius) continue
+    const snapped = world([p[0], o.mouthY + o.curve(p[0]), p[2]])
+    piece.positions[v * 3] = snapped[0]; piece.positions[v * 3 + 1] = snapped[1]; piece.positions[v * 3 + 2] = snapped[2]
+    const index = piece.positions.length / 3
+    piece.positions.push(piece.positions[v * 3], piece.positions[v * 3 + 1], piece.positions[v * 3 + 2]); piece.normals.push(piece.normals[v * 3], piece.normals[v * 3 + 1], piece.normals[v * 3 + 2])
+    piece.uvs.push(piece.uvs[v * 2], piece.uvs[v * 2 + 1]); piece.colors.push(piece.colors[v * 3], piece.colors[v * 3 + 1], piece.colors[v * 3 + 2])
+    piece.slots.push(...piece.slots.slice(v * 12, v * 12 + 12))
+    let jawWeight = 0, other: [number, number][] = []
+    for (let i = 0; i < 4; i++) { const b = piece.bones[v * 4 + i], w = piece.weights[v * 4 + i]; if (b === o.jaw || b === o.headBone) jawWeight += w; else if (w > 0) other.push([b, w]) }
+    other = other.slice(0, 3)
+    const set = (target: number, bone: number) => { const list: [number, number][] = [[bone, jawWeight], ...other]; for (let i = 0; i < 4; i++) { piece.bones[target * 4 + i] = list[i]?.[0] ?? 0; piece.weights[target * 4 + i] = list[i]?.[1] ?? 0 } }
+    for (let i = 0; i < 4; i++) { piece.bones.push(0); piece.weights.push(0) }
+    set(v, o.headBone); set(index, o.jaw)
+    copy.set(v, index)
+  }
+  if (!copy.size) return
+  const I = piece.indices
+  for (let t = 0; t < I.length; t += 3) {
+    if (!copy.has(I[t]) && !copy.has(I[t + 1]) && !copy.has(I[t + 2])) continue
+    const y = (localOf(I[t])[1] + localOf(I[t + 1])[1] + localOf(I[t + 2])[1]) / 3
+    if (y < o.mouthY + o.curve(0)) for (let e = 0; e < 3; e++) { const c = copy.get(I[t + e]); if (c !== undefined) I[t + e] = c }
+  }
 }

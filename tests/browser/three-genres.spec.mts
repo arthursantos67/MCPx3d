@@ -82,7 +82,7 @@ test('a robot can be defeated with the real melee action and completes the comba
   const enemy = doc.nodes.find(node => node.id === 'sentinel-a')!
   enemy.position = [0, 0, 0]
   enemy.behavior!.speed = 0
-  doc.environment.player.spawn = [0, 0.02, 2.2]
+  doc.environment.player.spawn = [0, 0.02, 1]
   await page.getByLabel('Importar projeto Three.js').setInputFiles({ name: 'combat.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(doc)) })
   const original = await exported(page)
   await play(page)

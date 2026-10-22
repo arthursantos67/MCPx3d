@@ -35,6 +35,20 @@ const soles = (binding: RigBinding, holders: Map<string, THREE.Object3D>) => {
   return binding.feet!.map((foot) => joint(binding, holders, foot.knee).localToWorld(new THREE.Vector3(...foot.offset)))
 }
 const errorTo = (ground: GroundSampler, points: THREE.Vector3[]) => Math.max(...points.map((p) => Math.abs(p.y - ground(p.x, p.z, p.y + 1)!)))
+
+test('IK updates joint paths without traversing decorative meshes at every solve', () => {
+  const { binding, holders } = rig('knight'), head = joint(binding, holders, 'j_head')
+  let visits = 0
+  for (let i = 0; i < 100; i++) {
+    const ornament = new THREE.Object3D(), update = ornament.updateMatrix.bind(ornament)
+    ornament.updateMatrix = () => { visits++; update() }
+    head.add(ornament)
+  }
+  solveFootIK(binding, holders, (x) => x > 0 ? 0.15 : 0)
+  solveLookAt(binding, holders, new THREE.Vector3(3, 2, 5), 1)
+  assert.equal(visits, 0, 'rendered meshes update during rendering, rather than on every IK iteration')
+  assert.ok(errorTo((x) => x > 0 ? 0.15 : 0, soles(binding, holders)) < 0.02)
+})
 const reach = (binding: RigBinding, holders: Map<string, THREE.Object3D>) => binding.feet!.map((foot) => {
   const hip = joint(binding, holders, foot.hip).getWorldPosition(new THREE.Vector3()), knee = joint(binding, holders, foot.knee), k = knee.getWorldPosition(new THREE.Vector3())
   const ankle = knee.localToWorld(new THREE.Vector3(0, foot.offset[1], 0))

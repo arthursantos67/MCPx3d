@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import type { PlayerBox, PlayerCollider } from './scenePlayer.ts'
+import { PLAYER_RADIUS, type PlayerBox, type PlayerCollider } from './scenePlayer.ts'
 import type { NpcActivity, NpcTask } from './sceneRoutines.ts'
 
 export type EnemyMode = 'patrol' | 'chase' | 'search' | 'return'
@@ -391,7 +391,7 @@ export function stepEnemyMotion(state: EnemyMotion, settings: EnemySettings, pla
   }
   const goal = settings.route && !flying ? target.clone() : null
   const wish = target.sub(state.position).setY(0), remaining = wish.length()
-  const stop = state.mode !== 'chase' ? 0.12 : ranged ? 0.25 : attack === 'melee' ? ENEMY_COMBAT.meleeReach - 0.2 : 0.65
+  const stop = state.mode !== 'chase' ? 0.12 : ranged ? 0.25 : attack === 'melee' ? Math.max(0.5, radius + PLAYER_RADIUS + 0.05) : 0.65
   if (ranged) state.heading = facing(state.position, state.lastSeen!, state.heading)
   if (remaining < stop || speed <= 0) return step(shot)
   wish.divideScalar(remaining)

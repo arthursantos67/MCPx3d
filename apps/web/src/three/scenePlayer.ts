@@ -6,6 +6,11 @@ export const MAX_COLLIDER_TRIANGLES = 1_500_000
 export interface PlayerInput { forward: boolean; back: boolean; left: boolean; right: boolean; turnLeft: boolean; turnRight: boolean; up: boolean; down: boolean; sprint: boolean; jump: boolean }
 export const emptyInput = (): PlayerInput => ({ forward: false, back: false, left: false, right: false, turnLeft: false, turnRight: false, up: false, down: false, sprint: false, jump: false })
 export interface PlayerState { position: THREE.Vector3; velocity: THREE.Vector3; yaw: number; pitch: number; onGround: boolean; fly: boolean; climbing?: boolean }
+export function movementHeading(heading: number, velocity: THREE.Vector3, dt: number): number {
+  if (Math.hypot(velocity.x, velocity.z) < 0.15) return heading
+  const target = Math.atan2(velocity.x, velocity.z), turn = Math.atan2(Math.sin(target - heading), Math.cos(target - heading))
+  return heading + turn * (1 - Math.exp(-14 * Math.max(0, dt)))
+}
 /** Oriented box used for moving or interactive objects. */
 export interface PlayerBox { center: THREE.Vector3; axes: [THREE.Vector3, THREE.Vector3, THREE.Vector3]; half: THREE.Vector3 }
 export interface PlayerCollider { bvh: MeshBVH | null; boxes: PlayerBox[]; floor: number; climb?: PlayerBox[] }
@@ -133,13 +138,14 @@ export function findWalkableSpawn(collider: PlayerCollider, requested: THREE.Vec
 
 /** Fixed sub-steps keep collisions stable at low frame rates. */
 export function stepPlayer(state: PlayerState, input: PlayerInput, collider: PlayerCollider, settings: { speed: number; jumpHeight: number }, seconds: number): void {
-  const dt = Math.min(seconds, 0.1), steps = Math.max(1, Math.ceil(dt / (1 / 120))), h = dt / steps
+  const dt = Math.max(0, Math.min(Number.isFinite(seconds) ? seconds : 0, 0.1)), steps = Math.max(1, Math.ceil(dt / (1 / 120))), h = dt / steps
   state.yaw += ((input.turnLeft ? 1 : 0) - (input.turnRight ? 1 : 0)) * 2.2 * dt
   const speed = settings.speed * (input.sprint ? 1.8 : 1)
   const forward = new THREE.Vector3(-Math.sin(state.yaw), 0, -Math.cos(state.yaw)), right = new THREE.Vector3(Math.cos(state.yaw), 0, -Math.sin(state.yaw))
   const wish = new THREE.Vector3().addScaledVector(forward, (input.forward ? 1 : 0) - (input.back ? 1 : 0)).addScaledVector(right, (input.right ? 1 : 0) - (input.left ? 1 : 0))
   if (wish.lengthSq()) wish.normalize().multiplyScalar(speed)
   if (state.fly) {
+    state.climbing = false
     const vertical = ((input.up || input.jump ? 1 : 0) - (input.down ? 1 : 0)) * speed
     state.velocity.set(wish.x, vertical, wish.z)
     state.position.addScaledVector(state.velocity, dt)
@@ -150,8 +156,33 @@ export function stepPlayer(state: PlayerState, input: PlayerInput, collider: Pla
   state.climbing = !!collider.climb?.length && (input.forward || input.back) && collider.climb.some((box) => capsuleTouches(state.position, box, 0.35))
   if (state.climbing) {
     state.velocity.set(0, input.forward ? 2.6 : -2.6, 0)
-    state.position.addScaledVector(state.velocity, dt)
-    collide(state, collider)
+    for (let i = 0; i < steps; i++) {
+      state.position.addScaledVector(state.velocity, h)
+      collide(state, collider)
+      if (!input.forward) continue
+      const landing = state.position.clone().addScaledVector(forward, PLAYER_RADIUS * 2 + 0.18)
+      const ray = new THREE.Ray(landing.clone().add(new THREE.Vector3(0, 0.3, 0)), new THREE.Vector3(0, -1, 0))
+      const hit = collider.bvh?.raycastFirst(ray, THREE.DoubleSide, 0, 0.65)
+      let support = hit?.face && hit.face.normal.y > 0.55 ? hit.point.y : null
+      for (const box of collider.boxes) {
+        const offset = ray.origin.clone().sub(box.center)
+        if (box.axes[1].y > 0.99 && Math.abs(offset.dot(box.axes[0])) <= box.half.x && Math.abs(offset.dot(box.axes[2])) <= box.half.z) {
+          const top = box.center.y + box.half.y
+          if (top <= ray.origin.y && top >= ray.origin.y - 0.65) support = Math.max(support ?? -Infinity, top)
+        }
+      }
+      if (support === null) continue
+      const saved = state.position.clone(), candidate = saved.clone().setY(Math.max(saved.y, support + 0.025))
+      state.position.copy(candidate)
+      let clear = collide(state, collider).lengthSq() < 1e-8
+      for (let j = 0; j < 8 && clear; j++) {
+        state.position.addScaledVector(forward, (PLAYER_RADIUS * 2 + 0.18) / 8)
+        clear = collide(state, collider).lengthSq() < 1e-8
+      }
+      if (!clear) { state.position.copy(saved); continue }
+      state.climbing = false; state.onGround = true; state.velocity.set(0, 0, 0)
+      return
+    }
     if (state.position.y <= collider.floor) state.position.y = collider.floor
     state.onGround = false
     return

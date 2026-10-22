@@ -9,23 +9,30 @@ import type { SlotMaterial } from './sceneSkinMesh.ts'
 const VERTEX_PARS = /* glsl */`
 attribute vec4 slotA;
 attribute vec4 slotB;
+attribute vec4 slotC;
 varying vec4 vSlotA;
 varying vec4 vSlotB;
+varying vec4 vSlotC;
 varying vec3 vRest;
 varying vec3 vRestNormal;
+varying vec2 vSkinUv;
 `
 const VERTEX_MAIN = /* glsl */`
 vSlotA = slotA;
 vSlotB = slotB;
+vSlotC = slotC;
+vSkinUv = uv;
 vRest = position;
 vRestNormal = normal;
 `
 const FRAGMENT_PARS = /* glsl */`
-uniform vec4 slotColor[8];
-uniform vec4 slotProps[8];
-uniform vec4 slotGlow[8];
+uniform vec4 slotColor[12];
+uniform vec4 slotProps[12];
+uniform vec4 slotGlow[12];
 varying vec4 vSlotA;
 varying vec4 vSlotB;
+varying vec4 vSlotC;
+varying vec2 vSkinUv;
 varying vec3 vRest;
 varying vec3 vRestNormal;
 float slotHash(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
@@ -34,7 +41,7 @@ float slotNoise(vec3 x) {
   return mix(mix(mix(slotHash(i), slotHash(i + vec3(1, 0, 0)), f.x), mix(slotHash(i + vec3(0, 1, 0)), slotHash(i + vec3(1, 1, 0)), f.x), f.y),
     mix(mix(slotHash(i + vec3(0, 0, 1)), slotHash(i + vec3(1, 0, 1)), f.x), mix(slotHash(i + vec3(0, 1, 1)), slotHash(i + vec3(1, 1, 1)), f.x), f.y), f.z);
 }
-float slotDistance(int i) { return i < 4 ? vSlotA[i] : vSlotB[i - 4]; }
+float slotDistance(int i) { return i < 4 ? vSlotA[i] : i < 8 ? vSlotB[i - 4] : vSlotC[i - 8]; }
 float slotHeight(int kind, vec3 p, vec3 n, float pixel, out float tint) {
   vec3 w = abs(n) + 1e-4; w /= w.x + w.y + w.z;
   tint = 0.0;
@@ -50,7 +57,7 @@ float slotHeight(int kind, vec3 p, vec3 n, float pixel, out float tint) {
   if (kind == 4 || kind == 8) {
     float f = kind == 8 ? 700.0 : 420.0, fade = clamp(1.0 - pixel * f * 0.5, 0.0, 1.0);
     float strands = slotNoise(vec3(p.x * f, p.y * f * 0.12, p.z * f)) * fade; float clumps = slotNoise(p * vec3(30.0, 8.0, 30.0));
-    tint = (strands - 0.5) * 0.22 + (clumps - 0.5) * 0.2; return strands * 0.8 + clumps;
+    tint = (strands - 0.5) * 0.16 + (clumps - 0.5) * (kind == 8 ? 0.2 : 0.08); return strands * 0.8 + clumps * (kind == 8 ? 1.0 : 0.4);
   }
   if (kind == 5) {
     vec3 q = p * 26.0; vec3 cell = floor(q); vec3 f = fract(q) - 0.5;
@@ -76,17 +83,19 @@ const FRAGMENT_COLOR = /* glsl */`
 #include <color_fragment>
 int slotFirst = 0, slotSecond = 1;
 float slotBest = 1e9, slotNext = 1e9;
-for (int i = 0; i < 8; i++) {
+for (int i = 0; i < 12; i++) {
   float d = slotDistance(i);
   if (d < slotBest) { slotNext = slotBest; slotSecond = slotFirst; slotBest = d; slotFirst = i; }
   else if (d < slotNext) { slotNext = d; slotSecond = i; }
 }
-float slotEdge = fwidth(slotNext - slotBest) * 0.75 + 1e-5;
+int slotKindA = int(slotGlow[slotFirst].w), slotKindB = int(slotGlow[slotSecond].w);
+float slotSoft = (slotKindA == 4 || slotKindA == 8) && (slotKindB == 4 || slotKindB == 8) ? 0.012 : 0.0;
+float slotEdge = fwidth(slotNext - slotBest) * 0.75 + 1e-5 + slotSoft;
 float slotMix = 0.5 + 0.5 * smoothstep(0.0, slotEdge, slotNext - slotBest);
 float slotPixel = length(fwidth(vRest));
 float slotTint = 0.0;
 float slotBumpHeight = slotHeight(int(slotGlow[slotFirst].w), vRest, vRestNormal, slotPixel, slotTint);
-float slotSeam = 1.0 - 0.22 * (1.0 - smoothstep(0.0, slotEdge * 2.5, slotNext - slotBest)) * step(0.5, abs(float(slotFirst - slotSecond)));
+float slotSeam = 1.0 - (slotSoft > 0.0 ? 0.0 : 0.18) * (1.0 - smoothstep(0.0, slotEdge * 2.5, slotNext - slotBest));
 diffuseColor.rgb *= mix(slotColor[slotSecond].rgb, slotColor[slotFirst].rgb, slotMix) * (1.0 + slotTint) * slotSeam;
 vec4 slotP = mix(slotProps[slotSecond], slotProps[slotFirst], slotMix);
 `
@@ -122,7 +131,7 @@ const BUMP: Record<number, number> = { 0: 0.004, 1: 0.012, 2: 0.008, 3: 0.004, 4
 /** Material shared by every skin of the same palette; `side` selects closed bodies (front) or open cloth/hair (double). */
 export function slotMaterial(slots: SlotMaterial[], options: { side: THREE.Side; clearcoat?: number; name: string }): THREE.MeshPhysicalMaterial {
   const color = slots.map(() => new THREE.Vector4()), props = slots.map(() => new THREE.Vector4()), glow = slots.map(() => new THREE.Vector4())
-  while (color.length < 8) { color.push(new THREE.Vector4(1, 0, 1, 0)); props.push(new THREE.Vector4(1, 0, 0, 0)); glow.push(new THREE.Vector4(0, 0, 0, 7)) }
+  while (color.length < 12) { color.push(new THREE.Vector4(1, 0, 1, 0)); props.push(new THREE.Vector4(1, 0, 0, 0)); glow.push(new THREE.Vector4(0, 0, 0, 7)) }
   const linear = new THREE.Color()
   slots.forEach((slot, i) => {
     linear.set(slot.color)

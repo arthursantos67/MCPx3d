@@ -4,6 +4,8 @@ import { adjacency, gradient, type Field } from './sceneSkinGeometry.ts'
 type V3 = [number, number, number]
 export interface SlotMaterial { color: string; roughness: number; metalness: number; sheen: number; clearcoat: number; emissive: string; emissiveIntensity: number; pattern: number }
 export const PATTERN = { skin: 0, cloth: 1, leather: 2, metal: 3, fur: 4, scales: 5, mail: 6, plain: 7, hair: 8 } as const
+/** Material slots per vertex (three vec4 attributes). */
+export const SLOTS = 12
 export const MATERIAL_BODY = 0, MATERIAL_SHELL = 1, MATERIAL_HAIR = 2, MATERIAL_EYE = 3
 
 function slotPattern(m: Partial<SceneMaterial>): number {
@@ -33,7 +35,7 @@ export class SlotTable {
   add(slot: SlotMaterial): number {
     const key = slotKey(slot), known = this.keys.get(key)
     if (known !== undefined) return known
-    if (this.slots.length >= 8) {
+    if (this.slots.length >= SLOTS) {
       const [r, g, b] = hexRgb(slot.color)
       let best = 0, score = Infinity
       this.slots.forEach((other, i) => { const [r2, g2, b2] = hexRgb(other.color), d = (r - r2) ** 2 + (g - g2) ** 2 + (b - b2) ** 2 + (other.pattern === slot.pattern ? 0 : 4000); if (d < score) { score = d; best = i } })
@@ -51,7 +53,7 @@ export interface Piece {
 }
 export const emptyPiece = (name: string, material: number): Piece => ({ name, material, positions: [], normals: [], uvs: [], colors: [], bones: [], weights: [], slots: [], indices: [] })
 /** Slot vector that selects a single slot. */
-export const singleSlot = (slot: number) => { const out = new Array(8).fill(0.05); out[slot] = 0; return out }
+export const singleSlot = (slot: number) => { const out = new Array(SLOTS).fill(0.05); out[slot] = 0; return out }
 
 export function pushWeights(piece: Piece, accum: Map<number, number>): void {
   const entries = [...accum].sort((a, b) => b[1] - a[1]).slice(0, 4), total = entries.reduce((sum, [, w]) => sum + w, 0) || 1
@@ -82,17 +84,17 @@ export function smoothWeights(piece: Piece, indices: number[], iterations: numbe
 }
 /** Slot distances relative to the winning slot, clamped so interpolation only matters near boundaries. */
 export function normalizeSlots(piece: Piece): void {
-  for (let v = 0; v < piece.slots.length; v += 8) {
+  for (let v = 0; v < piece.slots.length; v += SLOTS) {
     let min = Infinity
-    for (let s = 0; s < 8; s++) min = Math.min(min, piece.slots[v + s])
-    for (let s = 0; s < 8; s++) piece.slots[v + s] = Math.min(0.05, piece.slots[v + s] - min)
+    for (let s = 0; s < SLOTS; s++) min = Math.min(min, piece.slots[v + s])
+    for (let s = 0; s < SLOTS; s++) piece.slots[v + s] = Math.min(0.05, piece.slots[v + s] - min)
   }
 }
 /** Makes slot `slot` win where `g` < 0 (signed, metres) on vertex `v`. */
 export function overrideSlot(piece: Piece, v: number, slot: number, g: number): void {
   let min = Infinity
-  for (let s = 0; s < 8; s++) if (s !== slot) min = Math.min(min, piece.slots[v * 8 + s])
-  piece.slots[v * 8 + slot] = Math.min(piece.slots[v * 8 + slot], min + g)
+  for (let s = 0; s < SLOTS; s++) if (s !== slot) min = Math.min(min, piece.slots[v * SLOTS + s])
+  piece.slots[v * SLOTS + slot] = Math.min(piece.slots[v * SLOTS + slot], min + g)
 }
 
 /** Marches from `from` along `dir` until the field changes sign; returns the surface point or null. */

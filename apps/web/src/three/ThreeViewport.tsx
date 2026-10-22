@@ -1,6 +1,6 @@
 import { useEffect, useImperativeHandle, useRef, useState, type RefObject } from 'react'
 import * as THREE from 'three'
-import { alertGuard, createEnemyMotion, provokeNpc, stepEnemyMotion, type EnemyMotion, type EnemyStep } from './sceneEnemies.ts'
+import { alertGuard, createEnemyMotion, enemyCanSee as enemyCanSeeMuzzle, provokeNpc, stepEnemyMotion, type EnemyMotion, type EnemyStep } from './sceneEnemies.ts'
 import { buildNavigation, createRouter, navigationFocus, type NavigationMesh, type Router } from './sceneNavigation.ts'
 import { isGuardPlan, planRoutines, routineHour, routinePoints, routineTask, type RoutinePlan } from './sceneRoutines.ts'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
@@ -20,10 +20,11 @@ import { createGradingPass } from './sceneGrading.ts'
 import { animateWater, collectWaterMaterials } from './sceneWater.ts'
 import { createAudioEngine, type AudioEmitter, type AudioEngine, type SfxName } from './sceneAudio.ts'
 import { isTypingTarget, playerKey } from './sceneKeyboard.ts'
-import { boxFromMatrix, buildStaticCollider, capsuleTouches, emptyInput, findWalkableSpawn, PLAYER_EYE, stepPlayer, type PlayerBox, type PlayerCollider, type PlayerInput, type PlayerState } from './scenePlayer.ts'
+import { boxFromMatrix, buildStaticCollider, capsuleTouches, emptyInput, findWalkableSpawn, movementHeading, PLAYER_EYE, stepPlayer, type PlayerBox, type PlayerCollider, type PlayerInput, type PlayerState } from './scenePlayer.ts'
 import { actionLabels, activeEnemy, advanceRuntime, checkOutcome, createRuntime, damageEnemy, damagePlayer, dialogueState, drainEvents, enemyHealth, interactionAvailable, interactionBlocked, launchVelocity, objectiveLimit, objectiveStatus,
   playerModifiers, powerLabels, pressInteractionKey, POWER_SECONDS, reachCheckpoint, reachGoal, runtimePose, runtimeVisible, triggerInteraction, updateProximity, type RuntimeEvent, type SceneRuntime } from './sceneRuntime.ts'
-import { enemyShot, fireWeapon, meleeTargets, stepProjectiles, weaponStats, type Projectile } from './sceneCombat.ts'
+import { enemyShot, fireWeapon, meleePlayerContact, sweptMeleeTargets, stepProjectiles, weaponStats, type Projectile, type WeaponKind } from './sceneCombat.ts'
+import { aimEquipment, bindEmitter, createEquipment, mountEquipment, poseFirstPersonEquipment, type Equipment } from './sceneEquipment.ts'
 import { carry, findSupport } from './sceneMovingPlatforms.ts'
 import { weaponLabels as weaponNames } from './sceneLabels.ts'
 import { buildAvatar } from './sceneCharacters.ts'
@@ -108,7 +109,8 @@ export default function ThreeViewport({ document, selectedId, active, fitRequest
     // The graphics context is an external resource; expose initialization failure.
     // oxlint-disable-next-line react/set-state-in-effect
     catch { setError('WebGL2 indisponível. Ative a aceleração gráfica ou use outro navegador. Você ainda pode editar e exportar o projeto.'); return }
-    const pixelRatio = Math.min(window.devicePixelRatio || 1, 2)
+    const ratioFor = (preference: PlaySettings['quality']) => Math.min(window.devicePixelRatio || 1, preference === 'low' ? 1 : preference === 'high' ? 2 : 1.5)
+    const pixelRatio = ratioFor(settingsRef.current.quality)
     renderer.setPixelRatio(pixelRatio)
     renderer.outputColorSpace = THREE.SRGBColorSpace
     renderer.shadowMap.enabled = true
@@ -123,7 +125,7 @@ export default function ThreeViewport({ document, selectedId, active, fitRequest
     scene.add(content)
     const rig = createEnvironmentRig(renderer, scene)
     const softwareGl = (() => { try { const gl = renderer.getContext(), info = gl.getExtension('WEBGL_debug_renderer_info'); return /swiftshader|llvmpipe|software/i.test(String(info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER))) } catch { return false } })()
-    let quality: QualityLevel = softwareGl ? 'low' : 'high'
+    let quality: QualityLevel = settingsRef.current.quality === 'auto' ? softwareGl ? 'low' : 'medium' : settingsRef.current.quality
     let fauna: FaunaSystem | null = null, lifeClock = 0
     const wind = createWind(), particles = createParticles(wind), windVector = new THREE.Vector3()
     scene.add(particles.object)
@@ -145,6 +147,7 @@ export default function ThreeViewport({ document, selectedId, active, fitRequest
       return day
     }
     const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 10000)
+    scene.add(camera)
     camera.position.set(16, 11, 18)
     camera.layers.enable(HELPER_LAYER)
     let presenting = false
@@ -197,19 +200,21 @@ export default function ThreeViewport({ document, selectedId, active, fitRequest
     let doc: ThreeSceneDocument | null = null, built: BuiltScene | null = null
     let animatedNodes: SceneNode[] = [], byId = new Map<string, SceneNode>()
     let playback = false, time = 0, duration = 20
-    let lastTimestamp: number | null = null, lastReport = 0, fpsFrames = 0, fpsStarted = 0
+    let lastTimestamp: number | null = null, lastReport = 0, fpsFrames = 0, fpsStarted = 0, statsReported = 0
     let selected: string | null = null, gizmoMode: GizmoMode = 'translate', snapping = false
     let proxies: THREE.Mesh[] = [], suppressed = new Set<string>()
     let enabled = false, lost = false, disposed = false, frame = 0
-    interface EnemyState extends EnemyMotion { radius:number; height:number; eyeHeight:number; moved: boolean; attackTime: number; step: EnemyStep | null; shown: THREE.Vector3 | null }
+    interface EnemyState extends EnemyMotion { radius:number; height:number; eyeHeight:number; moved: boolean; attackTime: number; step: EnemyStep | null; shown: THREE.Vector3 | null; equipment?: Equipment; shotPending?: boolean; strikeHit?: boolean }
     let game: { runtime: SceneRuntime; player: PlayerState; input: PlayerInput; collider: PlayerCollider; saved: { position: THREE.Vector3; target: THREE.Vector3; fov: number; near: number; far: number }; last: number | null; aim: string | null; strike: string | null; hud: string; locked: boolean; help: boolean
-      view: 'first' | 'third'; spawn: THREE.Vector3; stride: number; sounds: SceneNode[]; projectiles: Projectile[]; attackCooldown: number; swing: number; platforms: Map<string, THREE.Matrix4>
-      modes: Map<string, string>; rigMotion: Map<string, CharacterMotion>; avatarRig: { built: BuiltScene; resources: SceneResources; binding: RigBinding; animator: Animator; feet: FootIKMemory; springs: SpringSystem; seenHurt: number; seenSwing: number }; swings: number; heavy: boolean; dialogue: { id: string; name: string; line: string; index: number; total: number; until: number } | null; spawnNotice: number; enemies: Map<string, EnemyState>; enemyParts:Set<string>; parts: Map<string, SceneNode[]>; water: number | null; avatar: THREE.Group; hurt: number; goalCooldown: number; nav: NavigationMesh | null; router: Router; routines: Map<string, RoutinePlan>; guards: Set<string>
+      view: 'first' | 'third'; spawn: THREE.Vector3; stride: number; sounds: SceneNode[]; projectiles: Projectile[]; attackCooldown: number; swing: number; hudAt: number; platforms: Map<string, THREE.Matrix4>
+      modes: Map<string, string>; rigMotion: Map<string, CharacterMotion>; avatarRig: { built: BuiltScene; resources: SceneResources; binding: RigBinding; animator: Animator; feet: FootIKMemory; springs: SpringSystem; equipment: Equipment; seenHurt: number; seenSwing: number }; swings: number; heavy: boolean; meleeHits: Set<string>; blade: THREE.Line3 | null; dialogue: { id: string; name: string; line: string; index: number; total: number; until: number } | null; spawnNotice: number; enemies: Map<string, EnemyState>; enemyParts:Set<string>; parts: Map<string, SceneNode[]>; water: number | null; avatar: THREE.Group; hurt: number; goalCooldown: number; nav: NavigationMesh | null; router: Router; routines: Map<string, RoutinePlan>; guards: Set<string>
       paused: boolean; dismissed: boolean; interacted: boolean; device: 'keyboard' | 'gamepad'; pad: GamepadState; stamina: number; dodge: number; dodged: boolean; damageTaken: number; falls: number; lastHealth: number
       subtitle: { speaker: string; text: string; until: number } | null; greeted: Map<string, number>; omitted: number } | null = null
     /** The third-person avatar is compiled from the same procedural parts and rig as scene characters, with its own GPU resources. */
-    const createAvatar = (kind: typeof avatarKinds[number]) => {
-      const parts = buildAvatar(kind), id = (part: string) => `avatar.${part}`
+    const createAvatar = (kind: typeof avatarKinds[number], weapon: WeaponKind) => {
+      const authored = buildAvatar(kind), removed = new Set(authored.filter((part) => /^(sword|weapon|staff|bow)/i.test(part.id)).map((part) => part.id))
+      for (const part of authored) if (part.parentId && removed.has(part.parentId)) removed.add(part.id)
+      const parts = authored.filter((part) => !removed.has(part.id)), id = (part: string) => `avatar.${part}`
       const avatarDoc = validateScene({ ...createEmptyScene(), nodes: parts.map((part) => ({ ...createNode(part.kind), id: id(part.id), parentId: part.parentId ? id(part.parentId) : null, name: part.name,
         position: part.position, rotation: part.rotation ?? [0, 0, 0], dimensions: part.dimensions, collidable: false, assetPart: part.id,
         material: validateMaterial({ color: '#cccccc', metalness: 0, roughness: 0.6, ...part.material }), geometry: { ...createNode(part.kind).geometry, ...part.geometry },
@@ -218,7 +223,9 @@ export default function ThreeViewport({ document, selectedId, active, fitRequest
       avatarBuilt.root.visible = false
       avatarBuilt.root.traverse((object) => { if (object instanceof THREE.Mesh) object.castShadow = !(object.material as THREE.MeshPhysicalMaterial).map })
       const binding = bindParts('avatar', 'biped', parts, 1, id)
-      return { built: avatarBuilt, resources: avatarResources, binding, animator: animatorForBinding(binding), feet: createFootIKMemory(), springs: createSprings([...(avatarBuilt.skins.get('avatar')?.springs ?? [])]), seenHurt: 0, seenSwing: 0 }
+      const equipment = createEquipment(weapon)
+      mountEquipment(equipment, binding, avatarBuilt.holders)
+      return { built: avatarBuilt, resources: avatarResources, binding, animator: animatorForBinding(binding), feet: createFootIKMemory(), springs: createSprings([...(avatarBuilt.skins.get('avatar')?.springs ?? [])]), equipment, seenHurt: 0, seenSwing: 0 }
     }
     let rigs: RigBinding[] = []
     interface CharacterMotion { animator: Animator; feet: FootIKMemory; look: LookMemory; springs: SpringSystem; last: THREE.Vector3; lastY: number; speed: number; action: string; hit: boolean; collapse: number }
@@ -265,7 +272,10 @@ export default function ThreeViewport({ document, selectedId, active, fitRequest
       if (game && day) audio?.setTimeOfDay(day.night)
       composer.render()
       const { calls, triangles } = renderer.info.render
-      setStats((previous) => previous.calls === calls && previous.triangles === triangles ? previous : { ...previous, calls, triangles })
+      if (seconds - statsReported > 0.5) {
+        statsReported = seconds
+        setStats((previous) => previous.calls === calls && previous.triangles === triangles ? previous : { ...previous, calls, triangles })
+      }
     }
     const countFrame = (timestamp: number) => {
       if (!fpsStarted) fpsStarted = timestamp
@@ -277,11 +287,11 @@ export default function ThreeViewport({ document, selectedId, active, fitRequest
       for (let node = id ? byId.get(id) : undefined; node; node = node.parentId ? byId.get(node.parentId) : undefined) chain.push(node)
       return chain
     }
-    const animateCharacters = (state: NonNullable<typeof game>, delta: number) => {
+    const animateCharacters = (state: NonNullable<typeof game>, delta: number, combatCollider: PlayerCollider, takeDamage: (amount: number, away: THREE.Vector3 | null) => void) => {
       const runtime = state.runtime, seconds = runtime.elapsed, wind = new THREE.Vector3(0.6, 0, 0.2), ground = groundFor(state.collider)
       for (const binding of rigs) {
         const id = binding.rootId, holder = built!.holders.get(id)
-        if (!holder) continue
+        if (!holder || !visible(holder)) continue
         const enemy = state.enemies.get(id), step = enemy?.step, world = holder.getWorldPosition(new THREE.Vector3())
         const motion = state.rigMotion.get(id) ?? { animator: animatorForBinding(binding), feet: createFootIKMemory(), look: createLookMemory(),
           springs: createSprings([...rigSpringChains(binding, built!.holders), ...(built!.skins.get(id)?.springs ?? [])]), last: world.clone(), lastY: world.y, speed: 0, action: 'idle', hit: false, collapse: 0 }
@@ -290,7 +300,7 @@ export default function ThreeViewport({ document, selectedId, active, fitRequest
         const verticalSpeed = delta > 0 ? (world.y - motion.lastY) / delta : 0
         motion.last.copy(world); motion.lastY = world.y
         const activity = step?.activity, heavy = binding.kind === 'flyer' || ['orc', 'golem'].includes(byId.get(id)?.asset?.type ?? '')
-        const input: AnimatorInput = { dt: delta, time: seconds, speed: motion.speed, grounded: !flyingRig(binding), verticalSpeed, dead: runtime.defeated.has(id), talk: false }
+        const input: AnimatorInput = { dt: delta, time: seconds, speed: motion.speed, grounded: !flyingRig(binding), verticalSpeed, dead: runtime.defeated.has(id), talk: false, ranged: !!enemy?.equipment }
         if (enemy) Object.assign(input, {
           attack: enemy.action === 'windup' && motion.action !== 'windup' ? heavy ? 'heavy' : 'light' : step?.attack === 'shoot' ? 'light' : null,
           talk: enemy.action === 'talk' || activity === 'greet', wave: activity === 'greet' && motion.action !== 'talk',
@@ -301,29 +311,86 @@ export default function ThreeViewport({ document, selectedId, active, fitRequest
         const pose = updateAnimator(motion.animator, input)
         motion.collapse = pose.collapse
         applyAnimatorPose(binding, built!.holders, pose)
+        if (enemy && byId.get(id)?.behavior?.attack === 'melee') {
+          if (pose.events.includes('attackStart')) enemy.strikeHit = false
+          const a = motion.animator, sw = a.swing
+          if (!enemy.strikeHit && sw && a.time >= sw.a && a.time - delta <= sw.a + sw.s && !runtime.defeated.has(id)) {
+            const striking = (state.parts.get(id) ?? []).filter((node) => /^(swordBlade|weapon|axe|club|spear|fist|palm|forearm|snout|jaw|paw|hoof)/i.test(node.assetPart ?? ''))
+            const boxes = striking.map((node) => boxFromMatrix(surfaceMatrix(built!.holders.get(node.id)!, node)))
+            if (meleePlayerContact(state.player.position, boxes, enemy.position.clone().add(new THREE.Vector3(0, enemy.height * 0.6, 0)), combatCollider)) {
+              takeDamage(byId.get(id)!.behavior!.damage, state.player.position.clone().sub(enemy.position)); enemy.strikeHit = true
+            }
+          }
+        }
         if (!flyingRig(binding)) solveFootIK(binding, built!.holders, ground, pose.footIK, motion.feet, delta)
         const target = step?.face ?? (enemy && (enemy.seesPlayer || enemy.action === 'talk') ? state.player.position.clone().add(new THREE.Vector3(0, 1.6, 0)) : null)
         solveLookAt(binding, built!.holders, target, pose.look, motion.look, delta)
         motion.springs.step(delta, wind)
         built!.skins.get(id)?.setFace(pose.face)
+        if (enemy?.equipment) {
+          const target = state.player.position.clone().add(new THREE.Vector3(0, 1.1, 0))
+          aimEquipment(enemy.equipment, target)
+          if (enemy.shotPending && pose.events.includes('impact')) {
+            const muzzle = enemy.equipment.origin()
+            if (enemyCanSeeMuzzle(muzzle, target, combatCollider)) {
+              state.projectiles.push(enemyShot(id, muzzle, target.sub(muzzle), byId.get(id)!.behavior!.damage)); sfx('shoot', muzzle)
+            }
+            enemy.shotPending = false
+          }
+        }
         state.rigMotion.set(id, motion)
       }
       const avatar = state.avatarRig, player = state.player, speed = player.fly ? 0 : Math.hypot(player.velocity.x, player.velocity.z)
       const hurt = state.hurt !== avatar.seenHurt, swing = state.swings !== avatar.seenSwing
       avatar.seenHurt = state.hurt; avatar.seenSwing = state.swings
+      const equipment = avatar.equipment, stats = weaponStats[equipment.kind]
       const pose = updateAnimator(avatar.animator, { dt: delta, time: seconds, speed, grounded: player.onGround || !!player.climbing || player.fly, verticalSpeed: player.velocity.y,
-        dead: false, talk: !!state.dialogue, attack: swing ? state.heavy ? 'heavy' : 'light' : null, hurt, dodge: state.dodged })
+        dead: false, talk: !!state.dialogue, attack: swing ? state.heavy ? 'heavy' : 'light' : null, hurt, dodge: state.dodged, climbing: player.climbing, ranged: stats.kind === 'projectile' })
       state.dodged = false
       avatar.built.root.visible = state.avatar.visible
       if (state.avatar.visible) {
         applyAnimatorPose(avatar.binding, avatar.built.holders, pose)
-        if (!player.fly) solveFootIK(avatar.binding, avatar.built.holders, ground, pose.footIK, avatar.feet, delta)
+        if (!player.fly && !player.climbing) solveFootIK(avatar.binding, avatar.built.holders, ground, pose.footIK, avatar.feet, delta)
         avatar.springs.step(delta, wind)
         avatar.built.skins.get('avatar')?.setFace(pose.face)
       }
+      if (state.view === 'third') {
+        equipment.object.scale.setScalar(1)
+        mountEquipment(equipment, avatar.binding, avatar.built.holders)
+        if (stats.kind === 'projectile') aimEquipment(equipment, player.position.clone().add(new THREE.Vector3(0, 1.35, 0)).addScaledVector(new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion), 40))
+      } else {
+        camera.add(equipment.object)
+        poseFirstPersonEquipment(equipment, avatar.animator)
+      }
+      equipment.object.visible = !state.paused && runtime.outcome === 'playing' && !player.climbing
+      if (pose.events.includes('attackStart')) { state.meleeHits.clear(); state.blade = null }
+      const blade = equipment.segment(), a = avatar.animator, sw = a.swing
+      if (stats.kind === 'projectile' && pose.events.includes('impact')) {
+        const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion), origin = equipment.origin()
+        const source = player.position.clone().add(new THREE.Vector3(0, 1.35, 0))
+        if (enemyCanSeeMuzzle(source, origin, combatCollider)) {
+          const shot = fireWeapon(equipment.kind, origin, direction, playerModifiers(runtime).damage * (a.heavy ? 1.8 : 1))
+          if (shot) state.projectiles.push(shot)
+          sfx(equipment.kind === 'staff' ? 'magic' : 'shoot', origin)
+        }
+      }
+      if (stats.kind === 'melee' && sw && a.time >= sw.a && a.time - delta <= sw.a + sw.s) {
+        const source = player.position.clone().add(new THREE.Vector3(0, 1.1, 0)), previous = state.blade ?? blade
+        const targets = foeTargets(state), npcs = [...state.enemies.keys()].filter((id) => byId.get(id)?.behavior?.type === 'npc' && !runtime.hidden.has(id)).flatMap((id) => partBoxes(state, id, true).map((box) => ({ id, box })))
+        for (const id of sweptMeleeTargets(previous, blade, equipment.radius, [...targets, ...npcs], combatCollider, source)) {
+          if (state.meleeHits.has(id)) continue
+          state.meleeHits.add(id)
+          if (byId.get(id)?.behavior?.type === 'npc') provokeNpc(state.enemies.get(id)!, player.position, byId.get(id)!.behavior!.reaction)
+          else strikeEnemy(state, id, stats.damage * playerModifiers(runtime).damage * (a.heavy ? 1.8 : 1))
+        }
+      }
+      state.blade = blade
     }
-    const partBoxes = (state: NonNullable<typeof game>, id: string) => (state.parts.get(id) ?? []).flatMap((node) => { const holder = built!.holders.get(node.id)!; return visible(holder) ? [boxFromMatrix(surfaceMatrix(holder, node))] : [] })
-    const foeTargets = (state: NonNullable<typeof game>) => [...state.enemies.keys()].filter((id) => byId.get(id)?.behavior?.type === 'enemy' && activeEnemy(state.runtime, id)).flatMap((id) => partBoxes(state, id).map((box) => ({ id, box })))
+    const partBoxes = (state: NonNullable<typeof game>, id: string, bodyOnly = false) => (state.parts.get(id) ?? []).flatMap((node) => {
+      if (bodyOnly && (node.collidable === false || nodeChain(node.id).some((part) => /^(sword|weapon|staff|bow)/i.test(part.assetPart ?? '')))) return []
+      const holder = built!.holders.get(node.id)!; return visible(holder) ? [boxFromMatrix(surfaceMatrix(holder, node))] : []
+    })
+    const foeTargets = (state: NonNullable<typeof game>) => [...state.enemies.keys()].filter((id) => byId.get(id)?.behavior?.type === 'enemy' && activeEnemy(state.runtime, id)).flatMap((id) => partBoxes(state, id, true).map((box) => ({ id, box })))
     const worldOf = (id: string | undefined) => id ? built?.holders.get(id)?.getWorldPosition(new THREE.Vector3()) : undefined
     const screenOf = (point: THREE.Vector3) => { const ndc = point.clone().project(camera); return screenFromNdc(ndc.x, ndc.y, ndc.z, container.clientWidth, container.clientHeight) }
     const strikeEnemy = (state: NonNullable<typeof game>, id: string, amount: number) => {
@@ -346,27 +413,15 @@ export default function ThreeViewport({ document, selectedId, active, fitRequest
       else if (message) toast(message)
     }
     const attack = (state: NonNullable<typeof game>, heavy = false) => {
-      if (state.attackCooldown > 0 || state.runtime.outcome !== 'playing' || state.paused) return
-      const weapon = doc?.environment.player?.weapon ?? 'none', stats = weaponStats[weapon], base = playerModifiers(state.runtime), modifiers = { ...base, damage: base.damage * (heavy ? 1.8 : 1) }
+      if (state.attackCooldown > 0 || state.runtime.outcome !== 'playing' || state.paused || state.player.climbing) return
+      const weapon = doc?.environment.player?.weapon ?? 'none', stats = weaponStats[weapon]
       state.attackCooldown = stats.cooldown * (heavy ? 1.6 : 1)
       state.heavy = heavy
       state.swing = 1
       state.swings++
-      const orientation = new THREE.Euler(state.player.pitch, state.player.yaw, 0, 'YXZ'), direction = new THREE.Vector3(0, 0, -1).applyEuler(orientation)
       const origin = state.player.position.clone().add(new THREE.Vector3(0, 1.35, 0))
-      if (stats.kind === 'projectile') {
-        const shot = fireWeapon(weapon, origin.clone().addScaledVector(direction, 0.6), direction, modifiers.damage)
-        if (shot) state.projectiles.push(shot)
-        fauna?.scare(state.player.position, 6)
-        sfx(weapon === 'staff' ? 'magic' : 'shoot', origin)
-        return
-      }
-      sfx('swing', origin)
+      if (stats.kind === 'melee') sfx('swing', origin)
       fauna?.scare(state.player.position, 8)
-      const flat = direction.clone().setY(0).normalize(), hits = meleeTargets(state.player.position.clone().add(new THREE.Vector3(0, 0.9, 0)), flat, stats.range, stats.arc ?? 60, foeTargets(state), state.collider)
-      for (const id of weapon === 'sword' ? hits.slice(0, 3) : hits.slice(0, 1)) strikeEnemy(state, id, stats.damage * modifiers.damage)
-      const npcs = [...state.enemies.keys()].filter((id) => byId.get(id)?.behavior?.type === 'npc' && !state.runtime.hidden.has(id)).flatMap((id) => partBoxes(state, id).map((box) => ({ id, box })))
-      for (const id of new Set(meleeTargets(state.player.position.clone().add(new THREE.Vector3(0, 0.9, 0)), flat, stats.range, stats.arc ?? 60, npcs, state.collider))) provokeNpc(state.enemies.get(id)!, state.player.position, byId.get(id)!.behavior!.reaction)
     }
     const projectileGroup = new THREE.Group(), projectileGeometry = new THREE.SphereGeometry(1, 10, 8), projectileMaterials = new Map<string, THREE.MeshBasicMaterial>()
     scene.add(projectileGroup)
@@ -379,7 +434,9 @@ export default function ThreeViewport({ document, selectedId, active, fitRequest
         if (!projectileMaterials.has(shot.color)) projectileMaterials.set(shot.color, new THREE.MeshBasicMaterial({ color: new THREE.Color(shot.color).multiplyScalar(3), toneMapped: false }))
         mesh.material = projectileMaterials.get(shot.color)!
         mesh.position.copy(shot.position)
-        mesh.scale.setScalar(Math.max(0.05, shot.radius * 1.4))
+        const radius = Math.max(0.05, shot.radius * 1.4)
+        mesh.scale.set(radius, radius, Math.max(radius, Math.min(0.35, shot.velocity.length() / 120)))
+        if (shot.velocity.lengthSq() > 1e-8) mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), shot.velocity.clone().normalize())
       })
     }
     const eventSounds: Partial<Record<RuntimeEvent['kind'], SfxName>> = { collect: 'collect', unlock: 'unlock', locked: 'locked', heal: 'heal', powerup: 'powerup', hit: 'enemyHit', defeat: 'enemyDefeat', spawn: 'alert',
@@ -465,8 +522,11 @@ export default function ThreeViewport({ document, selectedId, active, fitRequest
           const was = state.modes.get(id)
           state.modes.set(id, step.mode)
           if (step.mode === 'chase' && was !== 'chase' && was !== 'search') sfx('alert', enemy.position)
-          if (step.attack === 'shoot' && step.muzzle && step.aim) { state.projectiles.push(enemyShot(id, step.muzzle, step.aim, behavior.damage)); sfx('shoot', step.muzzle) }
-          if (step.attack === 'melee') { sfx('swing', enemy.position); hurt(behavior.damage, player.position.clone().sub(enemy.position)) }
+          if (step.attack === 'shoot') enemy.shotPending = true
+          if (step.attack === 'melee') {
+            sfx('swing', enemy.position)
+            if (!rigs.some((binding) => binding.rootId === id) && meleePlayerContact(player.position, partBoxes(state, id, true), enemy.position.clone().add(new THREE.Vector3(0, enemy.height * 0.6, 0)), enemyCollider)) hurt(behavior.damage, player.position.clone().sub(enemy.position))
+          }
           if (step.attack === 'charge') sfx('alert', enemy.position)
           if (step.attack) enemy.attackTime = 0
         }
@@ -496,7 +556,6 @@ export default function ThreeViewport({ document, selectedId, active, fitRequest
           else if (hit.target !== 'world') strikeEnemy(state, hit.target, hit.projectile.damage)
         }
       }
-      syncProjectiles(state.projectiles)
       for (const [id, parts] of state.parts) {
         const behavior = byId.get(id)?.behavior
         if (!behavior || runtime.hidden.has(id) || !parts.length || runtime.outcome !== 'playing') continue
@@ -532,11 +591,19 @@ export default function ThreeViewport({ document, selectedId, active, fitRequest
         camera.position.copy(head).addScaledVector(back, distance).add(new THREE.Vector3(0, 0.3, 0))
         state.avatar.visible = true
         state.avatar.position.copy(player.position)
-        state.avatar.rotation.y = player.yaw + Math.PI
+        state.avatar.rotation.y = player.climbing || state.attackCooldown > 0 ? player.yaw + Math.PI : movementHeading(state.avatar.rotation.y, player.velocity, delta)
         state.avatar.updateMatrixWorld(true)
       } else { camera.position.copy(head); state.avatar.visible = false }
       camera.updateMatrixWorld()
-      animateCharacters(state, delta)
+      animateCharacters(state, delta, enemyCollider, hurt)
+      for (const [id, enemy] of state.enemies) if (enemy.shotPending && enemy.equipment && !rigs.some((binding) => binding.rootId === id)) {
+        const target = player.position.clone().add(new THREE.Vector3(0, 1.1, 0))
+        aimEquipment(enemy.equipment, target)
+        const muzzle = enemy.equipment.origin()
+        if (enemyCanSeeMuzzle(muzzle, target, enemyCollider)) { state.projectiles.push(enemyShot(id, muzzle, target.sub(muzzle), byId.get(id)!.behavior!.damage)); sfx('shoot', muzzle) }
+        enemy.shotPending = false
+      }
+      syncProjectiles(state.projectiles)
       const positions = new Map<string, Vector3Tuple>()
       for (const node of runtime.nodes) if (node.interaction?.trigger === 'proximity') positions.set(node.id, built!.holders.get(node.id)!.getWorldPosition(new THREE.Vector3()).toArray())
       for (const message of updateProximity(runtime, [player.position.x, player.position.y + 0.9, player.position.z], positions)) toast(message)
@@ -603,7 +670,7 @@ export default function ThreeViewport({ document, selectedId, active, fitRequest
         stats: { time: Math.floor(runtime.elapsed), score: runtime.score, collected: runtime.collected.size, total: runtime.collectibles, defeated: runtime.defeated.size, enemyTotal: runtime.enemies.length, damageTaken: Math.round(state.damageTaken), falls: state.falls },
         fly: player.fly, view: state.view, muted: audioMuted, pointerLocked: state.locked, help: state.help, device: state.device, omitted: state.omitted, fps: null, hurt: state.hurt }
       const key = JSON.stringify(next)
-      if (key !== state.hud) { state.hud = key; setHud(next) }
+      if (key !== state.hud && (!state.hud || timestamp - state.hudAt >= 100)) { state.hud = key; state.hudAt = timestamp; setHud(next) }
       const anchors: HudAnchor[] = []
       for (const [id, enemy] of state.enemies) {
         const node = byId.get(id)!
@@ -760,7 +827,7 @@ export default function ThreeViewport({ document, selectedId, active, fitRequest
       state.stamina -= 25; state.dodge = 0.45; state.dodged = true
       sfx('jump', state.player.position)
     }
-    const toggleView = (state: NonNullable<typeof game>) => { state.view = state.view === 'first' ? 'third' : 'first'; toast(state.view === 'third' ? 'Câmera em terceira pessoa.' : 'Câmera em primeira pessoa.') }
+    const toggleView = (state: NonNullable<typeof game>) => { state.view = state.view === 'first' ? 'third' : 'first'; state.blade = null; toast(state.view === 'third' ? 'Câmera em terceira pessoa.' : 'Câmera em primeira pessoa.') }
     const toggleFly = (state: NonNullable<typeof game>) => {
       if (doc?.environment.player?.allowFly === false) { toast('O voo está desativado nesta fase.'); return }
       state.player.fly = !state.player.fly; state.player.velocity.set(0, 0, 0); toast(state.player.fly ? 'Voo livre: Espaço sobe, C desce.' : 'Caminhada com gravidade e colisão.')
@@ -770,7 +837,9 @@ export default function ThreeViewport({ document, selectedId, active, fitRequest
     dismissRequest.current = () => { if (game) { game.dismissed = true; game.hud = '' } }
     settingsChanged.current = (next) => {
       audio?.setMuted(audioMuted || next.volume === 0)
-      quality = next.quality === 'auto' ? softwareGl ? 'low' : 'high' : next.quality
+      quality = next.quality === 'auto' ? softwareGl ? 'low' : 'medium' : next.quality
+      const ratio = ratioFor(next.quality)
+      renderer.setPixelRatio(ratio); composer.setPixelRatio(ratio)
       fauna?.setQuality(quality); grass?.setQuality(quality); particles.setQuality(quality)
     }
     restartRequest.current = () => { if (game) { stopGame(true); startGame() } }
@@ -914,8 +983,24 @@ export default function ThreeViewport({ document, selectedId, active, fitRequest
       }
       const routines = planRoutines(doc)
       const focus = navigationFocus([...enemies].map(([id, enemy]) => ({ base: enemy.base, range: byId.get(id)!.behavior!.range })), routinePoints(routines))
-      const avatarRig = createAvatar(settings.avatar ?? 'explorer'), avatar = new THREE.Group()
+      for (const [id, enemy] of enemies) if (byId.get(id)!.behavior?.attack === 'ranged') {
+        const binding = rigs.find((item) => item.rootId === id), body = parts.get(id) ?? []
+        const tip = body.find((node) => /^(staffGem|muzzle|barrelTip)$/i.test(node.assetPart ?? ''))
+          ?? (binding && ['quadruped', 'arachnid', 'flyer'].includes(binding.kind) ? body.find((node) => /^(snout|nose|jaw|head)$/i.test(node.assetPart ?? '')) : undefined)
+        if (tip) {
+          enemy.equipment = bindEmitter(built!.holders.get(tip.id)!, new THREE.Vector3(0, 0, tip.dimensions[2] * 0.5 + 0.04))
+          continue
+        }
+        const equipment = createEquipment('blaster')
+        if (!binding || !mountEquipment(equipment, binding, built!.holders)) {
+          built!.holders.get(id)!.add(equipment.object)
+          equipment.object.position.set(0, enemy.height * 0.55, enemy.radius)
+        }
+        enemy.equipment = equipment
+      }
+      const avatarRig = createAvatar(settings.avatar ?? 'explorer', settings.weapon ?? 'none'), avatar = new THREE.Group()
       avatar.add(avatarRig.built.root)
+      avatar.rotation.y = THREE.MathUtils.degToRad(settings.yaw) + Math.PI
       avatar.visible = false
       scene.add(avatar)
       audio ??= createAudioEngine()
@@ -924,7 +1009,7 @@ export default function ThreeViewport({ document, selectedId, active, fitRequest
       game = { runtime: createRuntime(doc, time), input: emptyInput(), collider: { bvh, boxes: [], floor, climb },
         player: { position: spawn, velocity: new THREE.Vector3(), yaw: settings.spawn ? THREE.MathUtils.degToRad(settings.yaw) : 0, pitch: -0.05, onGround: false, fly: settings.mode === 'fly' && settings.allowFly !== false },
         saved: { position: camera.position.clone(), target: controls.target.clone(), fov: camera.fov, near: camera.near, far: camera.far }, last: null, aim: null, strike: null, hud: '', locked: false, help: false,
-        view: settings.camera ?? 'first', spawn: spawn.clone(), stride: 0, sounds: doc.nodes.filter((node) => node.sound), projectiles: [], attackCooldown: 0, swing: 0, platforms: new Map(), modes: new Map(), rigMotion: new Map(), avatarRig, swings: 0, heavy: false, dialogue: null, spawnNotice: -10, enemies, enemyParts:new Set([...enemies.keys()].flatMap(id=>[...subtreeIds(doc!.nodes,id)])),parts, water, avatar, hurt: 0, goalCooldown: 0,
+        view: settings.camera ?? 'first', spawn: spawn.clone(), stride: 0, sounds: doc.nodes.filter((node) => node.sound), projectiles: [], attackCooldown: 0, swing: 0, hudAt: 0, platforms: new Map(), modes: new Map(), rigMotion: new Map(), avatarRig, swings: 0, heavy: false, meleeHits: new Set(), blade: null, dialogue: null, spawnNotice: -10, enemies, enemyParts:new Set([...enemies.keys()].flatMap(id=>[...subtreeIds(doc!.nodes,id)])),parts, water, avatar, hurt: 0, goalCooldown: 0,
         nav: null, router: createRouter(null), routines, paused: false, dismissed: false, interacted: false, device: 'keyboard', pad: createGamepadState(), stamina: 100, dodge: 0, dodged: false,
         damageTaken: 0, falls: 0, lastHealth: settings.health ?? 100, subtitle: null, greeted: new Map(), omitted, guards: new Set([...enemies.keys()].filter((id) => isGuardPlan(routines.get(id)))) }
       const session = game
@@ -945,6 +1030,8 @@ export default function ThreeViewport({ document, selectedId, active, fitRequest
       game.collider.bvh?.geometry.dispose()
       game.nav?.dispose()
       game.avatar.removeFromParent()
+      game.avatarRig.equipment.dispose()
+      for (const enemy of game.enemies.values()) enemy.equipment?.dispose()
       game.avatarRig.built.dispose(); game.avatarRig.resources.dispose()
       syncProjectiles([])
       game = null
@@ -1104,6 +1191,10 @@ export default function ThreeViewport({ document, selectedId, active, fitRequest
       window.removeEventListener('keyup', keyUp)
       window.removeEventListener('blur', blur)
       game?.collider.bvh?.geometry.dispose()
+      game?.nav?.dispose()
+      game?.avatarRig.equipment.dispose()
+      game?.avatarRig.built.dispose(); game?.avatarRig.resources.dispose()
+      if (game) for (const enemy of game.enemies.values()) enemy.equipment?.dispose()
       audio?.dispose()
       projectileGeometry.dispose()
       for (const material of projectileMaterials.values()) material.dispose()

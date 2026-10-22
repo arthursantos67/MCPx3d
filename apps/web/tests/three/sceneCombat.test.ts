@@ -13,8 +13,9 @@ const run = (list: Projectile[], collider: PlayerCollider, targets: Parameters<t
   return { hits, alive: list }
 }
 
-test('weapon table: fists match the legacy strike, melee weapons have no projectile', () => {
-  assert.equal(weaponStats.none.range, 2.8)
+test('weapon table: melee reach matches held equipment and melee weapons have no projectile', () => {
+  assert.equal(weaponStats.none.range, 0.85)
+  assert.equal(weaponStats.sword.range, 1.6)
   assert.equal(weaponStats.sword.damage, 2)
   assert.ok(weaponStats.sword.arc! > weaponStats.none.arc!)
   assert.equal(fireWeapon('sword', new THREE.Vector3(), new THREE.Vector3(0, 0, -1)), null)

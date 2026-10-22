@@ -88,19 +88,19 @@ test('jump has an impulse, rises and falls distinctly, and lands with compressio
   assert.ok(step.every((pose) => pose.state === 'locomotion'), 'a brief ungrounded step is not a fall')
 })
 
-test('attack combos chain only inside the window and expose the combo index', () => {
+test('attack combos buffer early input, preserve strike time and expose three different swings', () => {
   const a = createAnimator('biped', 0, 2)
   run(a, 10, () => ({}))
   const first = updateAnimator(a, { ...base(1), attack: 'light' })
   assert.equal(first.state, 'attack'); assert.equal(first.combo, 1)
   const early = run(a, 5, (i) => ({ attack: i === 3 ? 'light' : null }), 1)
-  assert.ok(early.every((pose) => pose.combo === 1), 'pressing during the windup does not chain')
-  const swing = run(a, 14, () => ({}), 1.2)
+  assert.ok(early.every((pose) => pose.combo === 1), 'an early press waits until recovery')
+  const swing = run(a, 24, () => ({}), 1.2)
   assert.ok(swing.some((pose) => pose.events.includes('swing')) && swing.some((pose) => pose.events.includes('impact')))
-  const second = updateAnimator(a, { ...base(1.5), attack: 'light' })
-  assert.equal(second.combo, 2)
-  run(a, 16, () => ({}), 1.6)
-  assert.equal(updateAnimator(a, { ...base(2), attack: 'light' }).combo, 3)
+  assert.ok(swing.some((pose) => pose.combo === 2 && pose.events.includes('attackStart')), 'buffered second strike starts by itself')
+  updateAnimator(a, { ...base(1.5), attack: 'light' })
+  const third = run(a, 30, () => ({}), 1.6)
+  assert.ok(third.some((pose) => pose.combo === 3 && pose.events.includes('attackStart')))
   const after = run(a, 120, () => ({}), 2.1)
   assert.equal(after.at(-1)!.state, 'locomotion')
   assert.equal(updateAnimator(a, { ...base(4), attack: 'heavy' }).combo, 1, 'a late press starts a new combo')
@@ -115,6 +115,26 @@ test('attack combos chain only inside the window and expose the combo index', ()
     const poses = [updateAnimator(c, { ...base(0.12), attack: 'light' }), ...run(c, 20, () => ({}), 0.13)]
     assert.ok(poses.some((pose) => jump(idle, pose) > 15), `${kind} attacks visibly`)
   }
+})
+
+test('normal cooldown clicks cycle through all three attacks for every rig', () => {
+  for (const kind of kinds) {
+    const a = createAnimator(kind, 0, 12), poses = run(a, 180, (i) => ({ attack: i % 40 === 0 ? 'light' : null }))
+    const combos = poses.filter((pose) => pose.events.includes('attackStart')).map((pose) => pose.combo)
+    assert.deepEqual(combos.slice(0, 3), [1, 2, 3], kind)
+  }
+})
+
+test('climbing alternates hands and feet and suppresses ground IK', () => {
+  const a = createAnimator('biped', 0, 8), poses = run(a, 90, () => ({ climbing: true, grounded: false, verticalSpeed: 2.6 }))
+  assert.ok(poses.every((pose) => pose.state === 'climb'))
+  assert.ok(poses.at(-1)!.footIK < 0.01)
+  assert.ok(poses.slice(15).some((pose) => pose.joints.get('j_shoulderR')![0] - pose.joints.get('j_shoulderL')![0] > 35))
+  assert.ok(poses.slice(15).some((pose) => pose.joints.get('j_shoulderL')![0] - pose.joints.get('j_shoulderR')![0] > 35))
+  assert.ok(poses.slice(15).some((pose) => Math.abs(pose.joints.get('j_kneeL')![0] - pose.joints.get('j_kneeR')![0]) > 30))
+  const exit = run(a, 30, () => ({ grounded: true, speed: 1 }))
+  assert.equal(exit.at(-1)!.state, 'locomotion')
+  assert.ok(exit.at(-1)!.footIK > 0.9)
 })
 
 test('hurt is additive, death is terminal and dodges, interactions and waves play out', () => {

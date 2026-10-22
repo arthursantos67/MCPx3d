@@ -115,6 +115,8 @@ Objetivo: cenas com padrão de jogo de mercado — personagens animados, combate
 
 ## Operação e limites
 
+Correções de jogabilidade da 0.6: orientação corporal pela velocidade, escalada articulada com saída validada, combos encadeados, equipamento visível e dano durante contato animado no runtime compartilhado. Caixas orientadas e cápsulas continuam aproximações; a redução medida no custo da IK não é uma garantia de FPS. [Escopo e medições](docs/threejs-motion-fixes.md).
+
 `npm run dev` inicia API e frontend. CadQuery faz parte da instalação padrão; nenhum servidor MCP é necessário nesse modo. A IA local WebLLM continua disponível para navegadores com WebGPU, com alternativa de endpoint compatível com OpenAI configurado pelo usuário.
 
 A configuração também oferece Codex e Claude Code pelos clientes oficiais instalados no computador do servidor e autenticados com a assinatura. A ponte funciona somente em loopback, recebe dados e retorna JSON; não entrega tokens ao navegador, não herda chaves de API de faturamento e não executa ferramentas propostas pela IA. Um teste independente confere conexão e resposta JSON antes de salvar a configuração, sem chamar os motores CAD/X3D. Os modelos e limites são os disponibilizados à conta pelo cliente; campo de modelo vazio usa seu padrão.

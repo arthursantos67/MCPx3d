@@ -1,5 +1,7 @@
 # Forma 0.6 — estado, planejamento e como continuar
 
+> Registro de uma parada anterior. O viewport atual já integra os módulos da 0.6; as correções posteriores de movimento, combate, equipamento e desempenho estão em [threejs-motion-fixes.md](threejs-motion-fixes.md). As pendências e medições abaixo descrevem o momento da interrupção, não o checkout atual.
+
 Documento de passagem de trabalho, escrito em 22/10/2026 quando o trabalho da 0.6 foi interrompido a pedido do usuário. Especificação da versão: seção 0.6 do [ROADMAP](../ROADMAP.md). Regras locais: `CLAUDE.md` (não versionado).
 
 ## 1. Resumo
