@@ -4,7 +4,7 @@ import { hashNoise } from './sceneGeometrySpec.ts'
 
 const SIZE = 512
 interface Sample { rgb: [number, number, number]; height: number; rough: number; alpha?:number }
-interface TextureData { color: Uint8Array; normal: Uint8Array; rough: Uint8Array }
+export interface TextureData { color: Uint8Array; normal: Uint8Array; rough: Uint8Array }
 /** Internal terrain layers stay out of the portable scene material schema. */
 export type SurfaceTextureKind = TextureKind | 'groundGrass' | 'groundRock' | 'groundSand' | 'groundSnow'
 const cache = new Map<SurfaceTextureKind, TextureData>()
@@ -124,6 +124,11 @@ function generate(kind: SurfaceTextureKind): TextureData {
 
 /** Deterministic, seamless UV textures generated locally without CDN/image dependencies. */
 const sources = new Map<string, THREE.DataTexture>()
+
+/** Pixel data of one texture kind (pure, so a worker can produce it); `primeTextureData` hands it back to the cache. */
+export const textureData = (kind: SurfaceTextureKind): TextureData => generate(kind)
+export const hasTextureData = (kind: SurfaceTextureKind) => cache.has(kind)
+export function primeTextureData(kind: SurfaceTextureKind, data: TextureData): void { if (!cache.has(kind)) cache.set(kind, data) }
 /** Deterministic, seamless UV textures generated locally without CDN/image dependencies. Every scale clones one texture, so the GPU holds a single upload per kind and channel. */
 export function proceduralTexture(kind: SurfaceTextureKind, channel: 'map' | 'normal' | 'rough', scale = 1): THREE.DataTexture {
   const key = `${kind}:${channel}`

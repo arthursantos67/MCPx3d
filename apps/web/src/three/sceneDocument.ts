@@ -137,19 +137,19 @@ export const nodeLabels: Record<NodeKind, string> = { group: 'Grupo', box: 'Caix
   plane: 'Plano', capsule: 'Cápsula', polyhedron: 'Poliedro', terrain: 'Terreno procedural', text: 'Texto', light: 'Luz' }
 export const hasSurface = (kind: NodeKind) => kind !== 'group' && kind !== 'light'
 
-function record(value: unknown): Record<string, unknown> {
+export function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Esperado um objeto JSON.')
   return value as Record<string, unknown>
 }
-function text(value: unknown, field: string, max = 120): string {
+export function text(value: unknown, field: string, max = 120): string {
   if (typeof value !== 'string' || !value.trim() || value.length > max) throw new Error(`${field}: texto obrigatório de até ${max} caracteres.`)
   return value
 }
-function number(value: unknown, field: string, min: number, max: number): number {
+export function number(value: unknown, field: string, min: number, max: number): number {
   if (typeof value !== 'number' || !Number.isFinite(value) || value < min || value > max) throw new Error(`${field}: use um número entre ${min} e ${max}.`)
   return value
 }
-function boolean(value: unknown, field: string): boolean {
+export function boolean(value: unknown, field: string): boolean {
   if (typeof value !== 'boolean') throw new Error(`${field}: esperado verdadeiro ou falso.`)
   return value
 }
@@ -161,7 +161,7 @@ function vector(value: unknown, field: string, min: number, max: number): Vector
   if (!Array.isArray(value) || value.length !== 3) throw new Error(`${field}: esperado vetor XYZ.`)
   return Array.from(value, (v) => number(v, field, min, max)) as Vector3Tuple
 }
-function choice<T extends string>(value: unknown, options: readonly T[], fallback: T, message: string): T {
+export function choice<T extends string>(value: unknown, options: readonly T[], fallback: T, message: string): T {
   if (value === undefined) return fallback
   if (!options.includes(value as T)) throw new Error(message)
   return value as T

@@ -46,6 +46,22 @@ import ThreeHud, { type ThreeHudHandle } from './ThreeHud.tsx'
 import { compassMarker, headingFromYaw, hudPhase, hurtAngle, nearestTarget, portraitFor, screenFromNdc, selectBoss, type HudAnchor, type HudModel } from './sceneHud.ts'
 import { createGamepadState, lookDelta, mergeInput, pollGamepad, readGamepad, type GamepadState } from './sceneGamepad.ts'
 import { loadSettings, mouseScale, saveSettings, type PlaySettings } from './sceneSettings.ts'
+import { planBenchRoute, sceneBench } from './sceneBench.ts'
+import type { MeshBVH } from 'three-mesh-bvh'
+import type { ThreeWorldDocument } from './world/worldDocument.ts'
+import { combineShapes } from './world/terrainCollider.ts'
+import { createWorldWorkers, type WorldPool } from './world/workerPool.ts'
+import { createWorldRuntime, type WorldRuntime } from './world/worldRuntime.ts'
+
+/** The defines OutputPass derives from the renderer (three/addons OutputPass.render), so its program can be compiled ahead. */
+function outputDefines(renderer: THREE.WebGLRenderer): Record<string, string> {
+  const defines: Record<string, string> = {}
+  if (THREE.ColorManagement.getTransfer(renderer.outputColorSpace) === THREE.SRGBTransfer) defines.SRGB_TRANSFER = ''
+  const tone: Partial<Record<THREE.ToneMapping, string>> = { [THREE.LinearToneMapping]: 'LINEAR', [THREE.ReinhardToneMapping]: 'REINHARD', [THREE.CineonToneMapping]: 'CINEON',
+    [THREE.ACESFilmicToneMapping]: 'ACES_FILMIC', [THREE.AgXToneMapping]: 'AGX', [THREE.NeutralToneMapping]: 'NEUTRAL', [THREE.CustomToneMapping]: 'CUSTOM' }
+  if (tone[renderer.toneMapping]) defines[`${tone[renderer.toneMapping]}_TONE_MAPPING`] = ''
+  return defines
+}
 
 export type GizmoMode = 'translate' | 'rotate' | 'scale' | null
 export type CameraView = 'front' | 'right' | 'top' | 'perspective'
@@ -58,6 +74,8 @@ export interface ViewportController {
 interface Props {
   document: ThreeSceneDocument; selectedId: string | null; active: boolean; fitRequest: number; playing: boolean; seekTime: number; seekRequest: number
   gizmo: GizmoMode; snap: boolean; playMode: boolean; presentation?: boolean; controller?: RefObject<ViewportController | null>
+  /** A 2.0 world with terrain streams around the camera; `document` then holds the scene played on top of it. */
+  world?: ThreeWorldDocument | null
   onTimeChange: (time: number) => void; onSelect: (id: string | null) => void; onTransform: (id: string, patch: TransformPatch) => void; onExitPlay: () => void
 }
 interface ViewportEngine {
@@ -70,10 +88,11 @@ interface ViewportEngine {
   tools: (gizmo: GizmoMode, snap: boolean) => void
   game: (enabled: boolean) => void
   present: (enabled: boolean) => void
+  world: (world: ThreeWorldDocument | null) => void
 }
 const round = (value: number, digits = 4) => Math.round(value * 10 ** digits) / 10 ** digits
 
-export default function ThreeViewport({ document, selectedId, active, fitRequest, playing, seekTime, seekRequest, gizmo, snap, playMode, presentation = false, controller, onTimeChange, onSelect, onTransform, onExitPlay }: Props) {
+export default function ThreeViewport({ document, world = null, selectedId, active, fitRequest, playing, seekTime, seekRequest, gizmo, snap, playMode, presentation = false, controller, onTimeChange, onSelect, onTransform, onExitPlay }: Props) {
   const host = useRef<HTMLDivElement>(null)
   const engine = useRef<ViewportEngine | null>(null)
   const callbacks = useRef({ onTimeChange, onSelect, onTransform, onExitPlay })
@@ -110,7 +129,8 @@ export default function ThreeViewport({ document, selectedId, active, fitRequest
     // The graphics context is an external resource; expose initialization failure.
     // oxlint-disable-next-line react/set-state-in-effect
     catch { setError('WebGL2 indisponível. Ative a aceleração gráfica ou use outro navegador. Você ainda pode editar e exportar o projeto.'); return }
-    const ratioFor = (preference: PlaySettings['quality']) => Math.min(window.devicePixelRatio || 1, preference === 'low' ? 1 : preference === 'high' ? 2 : 1.5)
+    const bench = sceneBench()
+    const ratioFor = (preference: PlaySettings['quality']) => bench?.ratio ?? Math.min(window.devicePixelRatio || 1, preference === 'low' ? 1 : preference === 'high' ? 2 : 1.5)
     const pixelRatio = ratioFor(settingsRef.current.quality)
     renderer.setPixelRatio(pixelRatio)
     renderer.outputColorSpace = THREE.SRGBColorSpace
@@ -126,6 +146,7 @@ export default function ThreeViewport({ document, selectedId, active, fitRequest
     scene.matrixWorldAutoUpdate = false
     const content = new THREE.Group()
     scene.add(content)
+    bench?.attach(renderer, scene)
     const rig = createEnvironmentRig(renderer, scene)
     const softwareGl = (() => { try { const gl = renderer.getContext(), info = gl.getExtension('WEBGL_debug_renderer_info'); return /swiftshader|llvmpipe|software/i.test(String(info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER))) } catch { return false } })()
     let quality: QualityLevel = settingsRef.current.quality === 'auto' ? softwareGl ? 'low' : 'medium' : settingsRef.current.quality
@@ -195,12 +216,15 @@ export default function ThreeViewport({ document, selectedId, active, fitRequest
     composer.addPass(outline)
     const output = new OutputPass()
     composer.addPass(output)
+    const outputMaterial = output.material as THREE.RawShaderMaterial, outputScene = new THREE.Scene(), outputProgram = new THREE.Mesh(new THREE.BufferGeometry(), outputMaterial)
+    outputScene.add(outputProgram)
     composer.addPass(grading.pass)
     let waterMaterials: THREE.Material[] = [], ambientMotion = false
     let audio: AudioEngine | null = null, audioMuted = false
     const sfx = (name: SfxName, position?: THREE.Vector3) => audio?.sfx(name, position ? [position.x, position.y, position.z] : undefined)
     const resources = createResources(Math.min(8, renderer.capabilities.getMaxAnisotropy()))
     let doc: ThreeSceneDocument | null = null, built: BuiltScene | null = null
+    let worldDoc: ThreeWorldDocument | null = null, worldRuntime: WorldRuntime | null = null, worldPool: WorldPool | null = null, worldReady = false, worldFocus = new THREE.Vector3()
     let animatedNodes: SceneNode[] = [], byId = new Map<string, SceneNode>()
     let playback = false, time = 0, duration = 20
     let lastTimestamp: number | null = null, lastReport = 0, fpsFrames = 0, fpsStarted = 0, statsReported = 0
@@ -212,7 +236,7 @@ export default function ThreeViewport({ document, selectedId, active, fitRequest
       view: 'first' | 'third'; spawn: THREE.Vector3; stride: number; sounds: SceneNode[]; projectiles: Projectile[]; attackCooldown: number; swing: number; hudAt: number; platforms: Map<string, THREE.Matrix4>
       modes: Map<string, string>; rigMotion: Map<string, CharacterMotion>; avatarRig: { built: BuiltScene; resources: SceneResources; binding: RigBinding; animator: Animator; feet: FootIKMemory; springs: SpringSystem; equipment: Equipment; climb: ClimbMemory; ladder: Ladder | null; seenHurt: number; seenSwing: number }; swings: number; heavy: boolean; meleeHits: Set<string>; blade: THREE.Line3 | null; dialogue: { id: string; name: string; line: string; index: number; total: number; until: number } | null; spawnNotice: number; enemies: Map<string, EnemyState>; enemyParts:Set<string>; parts: Map<string, SceneNode[]>; water: number | null; avatar: THREE.Group; hurt: number; goalCooldown: number; nav: NavigationMesh | null; router: Router; routines: Map<string, RoutinePlan>; guards: Set<string>
       paused: boolean; dismissed: boolean; interacted: boolean; device: 'keyboard' | 'gamepad'; pad: GamepadState; stamina: number; dodge: number; dodged: boolean; damageTaken: number; falls: number; lastHealth: number
-      subtitle: { speaker: string; text: string; until: number } | null; greeted: Map<string, number>; omitted: number; aimables: THREE.Object3D[] } | null = null
+      subtitle: { speaker: string; text: string; until: number } | null; greeted: Map<string, number>; omitted: number; aimables: THREE.Object3D[]; ownedBvh: MeshBVH | null } | null = null
     /** The third-person avatar is compiled from the same procedural parts and rig as scene characters, with its own GPU resources. */
     const createAvatar = (kind: typeof avatarKinds[number], weapon: WeaponKind) => {
       const { built: avatarBuilt, resources: avatarResources, binding } = buildPlayerAvatar(kind, { quality, shadows: doc?.environment.shadows ?? true }, weapon)
@@ -244,11 +268,18 @@ export default function ThreeViewport({ document, selectedId, active, fitRequest
       setToasts((items) => [...items.slice(-3), { id, text }])
       setTimeout(() => setToasts((items) => items.filter((item) => item.id !== id)), 3500)
     }
+    let renders = 0
     const render = () => {
+      renders++
       renderer.info.reset()
       if (game) rig.frame(game.player.position,24)
       rig.follow(camera)
       scene.updateMatrixWorld()
+      if (worldRuntime && worldReady) {
+        worldRuntime.update(camera, renderer.domElement.height, game ? game.player.position : null)
+        worldRuntime.object.updateMatrixWorld(true)
+        if (!game) rig.frame(controls.target, 60)
+      }
       built?.updateShadows(game?game.player.position:controls.target)
       skyPass.enabled = rig.skyVisible()
       skyCamera.copy(camera)
@@ -265,7 +296,9 @@ export default function ThreeViewport({ document, selectedId, active, fitRequest
       lifeClock = seconds
       if (doc) fauna?.update(camera, seconds, delta, game ? game.player.position : null, nightAmount(doc.environment, day))
       if (game && day) audio?.setTimeOfDay(day.night)
+      bench?.gpuBegin()
       composer.render()
+      bench?.gpuEnd(!!game)
       const { calls, triangles } = renderer.info.render
       if (seconds - statsReported > 0.5) {
         statsReported = seconds
@@ -471,6 +504,7 @@ export default function ThreeViewport({ document, selectedId, active, fitRequest
         if (pad.pressed.has('mute')) toggleMute(state)
       }
       const delta = state.paused ? 0 : elapsed, input = state.paused ? emptyInput() : mergeInput(state.input, pad.input)
+      if (bench && !state.paused) bench.drive(player, input, delta)
       const running = Math.hypot(player.velocity.x, player.velocity.z) > 0.5
       state.stamina = THREE.MathUtils.clamp(state.stamina + (input.sprint && running && !player.fly ? -22 : state.dodge > 0 ? 0 : 16) * delta, 0, 100)
       if (state.stamina < 1) input.sprint = false
@@ -502,7 +536,7 @@ export default function ThreeViewport({ document, selectedId, active, fitRequest
       }
       state.platforms = new Map(moving.map((item) => [item.id, item.matrix]))
       const hurt = (amount: number, away: THREE.Vector3 | null) => {
-        if (state.dodge > 0.15 || !damagePlayer(runtime, amount)) return
+        if (bench?.invulnerable || state.dodge > 0.15 || !damagePlayer(runtime, amount)) return
         state.hurt++
         overlay.current?.damage(container.clientWidth * 0.2, container.clientHeight * 0.78, Math.round(amount), 'taken')
         if (away && away.lengthSq() > 1e-6) overlay.current?.hurtFrom(hurtAngle(player.position, player.position.clone().sub(away), headingFromYaw(player.yaw)))
@@ -550,7 +584,7 @@ export default function ThreeViewport({ document, selectedId, active, fitRequest
       state.collider.boxes = surfaces(() => true).map((item) => item.box)
       const modifiers = playerModifiers(runtime)
       const fall = player.velocity.y, wasGrounded = player.onGround, wantsJump = input.jump
-      if (runtime.outcome !== 'lost') stepPlayer(player, input, state.collider, { speed: settings.speed * modifiers.speed, jumpHeight: settings.jumpHeight * modifiers.jump }, delta)
+      if (runtime.outcome !== 'lost' && (!worldRuntime || player.fly || worldRuntime.collisionReady(player.position))) stepPlayer(player, input, state.collider, { speed: (bench?.speed ?? settings.speed) * modifiers.speed, jumpHeight: settings.jumpHeight * modifiers.jump }, delta)
       if (wasGrounded && wantsJump && !player.onGround && player.velocity.y > 0) sfx('jump', player.position)
       if (!wasGrounded && player.onGround && fall < -5) sfx('land', player.position)
       state.stride += player.onGround && !player.fly ? Math.hypot(player.velocity.x, player.velocity.z) * delta : 0
@@ -702,6 +736,12 @@ export default function ThreeViewport({ document, selectedId, active, fitRequest
       countFrame(timestamp)
     }
     const draw = (timestamp: number) => {
+      if (!bench) { drawFrame(timestamp); return }
+      const started = performance.now(), before = renders
+      drawFrame(timestamp)
+      if (renders !== before) bench.frame(timestamp, performance.now() - started, renderer.info.render, !!game, worldRuntime && worldReady ? worldRuntime.stats : null)
+    }
+    const drawFrame = (timestamp: number) => {
       frame = 0
       if (!enabled || lost || disposed || !container.clientWidth || !container.clientHeight || !built) return
       if (!ready) { if (game) { game.last = null; frame = requestAnimationFrame(draw) } return }
@@ -720,8 +760,9 @@ export default function ThreeViewport({ document, selectedId, active, fitRequest
       scene.updateMatrixWorld()
       render()
       if (playback) { countFrame(timestamp); if (timestamp - lastReport > 100) { lastReport = timestamp; callbacks.current.onTimeChange(time) } }
-      if ((playback || (presenting && ambientMotion)) && enabled && !lost && !disposed) frame = requestAnimationFrame(draw)
+      if ((playback || (presenting && ambientMotion) || worldBusy()) && enabled && !lost && !disposed) frame = requestAnimationFrame(draw)
     }
+    const worldBusy = () => !!worldRuntime && worldReady && (worldRuntime.stats.stream.inFlight > 0 || worldRuntime.stats.stream.ready > 0 || worldRuntime.stats.deficit > 0)
     const invalidate = () => { if (enabled && !lost && !disposed && !frame) frame = requestAnimationFrame(draw) }
     /** Links new shader programs in parallel before the first frame that needs them; otherwise each first use blocks the page until the driver finishes. */
     const warmUp = () => {
@@ -733,9 +774,14 @@ export default function ThreeViewport({ document, selectedId, active, fitRequest
       // The composer draws the scene into its buffer, whose tone mapping and color space are part of each program's key.
       const output = renderer.getRenderTarget()
       renderer.setRenderTarget(composer.readBuffer)
-      const compiled = Promise.all([renderer.compileAsync(scene, camera), renderer.compileAsync(rig.skyScene, camera)])
+      const compiled = Promise.all([renderer.compileAsync(scene, camera), renderer.compileAsync(rig.skyScene, camera), ...(worldRuntime && worldReady ? [worldRuntime.compileShadows(renderer, rig.sun, scene)] : [])])
+      // The output pass rebuilds its program when tone mapping changes (a scene switch); prepare that program too.
+      renderer.setRenderTarget(composer.writeBuffer)
+      outputMaterial.defines = outputDefines(renderer)
+      outputMaterial.needsUpdate = true
+      const outputCompiled = renderer.compileAsync(outputScene, camera)
       renderer.setRenderTarget(output)
-      void compiled.catch(() => {}).then(() => { if (token === warming && !disposed) { ready = true; invalidate() } })
+      void Promise.all([compiled, outputCompiled]).catch(() => {}).then(() => { if (token === warming && !disposed) { ready = true; bench?.mark(game ? 'gameReady' : 'sceneReady'); invalidate() } })
     }
     const resize = () => {
       const width = container.clientWidth, height = container.clientHeight
@@ -984,6 +1030,12 @@ export default function ThreeViewport({ document, selectedId, active, fitRequest
       }
       return focus.isEmpty() ? selectionBox() : focus.expandByScalar(3)
     }
+    const frameWorld = () => {
+      controls.target.copy(worldFocus)
+      camera.position.copy(worldFocus).add(new THREE.Vector3(90, 60, 90))
+      controls.update()
+      invalidate()
+    }
     const startGame = () => {
       if (!built || !doc || game) return
       clearSelection()
@@ -1001,9 +1053,11 @@ export default function ThreeViewport({ document, selectedId, active, fitRequest
       for (const node of doc.nodes) if (node.behavior && node.behavior.type !== 'climbable') parts.set(node.id, [...subtreeIds(doc.nodes, node.id)].map((id) => byId.get(id)!).filter((item) => hasSurface(item.kind)))
       let water: number | null = null
       for (const node of doc.nodes) if (node.kind === 'plane' && !node.parentId && node.material.texture === 'water') water = Math.max(water ?? -Infinity, node.position[1])
-      const { bvh, omitted } = buildStaticCollider(entries)
+      const { bvh: ownedBvh, omitted } = buildStaticCollider(entries)
+      const terrain = worldRuntime && worldReady && worldDoc ? worldRuntime : null
+      const bvh = terrain ? combineShapes([...(ownedBvh ? [ownedBvh] : []), terrain.collision]) : ownedBvh
       const bounds = sceneBounds(), settings = doc.environment.player!
-      const floor = bounds.isEmpty() ? 0 : bounds.min.y
+      const floor = terrain && worldDoc ? worldDoc.terrain.heightRange[0] - 50 : bounds.isEmpty() ? 0 : bounds.min.y
       const center = bounds.isEmpty() ? new THREE.Vector3() : bounds.getCenter(new THREE.Vector3())
       const spawn = settings.spawn ? new THREE.Vector3(...settings.spawn) : new THREE.Vector3(center.x, floor, bounds.isEmpty() ? 6 : bounds.max.z + 4)
       if (!(settings.mode === 'fly' && settings.allowFly !== false)) spawn.copy(findWalkableSpawn({ bvh, boxes: [], floor },spawn,bounds,water,!!settings.spawn))
@@ -1049,14 +1103,16 @@ export default function ThreeViewport({ document, selectedId, active, fitRequest
         saved: { position: camera.position.clone(), target: controls.target.clone(), fov: camera.fov, near: camera.near, far: camera.far }, last: null, aim: null, strike: null, hud: '', locked: false, help: false,
         view: settings.camera ?? 'first', spawn: spawn.clone(), stride: 0, sounds: doc.nodes.filter((node) => node.sound), projectiles: [], attackCooldown: 0, swing: 0, hudAt: 0, platforms: new Map(), modes: new Map(), rigMotion: new Map(), avatarRig, swings: 0, heavy: false, meleeHits: new Set(), blade: null, dialogue: null, spawnNotice: -10, enemies, enemyParts:new Set([...enemies.keys()].flatMap(id=>[...subtreeIds(doc!.nodes,id)])),parts, water, avatar, hurt: 0, goalCooldown: 0,
         nav: null, router: createRouter(null), routines, paused: false, dismissed: false, interacted: false, device: 'keyboard', pad: createGamepadState(), stamina: 100, dodge: 0, dodged: false,
-        damageTaken: 0, falls: 0, lastHealth: settings.health ?? 100, subtitle: null, greeted: new Map(), omitted, aimables, guards: new Set([...enemies.keys()].filter((id) => isGuardPlan(routines.get(id)))) }
+        damageTaken: 0, falls: 0, lastHealth: settings.health ?? 100, subtitle: null, greeted: new Map(), omitted, aimables, ownedBvh, guards: new Set([...enemies.keys()].filter((id) => isGuardPlan(routines.get(id)))) }
       const session = game
+      if (bench?.driving) { if (bench.fixedRoute?.altitude !== undefined) game.player.fly = true; bench.route = bench.fixedRoute ?? planBenchRoute(doc, spawn, (id) => built!.holders.get(id)?.getWorldPosition(new THREE.Vector3()) ?? null) }
+      bench?.mark('gameStart')
       if (enemies.size) void buildNavigation(entries, focus, { radius: 0.35, height: 1.7, climb: 0.27 }, { floor }).then((nav) => {
         if (game === session && nav) { game.nav = nav; game.router = createRouter(nav) } else nav?.dispose()
       })
       camera.fov = 70
       camera.near = 0.08
-      camera.far = Math.max(400, bounds.isEmpty() ? 400 : bounds.getSize(new THREE.Vector3()).length() * 3)
+      camera.far = terrain && worldDoc ? Math.hypot(...worldDoc.terrain.size) * 1.2 : Math.max(400, bounds.isEmpty() ? 400 : bounds.getSize(new THREE.Vector3()).length() * 3)
       camera.updateProjectionMatrix()
       renderer.domElement.focus()
       if (frame) { cancelAnimationFrame(frame); frame = 0 }
@@ -1066,7 +1122,7 @@ export default function ThreeViewport({ document, selectedId, active, fitRequest
     const stopGame = (rebuild = true) => {
       if (!game) return
       const saved = game.saved
-      game.collider.bvh?.geometry.dispose()
+      game.ownedBvh?.geometry.dispose()
       game.nav?.dispose()
       game.avatar.removeFromParent()
       game.avatarRig.equipment.dispose()
@@ -1155,6 +1211,7 @@ export default function ThreeViewport({ document, selectedId, active, fitRequest
       },
       select(id) { selected = id; applySelection(); invalidate() },
       fit() {
+        if (worldRuntime && !selected && !doc?.nodes.length) { frameWorld(); return }
         const direction = camera.position.clone().sub(controls.target).normalize()
         if (!direction.lengthSq()) direction.set(1, 0.7, 1.1).normalize()
         frameBox(presenting && !selected ? presentationBox() : selectionBox(), direction)
@@ -1178,6 +1235,31 @@ export default function ThreeViewport({ document, selectedId, active, fitRequest
         invalidate()
       },
       game(value) { if (value) startGame(); else stopGame() },
+      world(next) {
+        if (next === worldDoc) return
+        if (game) { stopGame(false); callbacks.current.onExitPlay() }
+        worldRuntime?.object.removeFromParent(); worldRuntime?.dispose()
+        worldRuntime = null; worldReady = false; worldDoc = next
+        if (!next || next.terrain.kind === 'none') { camera.near = 0.01; camera.far = 10000; camera.updateProjectionMatrix(); invalidate(); return }
+        worldPool ??= createWorldWorkers()
+        const gl = renderer.getContext() as WebGL2RenderingContext
+        const runtime = createWorldRuntime(next, worldPool, { anisotropy: Math.min(8, renderer.capabilities.getMaxAnisotropy()), maxLayers: gl.getParameter(gl.MAX_ARRAY_TEXTURE_LAYERS) as number, onTile: invalidate })
+        worldRuntime = runtime
+        if (bench) bench.ground = runtime.source.heightAt
+        content.add(runtime.object)
+        const spawn = next.environment.player?.spawn, focus = spawn ? new THREE.Vector3(...spawn) : new THREE.Vector3(0, runtime.source.heightAt(0, 0), 0)
+        camera.near = 0.5; camera.far = Math.hypot(...next.terrain.size) * 1.2; camera.updateProjectionMatrix()
+        worldFocus = focus.clone()
+        frameWorld()
+        bench?.mark('worldStart')
+        void runtime.prepare(focus, camera, renderer.domElement.height || 1080).then(() => {
+          if (worldRuntime !== runtime || disposed) return
+          worldReady = true
+          bench?.mark('worldPrepared')
+          warmUp()
+          invalidate()
+        })
+      },
       present(value) {
         presenting = value
         if (value || game) camera.layers.disable(HELPER_LAYER); else camera.layers.enable(HELPER_LAYER)
@@ -1230,7 +1312,8 @@ export default function ThreeViewport({ document, selectedId, active, fitRequest
       window.removeEventListener('keydown', keyDown)
       window.removeEventListener('keyup', keyUp)
       window.removeEventListener('blur', blur)
-      game?.collider.bvh?.geometry.dispose()
+      game?.ownedBvh?.geometry.dispose()
+      worldRuntime?.dispose(); worldPool?.dispose()
       game?.nav?.dispose()
       game?.avatarRig.equipment.dispose()
       game?.avatarRig.built.dispose(); game?.avatarRig.resources.dispose()
@@ -1249,6 +1332,7 @@ export default function ThreeViewport({ document, selectedId, active, fitRequest
       ground.geometry.dispose()
       ground.material.dispose()
       grid.geometry.dispose()
+      outputProgram.geometry.dispose()
       for (const material of Array.isArray(grid.material) ? grid.material : [grid.material]) material.dispose()
       renderer.dispose()
       renderer.forceContextLoss()
@@ -1256,6 +1340,7 @@ export default function ThreeViewport({ document, selectedId, active, fitRequest
     }
   }, [])
   useEffect(() => { engine.current?.update(document) }, [document])
+  useEffect(() => { engine.current?.world(world) }, [world])
   useEffect(() => { engine.current?.select(selectedId) }, [selectedId, document])
   useEffect(() => { engine.current?.activate(active) }, [active])
   useEffect(() => { engine.current?.fit() }, [fitRequest])

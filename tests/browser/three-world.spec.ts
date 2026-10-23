@@ -1,0 +1,48 @@
+import { expect, test, type Page } from '@playwright/test'
+import { projectAction, leaveGame } from './threeHelpers.ts'
+
+interface Probe { marks: Record<string, number>; position(): [number, number, number] | null; ground: ((x: number, z: number) => number) | null }
+declare global { interface Window { __formaBench?: Probe } }
+
+async function open(page: Page) {
+  const errors: string[] = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  page.on('console', (message) => { if (/Shader Error|THREE.WebGLProgram|GL_INVALID|VALIDATE_STATUS/.test(message.text())) errors.push(message.text()) })
+  await page.addInitScript(() => { localStorage.setItem('modeler:workspace', 'three') })
+  await page.route('http://127.0.0.1:8011/api/**', (route) => route.fulfill({ status: 503, contentType: 'application/json', body: '{"detail":"offline"}' }))
+  await page.setViewportSize({ width: 1100, height: 760 })
+  await page.goto('/?bench=1')
+  await expect(page.getByRole('img', { name: 'Cena Three.js interativa' })).toBeVisible()
+  return errors
+}
+
+test('a 4 km world streams its terrain, plays on the relief and keeps 1.x scenes working afterwards', async ({ page }) => {
+  test.setTimeout(240_000)
+  const errors = await open(page)
+  await projectAction(page, 'Relevo sintético 4 km')
+  await page.waitForFunction(() => (window.__formaBench?.marks.worldPrepared ?? 0) > 0, null, { timeout: 120_000 })
+  const stats = page.getByLabel('Estatísticas do renderer')
+  await expect(stats).toContainText(/[1-9][\d.]* triângulos/, { timeout: 30_000 })
+  const canvas = page.getByRole('img', { name: 'Cena Three.js interativa' })
+  await page.screenshot({ path: '.cache/browser/three-world-editor.png' })
+  await page.getByRole('button', { name: '▶ Jogar', exact: true }).click()
+  const hud = page.getByRole('region', { name: 'Modo jogo' })
+  await expect(hud).toBeVisible()
+  await page.waitForFunction(() => !!window.__formaBench?.position(), null, { timeout: 30_000 })
+  const start = await page.evaluate(() => window.__formaBench!.position()!)
+  // Software rendering draws a few frames per second and each frame advances at most 0.1 s: walk until displaced.
+  await page.keyboard.down('w')
+  await page.waitForFunction((from) => { const at = window.__formaBench!.position()!; return Math.hypot(at[0] - from[0], at[2] - from[2]) > 2 }, start, { timeout: 60_000, polling: 250 })
+  await page.keyboard.up('w')
+  await page.waitForTimeout(1500)
+  const end = await page.evaluate(() => { const at = window.__formaBench!.position()!; return { at, ground: window.__formaBench!.ground!(at[0], at[2]) } })
+  expect(Math.hypot(end.at[0] - start[0], end.at[2] - start[2])).toBeGreaterThan(2)
+  // The player stands on the streamed terrain: feet on the level-0 surface, not falling through or floating.
+  expect(Math.abs(end.at[1] - end.ground)).toBeLessThan(0.35)
+  await canvas.screenshot({ path: '.cache/browser/three-world-game.png' })
+  await leaveGame(page)
+  await projectAction(page, 'Exemplo jogável')
+  await expect(page.getByText('Ilha do Farol', { exact: true }).first()).toBeVisible()
+  await expect(stats).toContainText(/[1-9][\d.]* triângulos/)
+  expect(errors).toEqual([])
+})

@@ -1,5 +1,6 @@
 # Documentação atual
 
+- [Mundos vastos — Three.js 0.7](threejs-worlds.md): medição reproduzível, linha de base, contrato ThreeWorldDocument 2.0, terreno em blocos com LOD de 1 px, streaming em workers e colisão.
 - [Personagens e skins — Three.js 0.6](threejs-characters-hud.md): implementação atual, avatar, dedos, face, LOD, cache e exportação de esqueletos/clipes.
 
 - [Correções de movimento e combate — Three.js 0.6](threejs-motion-fixes.md): giro ao recuar, combos, escalada, equipamento, contato dos golpes e medição da IK.

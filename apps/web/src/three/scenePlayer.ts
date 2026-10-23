@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { MeshBVH, type ExtendedTriangle } from 'three-mesh-bvh'
+import type { CollisionShape } from './world/terrainCollider.ts'
 
 export const PLAYER_RADIUS = 0.32, PLAYER_HEIGHT = 1.75, PLAYER_EYE = 1.62, GRAVITY = 24
 export const MAX_COLLIDER_TRIANGLES = 1_500_000
@@ -13,7 +14,8 @@ export function movementHeading(heading: number, velocity: THREE.Vector3, dt: nu
 }
 /** Oriented box used for moving or interactive objects. */
 export interface PlayerBox { center: THREE.Vector3; axes: [THREE.Vector3, THREE.Vector3, THREE.Vector3]; half: THREE.Vector3 }
-export interface PlayerCollider { bvh: MeshBVH | null; boxes: PlayerBox[]; floor: number; climb?: PlayerBox[] }
+/** `bvh` is the static scene BVH, or in a world that BVH combined with streamed terrain (same query interface). */
+export interface PlayerCollider { bvh: CollisionShape | null; boxes: PlayerBox[]; floor: number; climb?: PlayerBox[] }
 
 /** Bakes world-space triangles into one BVH; returns the number of omitted triangles beyond the budget. */
 export function buildStaticCollider(entries: { geometry: THREE.BufferGeometry; matrix: THREE.Matrix4 }[]): { bvh: MeshBVH | null; omitted: number } {

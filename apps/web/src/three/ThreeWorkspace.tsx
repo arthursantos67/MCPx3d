@@ -28,6 +28,8 @@ import { ambiencePresets, attackStyles, DEFAULT_MOTION, emitterPresets, faunaDen
   parseScene, redoScene, removeSubtree, SCENE_STORAGE_KEY, skyLabels, skyPresets, subtreeIds, textureKinds, textureLabels, undoScene, validateAnimation,validateScene,
   type NodeKind, type SceneAnimation, type SceneBehavior, type SceneHistory, type SceneInteraction, type SceneKeyframe, type SceneNode, type ScenePlayer, type SceneEmitter, type SceneRoutineStep, type SceneSound, type ThreeSceneDocument, type Vector3Tuple } from './sceneDocument.ts'
 import './ThreeWorkspace.css'
+import type { ThreeWorldDocument } from './world/worldDocument.ts'
+import { createSyntheticWorld, worldBaseScene } from './world/worldExamples.ts'
 
 function RoutineEditor({ steps, places, onChange }: { steps: SceneRoutineStep[]; places: SceneNode[]; onChange: (steps: SceneRoutineStep[]) => void }) {
   const set = (index: number, patch: Partial<SceneRoutineStep>) => onChange(steps.map((step, i) => i === index ? { ...step, ...patch } : step))
@@ -140,6 +142,7 @@ export default function ThreeWorkspace({ active, provider, ready, onBusyChange, 
   const [gizmo, setGizmo] = useState<GizmoMode>('translate')
   const [snap, setSnap] = useState(false)
   const [playMode, setPlayMode] = useState(false)
+  const [world, setWorld] = useState<ThreeWorldDocument | null>(null)
   const [helpOpen, setHelpOpen] = useState(false)
   const [studioOpen, setStudioOpen] = useState(false)
   const [projectMenu, setProjectMenu] = useState(false)
@@ -255,7 +258,9 @@ export default function ThreeWorkspace({ active, provider, ready, onBusyChange, 
   }
   const replace = (document: ThreeSceneDocument) => {
     if (commit(document)) { setSelectedId(null); setFilter(''); setProjectMenu(false); setPlaying(false); seek(0); setFitRequest((value) => value + 1); setAuditRequest((value) => value + 1) }
+    setWorld(null)
   }
+  const openWorld = (next: ThreeWorldDocument) => { replace(worldBaseScene(next)); setWorld(next) }
   const importFile = async (file: File) => {
     try {
       if (file.size > MAX_SCENE_BYTES) throw new Error('O projeto excede o limite de 32 MB.')
@@ -391,7 +396,7 @@ export default function ThreeWorkspace({ active, provider, ready, onBusyChange, 
     finally { setAssetBusy(false); onBusyChange(false) }
   }
   const busy = generating || inspecting || assetBusy
-  const enterPlay = () => { if (!busy && doc.nodes.length) { setPlaying(false); setHelpOpen(false); setPlayMode(true) } }
+  const enterPlay = () => { if (!busy && (doc.nodes.length || world)) { setPlaying(false); setHelpOpen(false); setPlayMode(true) } }
   const runShortcut = (shortcut: EditorCommand) => {
     switch (shortcut.command) {
       case 'translate': case 'rotate': case 'scale': setGizmo(shortcut.command); break
@@ -462,7 +467,7 @@ export default function ThreeWorkspace({ active, provider, ready, onBusyChange, 
         <button type="button" aria-pressed={studioOpen} onClick={() => { setStudioOpen(!studioOpen); setSelectedId(null); setProjectMenu(false) }}>Editor avançado</button>
         <button type="button" aria-expanded={projectMenu} onClick={() => setProjectMenu(!projectMenu)}>Projeto ▾</button>
         <button type="button" aria-label="Atividade" aria-expanded={reportsOpen || generating || inspecting} onClick={() => setReportsOpen(!reportsOpen)}>Atividade{generating ? ' ◌' : generationNotes.length ? <span className="three-activity-count" aria-hidden="true">{generationNotes.length}</span> : ''}</button>
-        <button type="button" className="three-button--primary" disabled={busy || !doc.nodes.length} onClick={enterPlay}>▶ Jogar</button>
+        <button type="button" className="three-button--primary" disabled={busy || (!doc.nodes.length && !world)} onClick={enterPlay}>▶ Jogar</button>
       </div>
     </header>
     <form className="three-prompt" onSubmit={(event) => { event.preventDefault(); void generate() }}>
@@ -518,6 +523,7 @@ export default function ThreeWorkspace({ active, provider, ready, onBusyChange, 
         <button type="button" onClick={() => replace(createWastelandSurvivalScene())}>Ermo dos Saqueadores</button>
         <button type="button" onClick={() => replace(createValleyScene())}>Vale dos Ventos</button>
         <button type="button" onClick={() => replace(createArchitectureScene())}>Casa com dois pavimentos</button>
+        <button type="button" onClick={() => openWorld(createSyntheticWorld())}>Relevo sintético 4 km</button>
         <span className="three-toolbar__separator" />
         <button type="button" disabled={!history.past.length} onClick={() => { setHistory(undoScene(history)); setError(null) }}>Desfazer</button>
         <button type="button" disabled={!history.future.length} onClick={() => { setHistory(redoScene(history)); setError(null) }}>Refazer</button>
@@ -549,7 +555,7 @@ export default function ThreeWorkspace({ active, provider, ready, onBusyChange, 
         <div className="three-panel__footnote">{selected?.kind === 'group' ? 'Novos objetos entram no grupo selecionado.' : 'Selecione um grupo para adicionar objetos dentro dele.'}</div>
       </aside>
       <ThreeStage showPlayback={studioOpen && !playMode} playing={playing} time={time} duration={doc.timeline.duration} onPlay={() => setPlaying(!playing)} onSeek={(seconds) => { setPlaying(false); seek(seconds) }}>
-        <ThreeViewport document={doc} selectedId={selected?.id ?? null} active={active} fitRequest={fitRequest} playing={playing} seekTime={seekTime} seekRequest={seekRequest}
+        <ThreeViewport document={doc} world={world} selectedId={selected?.id ?? null} active={active} fitRequest={fitRequest} playing={playing} seekTime={seekTime} seekRequest={seekRequest}
           gizmo={studioOpen ? gizmo : null} snap={snap} playMode={playMode} presentation={!studioOpen} controller={viewport} onTimeChange={setTime} onSelect={studioOpen ? setSelectedId : () => {}} onTransform={transformNode} onExitPlay={() => setPlayMode(false)} />
         {!playMode && !studioOpen && <div className="three-scene-caption"><span className="workspace-eyebrow">{hasCreated ? 'SUA CRIAÇÃO' : 'EXPLORE UMA CENA'}</span><strong>{doc.name}</strong><span>Arraste para olhar ao redor · Role para aproximar</span>
           <div><button type="button" disabled={busy} onClick={() => { replace(createCombatArenaScene()); setProjectMenu(false) }}>Jogar arena ↗</button><button type="button" disabled={busy} onClick={() => { replace(createPlatformCourseScene()); setProjectMenu(false) }}>Jogar plataformas ↗</button><button type="button" disabled={busy} onClick={() => { replace(createLabPuzzleScene()); setProjectMenu(false) }}>Resolver puzzle ↗</button><button type="button" disabled={busy} onClick={() => { replace(createCryptScene()); setProjectMenu(false) }}>Explorar cripta ↗</button><button type="button" disabled={busy} onClick={() => { replace(createMarketTownScene()); setProjectMenu(false) }}>Visitar mercado ↗</button></div></div>}
