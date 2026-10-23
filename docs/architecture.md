@@ -53,6 +53,8 @@ flowchart LR
 
 ## Three.js
 
+Skins nativas: `sceneAvatar.ts` utiliza `skinCharacter` na construção real do jogador. `sceneSkin.ts` mantém referências de recursos compartilhados e troca a geometria de qualidade conservando o esqueleto; falanges, face e molas seguem os holders do rig. `sceneBuild.ts` distingue visibilidade de renderização de proxies de seleção. `sceneSkinExport.ts` converte regiões do shader para cores/PBR e amostra clipes portáteis, sem modificar o documento nem buffers usados pelo viewport. [Estado da implementação](threejs-characters-hud.md).
+
 No runtime da 0.6, `sceneCharacterAnimator.ts` inclui combos com entrada antecipada e escalada articulada; `scenePlayer.ts` separa orientação visual da câmera e valida a passagem da escada ao patamar. `sceneEquipment.ts` mantém equipamento efêmero e origens visuais dos disparos, e `sceneCombat.ts` verifica a trajetória do golpe contra caixas do corpo durante a fase de contato. A IK atualiza somente caminhos necessários; HUD React e estatísticas têm frequência limitada. Esses comportamentos não alteram o documento e se aplicam a qualquer origem da cena. [Limites e medição](threejs-motion-fixes.md).
 
 `WorkspaceShell` carrega `ThreeWorkspace` sob demanda, preservando o estado e passando `active` para suspender o viewport. Edição e renderização rodam no navegador e não dependem da saúde da API nem de IA. A geração usa o `AgentProvider` compartilhado, bloqueando navegação/edições durante a ação.

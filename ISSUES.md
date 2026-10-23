@@ -4,6 +4,8 @@ Baseline de 2026-10-02, alinhada ao [PRD](PRD.md). O planejamento antigo permane
 
 ## Three.js — frente iniciada em 2026-10-13
 
+Skins procedurais nativas (2026-10-22): integração do avatar, seleção/interação pelos proxies ocultos, falanges articuladas, troca de qualidade em jogo e descarte seguro do cache. Exportação GLB inclui pele/esqueleto, materiais convertidos e clipes procedurais. A documentação de continuidade antiga está superada nesta frente. [Estado atual](docs/threejs-characters-hud.md).
+
 Correções da 0.6 (2026-10-22): recuo com giro corporal, combos com entrada antecipada, escalada com passagem ao patamar, equipamento/disparos vinculados à pose e contato físico dos golpes no runtime comum. IK evita travessias repetidas, HUD tem frequência limitada e a qualidade controla a resolução interna. Pendentes: medir FPS em GPU física e colisão da pele deformada por triângulo. [Detalhes e benchmark](docs/threejs-motion-fixes.md).
 
 Primeira entrega: terceiro menu, viewport local, pavilhão demonstrativo, primitivas/grupos, hierarquia, seleção, inspector PBR, iluminação, histórico e JSON com validação/rascunho local. Incremento prioritário: geração por descrição, expansão procedural e animações declarativas com timeline. Correção após timeout com Codex: prazo padrão de 5 minutos (opções 2/5/10), progresso por etapa, relógio e histórico de diagnóstico; o limite de 300 s por chamada da ponte local continua independente. Critérios e arquitetura em [docs/threejs-studio.md](docs/threejs-studio.md).
@@ -21,7 +23,7 @@ Próximos incrementos desta frente (detalhados no roteiro):
 0. Medir com o provedor real a fidelidade dos temas novos (espaço, floresta, praia, neve, subaquático, cidade) e a taxa de sobreposição (Codex/Claude) num conjunto fixo de pedidos, comparando pré-fabricados/layout automático com a receita peça a peça.
 1. Seleção múltipla, biblioteca de materiais e medição de FPS/memória/tempo de inspeção em cenas de 500/2.000 nós com GPU real antes de ampliar limites.
 2. Física de corpos rígidos opcional, navmesh para inimigos/NPCs, eventos encadeados e missões de NPC; colisão exata de objetos móveis. Áudio espacial, variedade de ataques e plataformas móveis foram entregues na 0.5.
-2a. Personagens com malha contínua (`SkinnedMesh`) e importação de GLB com esqueleto/clipes mapeados ao rig do Forma; clima que respeita interiores; ouvir/ver áudio, clima e gradação em hardware real e ajustar.
+2a. Importação de GLB com esqueleto/clipes mapeados ao rig do Forma; mover a geração inicial de skins para worker se o perfil de cenas maiores justificar; clima que respeita interiores; ouvir/ver áudio, clima e gradação em hardware real e ajustar. A pele procedural nativa está implementada.
 3. Pipeline de assets: mapas físicos/compressão/clipes de GLB importado, persistência IndexedDB/servidor e exportação HTML jogável autocontida.
 4. LOD e streaming com benchmark reproduzível por hardware; metas de escala dependem dessas medições.
 5. Planejamento incremental por etapas para cenas maiores e medição de conclusão/latência/fidelidade com IA real. Preservar aplicação atômica e proibição de JavaScript gerado.

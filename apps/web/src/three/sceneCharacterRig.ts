@@ -59,20 +59,23 @@ function envelopes(kind: RigKind, state: LocomotionState, phase: number): Envelo
 function biped(joint: string, e: Envelopes): Vector3Tuple {
   const { c, w, run, idle, breath, look, air, wind, strike, hurt, dead, talk, t } = e
   const side = joint.endsWith('L') ? 1 : -1, legPhase = side > 0 ? c : c + Math.PI
-  const stride = (22 + 16 * run) * w, armSwing = (18 + 22 * run) * w, gesture = talk * Math.sin(TAU * t * 1.3)
+  const stride = (22 + 16 * run) * w, gesture = talk * Math.sin(TAU * t * 1.3)
+  // Arms swing further forward than back, with the elbow bending more as the hand comes forward (≈90° when running).
+  const swing = Math.sin(legPhase), ahead = Math.max(0, -swing), behind = Math.max(0, swing)
   switch (joint) {
     case 'j_hips': return [-85 * dead, -Math.sin(c) * 6 * w, Math.sin(c) * 3 * w]
-    case 'j_spine': return [4 * w + 8 * run + breath * 1.5 * idle - 6 * wind + 14 * strike - 18 * hurt - 8 * dead, Math.sin(c) * 6 * w + 28 * wind - 22 * strike, breath * 0.8 * idle]
+    case 'j_spine': return [4 * w + 8 * run + breath * 1.5 * idle - 6 * wind + 14 * strike - 18 * hurt - 8 * dead, Math.sin(c) * (7 + 5 * run) * w + 28 * wind - 22 * strike, breath * 0.8 * idle - Math.sin(c) * 2 * w]
     case 'j_neck': return [-3 * w - 4 * run + 6 * dead, look * 6 * idle, 0]
-    case 'j_head': return [breath * 2 * idle - 3 * run - 12 * hurt + 4 * talk * Math.sin(TAU * t * 2.2) + 10 * dead, look * 16 * idle + 10 * wind, Math.sin(TAU * t / 6) * 3 * idle]
+    case 'j_head': return [breath * 2 * idle - 3 * run - 12 * hurt + 4 * talk * Math.sin(TAU * t * 2.2) + 10 * dead, look * 16 * idle + 10 * wind - Math.sin(c) * (5 + 4 * run) * w, Math.sin(TAU * t / 6) * 3 * idle + Math.sin(c) * 1.5 * w]
     case 'j_jaw': return [6 * talk * (0.5 + 0.5 * Math.sin(TAU * t * 5)) + 18 * strike + 12 * dead, 0, 0]
     case 'j_shoulderL': case 'j_shoulderR': {
       const attack = side < 0 ? -165 * wind - 22 * strike : -18 * strike + 10 * wind, talking = side < 0 ? -30 * talk + gesture * 8 : 0
-      return [Math.sin(legPhase) * armSwing + attack + talking - 15 * air + 10 * dead, 0, side * (breath * 1.5 * idle + 4 * run + 25 * air + 14 * hurt + 55 * dead + (side < 0 ? 16 * wind : 0))]
+      return [(behind * (12 + 20 * run) - ahead * (15 + 22 * run)) * w + attack + talking - 15 * air + 10 * dead, side * 6 * ahead * run * w,
+        side * (breath * 1.5 * idle + 4 * run + 25 * air + 14 * hurt + 55 * dead + (side < 0 ? 16 * wind : 0) - 7 * ahead * (0.4 + run) * w)]
     }
-    case 'j_elbowL': case 'j_elbowR': return [-(8 + 50 * run) * w - (6 + Math.sin(legPhase) * 4) * w - 30 * air - (side < 0 ? 55 * wind + 40 * talk : 0) + (side < 0 ? 6 * strike : 0) - 4 * idle, 0, 0]
+    case 'j_elbowL': case 'j_elbowR': return [-((14 + 12 * ahead) * (1 - run) + (72 + 10 * ahead - 8 * behind) * run) * w - 30 * air - (side < 0 ? 55 * wind + 40 * talk : 0) + (side < 0 ? 6 * strike : 0) - 4 * idle, 0, 0]
     case 'j_hipL': case 'j_hipR': return [-Math.sin(legPhase) * stride - (side > 0 ? 38 : 12) * air + 6 * hurt - 10 * dead, 0, side * (2 * run + 4 * air)]
-    case 'j_kneeL': case 'j_kneeR': return [(6 + (35 + 35 * run) * Math.max(0, Math.cos(legPhase))) * w + (side > 0 ? 60 : 30) * air + 25 * dead, 0, 0]
+    case 'j_kneeL': case 'j_kneeR': return [(6 + (35 + 35 * run) * Math.max(0, Math.cos(legPhase)) + (10 + 8 * run) * Math.max(0, Math.sin(legPhase - 0.5)) * (1 - Math.max(0, Math.cos(legPhase)))) * w + (side > 0 ? 60 : 30) * air + 25 * dead, 0, 0]
   }
   return [0, 0, 0]
 }

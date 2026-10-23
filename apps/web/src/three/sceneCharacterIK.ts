@@ -49,7 +49,7 @@ function legs(binding: RigBinding, holders: Map<string, THREE.Object3D>): Leg[] 
  * Two-bone solve so the foot point reaches `target` (world): the knee bends by the law of cosines in its own plane (positive local X = anatomical bend,
  * so knees keep pointing forward), then the thigh turns the chain onto the target. Never stretches past the limb length.
  */
-export function solveLeg(hip: THREE.Object3D, knee: THREE.Object3D, foot: THREE.Vector3, target: THREE.Vector3, iterations = 3): number {
+export function solveLeg(hip: THREE.Object3D, knee: THREE.Object3D, foot: THREE.Vector3, target: THREE.Vector3, iterations = 3, bend = -1): number {
   const ankle = v4.set(0, foot.y, 0).clone(), H = new THREE.Vector3(), K = new THREE.Vector3(), A = new THREE.Vector3(), F = new THREE.Vector3(), goal = new THREE.Vector3(), n = new THREE.Vector3(), u = new THREE.Vector3(), w = new THREE.Vector3()
   for (let i = 0; i < iterations; i++) {
     hip.getWorldPosition(H); knee.getWorldPosition(K); knee.localToWorld(A.copy(ankle)); knee.localToWorld(F.copy(foot))
@@ -64,7 +64,7 @@ export function solveLeg(hip: THREE.Object3D, knee: THREE.Object3D, foot: THREE.
     if (au < 1e-6 || bw < 1e-6) return target.distanceTo(F)
     const reach = Math.sqrt(h * h + (au + bw) ** 2), d = clamp(goal.distanceTo(H), Math.abs(a - b) + 1e-4, reach * 0.9995)
     const interior = Math.acos(clamp((au * au + bw * bw + h * h - d * d) / (2 * au * bw), -1, 1))
-    const current = Math.atan2(n.dot(v1.crossVectors(u, w)), u.dot(w)), turn = wrapAngle(-interior - current)
+    const current = Math.atan2(n.dot(v1.crossVectors(u, w)), u.dot(w)), turn = wrapAngle(bend * interior - current)
     if (Math.abs(turn) > 1e-7) rotateWorld(knee, q2.setFromAxisAngle(n, turn))
     knee.localToWorld(A.copy(ankle))
     const from = v2.copy(A).sub(H), to = v3.copy(goal).sub(H)

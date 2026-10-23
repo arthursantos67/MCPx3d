@@ -1,5 +1,7 @@
 # Documentação atual
 
+- [Personagens e skins — Three.js 0.6](threejs-characters-hud.md): implementação atual, avatar, dedos, face, LOD, cache e exportação de esqueletos/clipes.
+
 - [Correções de movimento e combate — Three.js 0.6](threejs-motion-fixes.md): giro ao recuar, combos, escalada, equipamento, contato dos golpes e medição da IK.
 
 - [Mundos vivos — Three.js 0.5](threejs-living-worlds.md): contrato 1.3, personagens com rig, combate, inventário, NPCs, áudio sintetizado, clima e gradação.

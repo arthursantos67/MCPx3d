@@ -58,7 +58,7 @@ export function skinPlan(request: { type: string; parts: PrefabPart[]; avatar?: 
     case 'villager':
       return humanoid([...ANATOMY, 'nose', ...LR('ear')], { hidden: [...FACE, ...HAIR, 'tunic', ...LR('cuff')], wrap: has(['belt']), face: true, hair: true, shell: present.has('tunic') ? { part: 'tunic', trim: null, long: false } : null })
     case 'knight': return humanoid(['pelvis', 'neck', 'head', 'torso', ...LR('thigh', 'shin', 'deltoid', 'upperArm', 'forearm', 'palm', 'fingers', 'thumb')], {
-      only: true, hidden: ['pelvis', 'neck', 'head', 'cape', ...LR('thigh', 'deltoid', 'upperArm', 'palm', 'fingers', 'thumb')], inset: { torso: 0.014, ...Object.fromEntries(LR('shin', 'forearm').map((id) => [id, 0.01])) }, cape: present.has('cape') ? 'cape' : null })
+      only: true, hidden: ['pelvis', 'neck', 'head', 'cape', ...LR('thigh', 'shin', 'deltoid', 'upperArm', 'forearm', 'palm', 'fingers', 'thumb')], inset: { torso: 0.014 }, cape: present.has('cape') ? 'cape' : null })
     case 'wizard':
       return humanoid([...ANATOMY, 'nose', ...LR('ear')], { hidden: [...FACE, ...HAIR, 'robe', 'robeHem'], wrap: has(['sash']), face: true, hair: true, shell: { part: 'robe', trim: 'robeHem', long: true } })
     case 'astronaut': return humanoid(ANATOMY, { wrap: has([...LR('armBand', 'glove', 'bootCuff'), 'belt']) })

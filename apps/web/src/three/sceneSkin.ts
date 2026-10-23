@@ -1,18 +1,35 @@
 import * as THREE from 'three'
 import { buildAvatar, isCharacterType } from './sceneCharacters.ts'
 import type { avatarKinds, ThreeSceneDocument } from './sceneDocument.ts'
-import { prefabParts, type PrefabSpec } from './scenePrefabs.ts'
-import type { CharacterSkin, FaceState, QualityLevel, SpringChainSpec } from './sceneRuntimeTypes.ts'
+import { prefabParts, type PrefabPart, type PrefabSpec } from './scenePrefabs.ts'
+import type { CharacterSkin, FaceState, HandPose, QualityLevel, SpringChainSpec } from './sceneRuntimeTypes.ts'
 import { MATERIAL_BODY, MATERIAL_EYE, MATERIAL_HAIR, MATERIAL_SHELL } from './sceneSkinMesh.ts'
-import { slotMaterial } from './sceneSkinMaterial.ts'
+import { eyeMaterial, slotMaterial } from './sceneSkinMaterial.ts'
 import { buildSkinModel, type SkinLod, type SkinModel } from './sceneSkinModel.ts'
+import type { AnimState } from './sceneCharacterAnimator.ts'
 
 export type AvatarKind = typeof avatarKinds[number]
-export interface SkinOptions { quality: QualityLevel; shadows: boolean; avatar?: AvatarKind }
+export interface SkinOptions { quality: QualityLevel; shadows: boolean; avatar?: AvatarKind; parts?: PrefabPart[] }
+export function poseSkinHands(skin: CharacterSkin, state: AnimState, held: Partial<HandPose> = {}, wave = false): void {
+  const hands = { ...skin.restHands, ...held }
+  if (state === 'climb' || state === 'attack') { hands.left = 'grip'; hands.right = 'grip' }
+  else if (state === 'interact' && hands.right !== 'grip') hands.right = 'point'
+  else if (state === 'death') { hands.left = 'relaxed'; hands.right = 'relaxed' }
+  if (wave && hands.left !== 'grip') hands.left = 'open'
+  skin.setHands(hands)
+}
 
-interface CacheEntry { model: SkinModel; geometries: THREE.BufferGeometry[]; materials: THREE.Material[]; radius: number }
+interface CacheEntry { model: SkinModel; geometries: THREE.BufferGeometry[]; materials: THREE.Material[]; references: number; cached: boolean }
 const CACHE_LIMIT = 48
 const cache = new Map<string, CacheEntry>()
+const disposeEntry = (entry: CacheEntry) => { entry.geometries.forEach((geometry) => geometry.dispose()); entry.materials.forEach((material) => material.dispose()) }
+function pruneCache() {
+  for (const [key, entry] of cache) {
+    if (cache.size <= CACHE_LIMIT) break
+    if (entry.references) continue
+    cache.delete(key); entry.cached = false; disposeEntry(entry)
+  }
+}
 
 function geometryOf(lod: SkinLod): THREE.BufferGeometry {
   const geometry = new THREE.BufferGeometry()
@@ -41,20 +58,14 @@ function entryOf(key: string, build: () => SkinModel | null): CacheEntry | null 
   materials[MATERIAL_BODY] = slotMaterial(model.slots, { side: THREE.FrontSide, name: 'Pele' })
   materials[MATERIAL_SHELL] = slotMaterial(model.slots, { side: THREE.DoubleSide, name: 'Tecido' })
   materials[MATERIAL_HAIR] = slotMaterial(model.hairSlots.length ? model.hairSlots : model.slots, { side: THREE.DoubleSide, name: 'Cabelo' })
-  materials[MATERIAL_EYE] = slotMaterial(model.eyeSlots.length ? model.eyeSlots : model.slots, { side: THREE.FrontSide, clearcoat: 1, name: 'Olhos' })
-  const entry = { model, geometries, materials, radius: geometries[0].boundingSphere!.radius }
+  materials[MATERIAL_EYE] = eyeMaterial(model.eyeSlots.length ? model.eyeSlots : model.slots, THREE.FrontSide)
+  const entry = { model, geometries, materials, references: 0, cached: true }
   cache.set(key, entry)
-  while (cache.size > CACHE_LIMIT) {
-    const [oldest, value] = cache.entries().next().value!
-    cache.delete(oldest)
-    for (const geometry of value.geometries) geometry.dispose()
-    for (const material of value.materials) material.dispose()
-  }
   return entry
 }
-/** Drops every cached skin (tests, memory pressure). Live skins keep working; three re-uploads their buffers on demand. */
+/** Clears lookup entries; resources still used by live skins are released when their last owner leaves. */
 export function clearSkinCache(): void {
-  for (const entry of cache.values()) { for (const geometry of entry.geometries) geometry.dispose(); for (const material of entry.materials) material.dispose() }
+  for (const entry of cache.values()) { entry.cached = false; if (!entry.references) disposeEntry(entry) }
   cache.clear()
 }
 export const skinCacheSize = () => cache.size
@@ -70,7 +81,7 @@ const neutral: FaceState = { blink: 0, jaw: 0, brow: 0, smile: 0, gaze: [0, 0] }
 export function skinCharacter(rootId: string, spec: PrefabSpec, holders: Map<string, THREE.Object3D>, parts: Map<string, string>, options: SkinOptions): CharacterSkin | null {
   const root = holders.get(rootId)
   if (!root || (!options.avatar && !isCharacterType(spec.type))) return null
-  const source = options.avatar ? buildAvatar(options.avatar) : prefabParts(spec)
+  const source = options.parts ?? (options.avatar ? buildAvatar(options.avatar) : prefabParts(spec))
   const overrides = new Map<string, { position: [number, number, number]; quaternion: [number, number, number, number] }>()
   for (const part of source) if (part.kind === 'group' && part.id.startsWith('j_')) {
     const holder = holders.get(parts.get(part.id) ?? '')
@@ -78,9 +89,12 @@ export function skinCharacter(rootId: string, spec: PrefabSpec, holders: Map<str
     overrides.set(part.id, { position: holder.position.toArray().map(round) as [number, number, number], quaternion: holder.quaternion.toArray().map(round) as [number, number, number, number] })
   }
   const type = options.avatar ? (options.avatar === 'explorer' ? 'villager' : options.avatar) : spec.type
-  const key = JSON.stringify([type, options.avatar ?? null, spec.seed, spec.size, spec.character ?? null, spec.primary, spec.secondary, options.quality, [...overrides]])
-  const entry = entryOf(key, () => buildSkinModel({ type, parts: source, quality: options.quality, seed: spec.seed, overrides, avatar: options.avatar, character: options.avatar ? undefined : spec.character }))
-  if (!entry) return null
+  const entryFor = (quality: QualityLevel) => entryOf(JSON.stringify([type, options.avatar ?? null, spec.seed, spec.size, spec.character ?? null, spec.primary, spec.secondary, quality, source, [...overrides]]), () => buildSkinModel({ type, parts: source, quality, seed: spec.seed, overrides, avatar: options.avatar, character: options.avatar ? undefined : spec.character }))
+  const initial = entryFor(options.quality)
+  if (!initial) return null
+  let entry = initial, quality = options.quality
+  entry.references++
+  pruneCache()
   const { model } = entry
   root.updateMatrixWorld(true)
   const bones: THREE.Bone[] = []
@@ -112,6 +126,20 @@ export function skinCharacter(rootId: string, spec: PrefabSpec, holders: Map<str
   root.updateMatrixWorld(true)
   for (const mesh of meshes) mesh.bind(skeleton, root.matrixWorld.clone())
   const hidden = new Set(model.hidden.map((id) => parts.get(id)).filter((id): id is string => !!id))
+  // Fist sockets live on the forearm holders; a held part is moved so its handle passes through the closed fingers.
+  const grips: CharacterSkin['grips'] = {}
+  for (const grip of model.grips) {
+    const forearm = holders.get(parts.get(`j_elbow${grip.side}`) ?? '')
+    if (!forearm) continue
+    const socket = new THREE.Object3D()
+    socket.name = `Encaixe da mão ${grip.side === 'L' ? 'esquerda' : 'direita'}`
+    socket.position.set(...grip.position)
+    socket.quaternion.set(...grip.quaternion)
+    forearm.add(socket)
+    grips[grip.side] = socket
+    const item = grip.item ? holders.get(parts.get(grip.item) ?? '') : undefined
+    if (item?.parent === forearm) item.position.copy(socket.position)
+  }
   const springs: SpringChainSpec[] = model.springs.map((chain) => ({ bones: chain.bones.map((index) => bones[index]), stiffness: chain.stiffness, damping: chain.damping, gravity: chain.gravity, limit: chain.limit, wind: chain.wind }))
   const face = model.face, rest = bones.map((bone) => ({ position: bone.position.clone(), quaternion: bone.quaternion.clone() }))
   const euler = new THREE.Euler(), turn = new THREE.Quaternion()
@@ -133,13 +161,45 @@ export function skinCharacter(rootId: string, spec: PrefabSpec, holders: Map<str
     face.brows.forEach((index, i) => { const side = i === 0 ? 1 : -1; pose(index, 0, 0, side * Math.max(0, -brow) * 0.22, [0, brow * 0.007 * s, 0]) })
     face.corners.forEach((index, i) => { const side = i === 0 ? 1 : -1; pose(index, 0, 0, 0, [side * smile * 0.004 * s, smile * 0.007 * s, -Math.abs(smile) * 0.002 * s]) })
   }
+  const setHands = (state: HandPose) => {
+    for (const finger of model.hands) {
+      const gesture = finger.side === 'L' ? state.left : state.right, side = finger.side === 'L' ? 1 : -1
+      const open = gesture === 'open' || (gesture === 'point' && finger.finger === 0), grip = gesture === 'grip' || gesture === 'point'
+      const target = open ? [0, 0, 0] : finger.finger === 4 ? grip ? [0.7, 0.7] : [0.2, 0.2] : grip ? [1.2, 1.45, 0.95] : [0.32, 0.45, 0.3]
+      finger.bones.forEach((index, i) => pose(index, 0, 0, -side * (target[i] - finger.curl[i])))
+    }
+  }
   setFace(neutral)
+  const restHands: HandPose = { left: model.hands.some((finger) => finger.side === 'L' && finger.curl[0] > 1) ? 'grip' : 'relaxed', right: model.hands.some((finger) => finger.side === 'R' && finger.curl[0] > 1) ? 'grip' : 'relaxed' }
+  let disposed = false
+  const setQuality = (next: QualityLevel) => {
+    if (disposed || next === quality) return
+    const replacement = entryFor(next)
+    if (!replacement) return
+    if (replacement.model.bones.length !== model.bones.length || replacement.model.bones.some((bone, i) => bone.name !== model.bones[i].name)) throw new Error('O LOD mudou a estrutura do esqueleto.')
+    replacement.references++
+    entry.references--
+    if (!entry.cached && !entry.references) disposeEntry(entry)
+    entry = replacement; quality = next
+    meshes.forEach((mesh, i) => {
+      mesh.geometry = entry.geometries[i]; mesh.material = entry.materials
+      mesh.boundingSphere = mesh.geometry.boundingSphere!.clone(); mesh.boundingSphere.radius = mesh.boundingSphere.radius * 1.35 + 0.2 * unit
+      lod.levels[i].distance = [0, next === 'low' ? 6 * unit : 9 * unit, next === 'low' ? 15 * unit : 22 * unit][i]
+    })
+    pruneCache()
+  }
   return {
-    rootId, object: lod, meshes, hidden, springs, setFace,
+    rootId, object: lod, meshes, hidden, springs, restHands, grips, setFace, setHands, setQuality,
     dispose() {
+      if (disposed) return
+      disposed = true
       lod.removeFromParent()
+      for (const socket of Object.values(grips)) socket?.removeFromParent()
       for (const bone of bones) if (bone.parent && !(bone.parent instanceof THREE.Bone)) bone.removeFromParent()
       skeleton.dispose()
+      entry.references--
+      if (!entry.cached && !entry.references) disposeEntry(entry)
+      pruneCache()
     },
   }
 }
@@ -158,7 +218,11 @@ export function buildCharacterSkins(doc: ThreeSceneDocument, holders: Map<string
       if (node.assetPart) parts.set(node.assetPart, node.id)
       stack.push(...children.get(node.id) ?? [])
     }
-    const skin = skinCharacter(root.id, root.asset, holders, parts, { quality: options.quality, shadows: options.shadows })
+    const source = prefabParts(root.asset).flatMap((part): PrefabPart[] => {
+      const node = byId.get(parts.get(part.id) ?? '')
+      return node ? [{ ...part, kind: node.kind, position: node.position, rotation: node.rotation, dimensions: node.dimensions, material: node.material, geometry: node.geometry }] : part.kind === 'group' && part.id.startsWith('j_') ? [part] : []
+    })
+    const skin = skinCharacter(root.id, root.asset, holders, parts, { quality: options.quality, shadows: options.shadows, parts: source })
     if (skin) skins.push(skin)
   }
   return skins

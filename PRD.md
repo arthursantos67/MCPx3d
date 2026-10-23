@@ -115,6 +115,8 @@ Objetivo: cenas com padrão de jogo de mercado — personagens animados, combate
 
 ## Operação e limites
 
+Skins da 0.6: pele procedural contínua nos personagens orgânicos e no avatar, dedos articulados, expressões, roupas/cabelo com movimento secundário, três LODs e cache com recursos compartilhados. GLB exporta pele, esqueleto, cores/PBR e clipes de ociosidade/caminhada; a aparência dos shaders é aproximada. Importar e redirecionar esqueletos externos permanece pendente. [Implementação, testes e limites](docs/threejs-characters-hud.md).
+
 Correções de jogabilidade da 0.6: orientação corporal pela velocidade, escalada articulada com saída validada, combos encadeados, equipamento visível e dano durante contato animado no runtime compartilhado. Caixas orientadas e cápsulas continuam aproximações; a redução medida no custo da IK não é uma garantia de FPS. [Escopo e medições](docs/threejs-motion-fixes.md).
 
 `npm run dev` inicia API e frontend. CadQuery faz parte da instalação padrão; nenhum servidor MCP é necessário nesse modo. A IA local WebLLM continua disponível para navegadores com WebGPU, com alternativa de endpoint compatível com OpenAI configurado pelo usuário.

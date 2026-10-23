@@ -11,8 +11,8 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutlinePass } from 'three/addons/postprocessing/OutlinePass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
 import { sampleNodeTransform } from './sceneAnimation.ts'
-import { buildScene, createResources, HELPER_LAYER, pickNodeId, surfaceMatrix, type BuiltScene, type SceneResources } from './sceneBuild.ts'
-import { createEmptyScene, createNode, DEFAULT_MOTION, defaultAnimation, hasSurface, INTERACTION_KEYS, subtreeIds, validateMaterial, validateScene, type avatarKinds, type PowerKind, type SceneNode, type ThreeSceneDocument, type Vector3Tuple } from './sceneDocument.ts'
+import { buildScene, createResources, HELPER_LAYER, pickNodeId, pickVisible, surfaceMatrix, type BuiltScene, type SceneResources } from './sceneBuild.ts'
+import { DEFAULT_MOTION, hasSurface, INTERACTION_KEYS, subtreeIds, type avatarKinds, type PowerKind, type SceneNode, type ThreeSceneDocument, type Vector3Tuple } from './sceneDocument.ts'
 import { createEnvironmentRig, SKY_LAYER } from './sceneEnvironment.ts'
 import { createOcclusionPass } from './sceneOcclusion.ts'
 import { createWeather, createWeatherPass } from './sceneWeather.ts'
@@ -27,8 +27,8 @@ import { enemyShot, fireWeapon, meleePlayerContact, sweptMeleeTargets, stepProje
 import { aimEquipment, bindEmitter, createEquipment, mountEquipment, poseFirstPersonEquipment, type Equipment } from './sceneEquipment.ts'
 import { carry, findSupport } from './sceneMovingPlatforms.ts'
 import { weaponLabels as weaponNames } from './sceneLabels.ts'
-import { buildAvatar } from './sceneCharacters.ts'
-import { applyRig, bindParts, bindRigs, type LocomotionState, type RigBinding } from './sceneCharacterRig.ts'
+import { createAvatar as buildPlayerAvatar } from './sceneAvatar.ts'
+import { applyRig, bindRigs, type LocomotionState, type RigBinding } from './sceneCharacterRig.ts'
 import { animatorForBinding, applyAnimatorPose, updateAnimator, type Animator, type AnimatorInput } from './sceneCharacterAnimator.ts'
 import { createFootIKMemory, createLookMemory, solveFootIK, solveLookAt, type FootIKMemory, type LookMemory } from './sceneCharacterIK.ts'
 import { createSprings, rigSpringChains, type SpringSystem } from './sceneSprings.ts'
@@ -39,7 +39,8 @@ import { createGrass, type GrassSystem } from './sceneGrass.ts'
 import { emitterSources, sceneEmitters, createParticles } from './sceneParticles.ts'
 import { prepareWater, waterGeometry } from './sceneWater.ts'
 import { geometryKey } from './sceneGeometry.ts'
-import { buildCharacterSkins } from './sceneSkin.ts'
+import { buildCharacterSkins, poseSkinHands } from './sceneSkin.ts'
+import { createClimbMemory, ladderNear, solveClimb, type ClimbMemory, type Ladder } from './sceneClimb.ts'
 import { dayState, formatHour, nightAmount, practicalLightFactor } from './sceneDayCycle.ts'
 import ThreeHud, { type ThreeHudHandle } from './ThreeHud.tsx'
 import { compassMarker, headingFromYaw, hudPhase, hurtAngle, nearestTarget, portraitFor, screenFromNdc, selectBoss, type HudAnchor, type HudModel } from './sceneHud.ts'
@@ -207,25 +208,16 @@ export default function ThreeViewport({ document, selectedId, active, fitRequest
     interface EnemyState extends EnemyMotion { radius:number; height:number; eyeHeight:number; moved: boolean; attackTime: number; step: EnemyStep | null; shown: THREE.Vector3 | null; equipment?: Equipment; shotPending?: boolean; strikeHit?: boolean }
     let game: { runtime: SceneRuntime; player: PlayerState; input: PlayerInput; collider: PlayerCollider; saved: { position: THREE.Vector3; target: THREE.Vector3; fov: number; near: number; far: number }; last: number | null; aim: string | null; strike: string | null; hud: string; locked: boolean; help: boolean
       view: 'first' | 'third'; spawn: THREE.Vector3; stride: number; sounds: SceneNode[]; projectiles: Projectile[]; attackCooldown: number; swing: number; hudAt: number; platforms: Map<string, THREE.Matrix4>
-      modes: Map<string, string>; rigMotion: Map<string, CharacterMotion>; avatarRig: { built: BuiltScene; resources: SceneResources; binding: RigBinding; animator: Animator; feet: FootIKMemory; springs: SpringSystem; equipment: Equipment; seenHurt: number; seenSwing: number }; swings: number; heavy: boolean; meleeHits: Set<string>; blade: THREE.Line3 | null; dialogue: { id: string; name: string; line: string; index: number; total: number; until: number } | null; spawnNotice: number; enemies: Map<string, EnemyState>; enemyParts:Set<string>; parts: Map<string, SceneNode[]>; water: number | null; avatar: THREE.Group; hurt: number; goalCooldown: number; nav: NavigationMesh | null; router: Router; routines: Map<string, RoutinePlan>; guards: Set<string>
+      modes: Map<string, string>; rigMotion: Map<string, CharacterMotion>; avatarRig: { built: BuiltScene; resources: SceneResources; binding: RigBinding; animator: Animator; feet: FootIKMemory; springs: SpringSystem; equipment: Equipment; climb: ClimbMemory; ladder: Ladder | null; seenHurt: number; seenSwing: number }; swings: number; heavy: boolean; meleeHits: Set<string>; blade: THREE.Line3 | null; dialogue: { id: string; name: string; line: string; index: number; total: number; until: number } | null; spawnNotice: number; enemies: Map<string, EnemyState>; enemyParts:Set<string>; parts: Map<string, SceneNode[]>; water: number | null; avatar: THREE.Group; hurt: number; goalCooldown: number; nav: NavigationMesh | null; router: Router; routines: Map<string, RoutinePlan>; guards: Set<string>
       paused: boolean; dismissed: boolean; interacted: boolean; device: 'keyboard' | 'gamepad'; pad: GamepadState; stamina: number; dodge: number; dodged: boolean; damageTaken: number; falls: number; lastHealth: number
       subtitle: { speaker: string; text: string; until: number } | null; greeted: Map<string, number>; omitted: number } | null = null
     /** The third-person avatar is compiled from the same procedural parts and rig as scene characters, with its own GPU resources. */
     const createAvatar = (kind: typeof avatarKinds[number], weapon: WeaponKind) => {
-      const authored = buildAvatar(kind), removed = new Set(authored.filter((part) => /^(sword|weapon|staff|bow)/i.test(part.id)).map((part) => part.id))
-      for (const part of authored) if (part.parentId && removed.has(part.parentId)) removed.add(part.id)
-      const parts = authored.filter((part) => !removed.has(part.id)), id = (part: string) => `avatar.${part}`
-      const avatarDoc = validateScene({ ...createEmptyScene(), nodes: parts.map((part) => ({ ...createNode(part.kind), id: id(part.id), parentId: part.parentId ? id(part.parentId) : null, name: part.name,
-        position: part.position, rotation: part.rotation ?? [0, 0, 0], dimensions: part.dimensions, collidable: false, assetPart: part.id,
-        material: validateMaterial({ color: '#cccccc', metalness: 0, roughness: 0.6, ...part.material }), geometry: { ...createNode(part.kind).geometry, ...part.geometry },
-        animation: { ...defaultAnimation(), ...part.animation }, ...(part.light ? { light: part.light } : {}) })) })
-      const avatarResources = createResources(4), avatarBuilt = buildScene(avatarDoc, avatarResources, { instancing: false, helpers: false })
+      const { built: avatarBuilt, resources: avatarResources, binding } = buildPlayerAvatar(kind, { quality, shadows: doc?.environment.shadows ?? true }, weapon)
       avatarBuilt.root.visible = false
-      avatarBuilt.root.traverse((object) => { if (object instanceof THREE.Mesh) object.castShadow = !(object.material as THREE.MeshPhysicalMaterial).map })
-      const binding = bindParts('avatar', 'biped', parts, 1, id)
       const equipment = createEquipment(weapon)
-      mountEquipment(equipment, binding, avatarBuilt.holders)
-      return { built: avatarBuilt, resources: avatarResources, binding, animator: animatorForBinding(binding), feet: createFootIKMemory(), springs: createSprings([...(avatarBuilt.skins.get('avatar')?.springs ?? [])]), equipment, seenHurt: 0, seenSwing: 0 }
+      mountEquipment(equipment, binding, avatarBuilt.holders, avatarBuilt.skins.get('avatar'))
+      return { built: avatarBuilt, resources: avatarResources, binding, animator: animatorForBinding(binding), feet: createFootIKMemory(), springs: createSprings([...(avatarBuilt.skins.get('avatar')?.springs ?? [])]), equipment, climb: createClimbMemory(), ladder: null as Ladder | null, seenHurt: 0, seenSwing: 0 }
     }
     let rigs: RigBinding[] = []
     interface CharacterMotion { animator: Animator; feet: FootIKMemory; look: LookMemory; springs: SpringSystem; last: THREE.Vector3; lastY: number; speed: number; action: string; hit: boolean; collapse: number }
@@ -303,7 +295,7 @@ export default function ThreeViewport({ document, selectedId, active, fitRequest
         const input: AnimatorInput = { dt: delta, time: seconds, speed: motion.speed, grounded: !flyingRig(binding), verticalSpeed, dead: runtime.defeated.has(id), talk: false, ranged: !!enemy?.equipment }
         if (enemy) Object.assign(input, {
           attack: enemy.action === 'windup' && motion.action !== 'windup' ? heavy ? 'heavy' : 'light' : step?.attack === 'shoot' ? 'light' : null,
-          talk: enemy.action === 'talk' || activity === 'greet', wave: activity === 'greet' && motion.action !== 'talk',
+          talk: enemy.action === 'talk' || activity === 'greet' || state.dialogue?.id === id, wave: activity === 'greet' && motion.action !== 'talk',
           activity: activity === 'sit' || activity === 'work' || activity === 'sleep' || activity === 'chat' || activity === 'perform' || activity === 'guard' ? activity : null,
           mood: activity === 'flee' || activity === 'alert' ? 'afraid' : enemy.mode === 'chase' ? 'angry' : 'calm', hurt: motion.hit })
         motion.hit = false
@@ -326,7 +318,8 @@ export default function ThreeViewport({ document, selectedId, active, fitRequest
         const target = step?.face ?? (enemy && (enemy.seesPlayer || enemy.action === 'talk') ? state.player.position.clone().add(new THREE.Vector3(0, 1.6, 0)) : null)
         solveLookAt(binding, built!.holders, target, pose.look, motion.look, delta)
         motion.springs.step(delta, wind)
-        built!.skins.get(id)?.setFace(pose.face)
+        const skin = built!.skins.get(id)
+        if (skin) { skin.setFace(pose.face); poseSkinHands(skin, pose.state, enemy?.equipment ? { right: 'grip' } : {}, activity === 'greet') }
         if (enemy?.equipment) {
           const target = state.player.position.clone().add(new THREE.Vector3(0, 1.1, 0))
           aimEquipment(enemy.equipment, target)
@@ -351,12 +344,15 @@ export default function ThreeViewport({ document, selectedId, active, fitRequest
       if (state.avatar.visible) {
         applyAnimatorPose(avatar.binding, avatar.built.holders, pose)
         if (!player.fly && !player.climbing) solveFootIK(avatar.binding, avatar.built.holders, ground, pose.footIK, avatar.feet, delta)
+        const skin = avatar.built.skins.get('avatar')
+        if (avatar.ladder) solveClimb(avatar.binding, avatar.built.holders, avatar.ladder, player.position.y, { L: skin?.grips.L?.position.clone() ?? new THREE.Vector3(0, -0.33, 0.03), R: skin?.grips.R?.position.clone() ?? new THREE.Vector3(0, -0.33, 0.03) },
+          avatar.climb, delta, !!player.climbing)
         avatar.springs.step(delta, wind)
-        avatar.built.skins.get('avatar')?.setFace(pose.face)
+        if (skin) { skin.setFace(pose.face); poseSkinHands(skin, pose.state, { right: equipment.kind === 'none' ? 'relaxed' : 'grip', ...(equipment.kind === 'bow' ? { left: 'grip' } : {}) }) }
       }
       if (state.view === 'third') {
         equipment.object.scale.setScalar(1)
-        mountEquipment(equipment, avatar.binding, avatar.built.holders)
+        mountEquipment(equipment, avatar.binding, avatar.built.holders, avatar.built.skins.get('avatar'))
         if (stats.kind === 'projectile') aimEquipment(equipment, player.position.clone().add(new THREE.Vector3(0, 1.35, 0)).addScaledVector(new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion), 40))
       } else {
         camera.add(equipment.object)
@@ -590,8 +586,15 @@ export default function ThreeViewport({ document, selectedId, active, fitRequest
         if (state.collider.bvh) { ray.origin.copy(head); ray.direction.copy(back); const hit = state.collider.bvh.raycastFirst(ray, THREE.DoubleSide); if (hit) distance = Math.max(0.6, Math.min(distance, hit.distance - 0.3)) }
         camera.position.copy(head).addScaledVector(back, distance).add(new THREE.Vector3(0, 0.3, 0))
         state.avatar.visible = true
+        // On a ladder the body faces the rungs and rests against them; the capsule keeps its own position for collision.
+        const ladder = player.climbing || state.avatarRig.climb.weight > 0.02 ? ladderNear(state.collider.climb, player.position) : null
+        state.avatarRig.ladder = ladder
         state.avatar.position.copy(player.position)
-        state.avatar.rotation.y = player.climbing || state.attackCooldown > 0 ? player.yaw + Math.PI : movementHeading(state.avatar.rotation.y, player.velocity, delta)
+        if (ladder && player.climbing) {
+          const rest = ladder.center.clone().addScaledVector(ladder.normal, 0.36).setY(player.position.y), w = state.avatarRig.climb.weight
+          state.avatar.position.lerp(rest, w)
+          state.avatar.rotation.y = Math.atan2(-ladder.normal.x, -ladder.normal.z)
+        } else state.avatar.rotation.y = state.attackCooldown > 0 ? player.yaw + Math.PI : movementHeading(state.avatar.rotation.y, player.velocity, delta)
         state.avatar.updateMatrixWorld(true)
       } else { camera.position.copy(head); state.avatar.visible = false }
       camera.updateMatrixWorld()
@@ -624,7 +627,7 @@ export default function ThreeViewport({ document, selectedId, active, fitRequest
       }
       raycaster.set(head, new THREE.Vector3(0, 0, -1).applyEuler(orientation))
       raycaster.far = 50
-      const hit = raycaster.intersectObjects(built!.pickables, false).find((item) => visible(item.object) && !(item.object.layers.mask === 1 << HELPER_LAYER) )
+      const hit = raycaster.intersectObjects(built!.pickables, false).find((item) => pickVisible(item.object) && !(item.object.layers.mask === 1 << HELPER_LAYER) )
       const chain = hit ? nodeChain(pickNodeId(hit)) : []
       const weapon = settings.weapon ?? 'none', reach = weaponStats[weapon].kind === 'melee' ? weaponStats[weapon].range : weaponStats[weapon].range
       const foe = hit && hit.distance <= reach ? chain.find((node) => node.behavior?.type === 'enemy' && activeEnemy(runtime, node.id)) : undefined
@@ -792,7 +795,7 @@ export default function ThreeViewport({ document, selectedId, active, fitRequest
       raycaster.setFromCamera(new THREE.Vector2((event.clientX - rect.left) / rect.width * 2 - 1, -(event.clientY - rect.top) / rect.height * 2 + 1), camera)
       raycaster.far = Infinity
       scene.updateMatrixWorld(true)
-      const hit = raycaster.intersectObjects([...built.pickables, ...proxies], false).find((intersection) => visible(intersection.object))
+      const hit = raycaster.intersectObjects([...built.pickables, ...proxies], false).find((intersection) => pickVisible(intersection.object))
       callbacks.current.onSelect(hit ? pickNodeId(hit) : null)
     }
     const cancel = () => { pointerStart = null; dragLook = null }
@@ -841,6 +844,8 @@ export default function ThreeViewport({ document, selectedId, active, fitRequest
       const ratio = ratioFor(next.quality)
       renderer.setPixelRatio(ratio); composer.setPixelRatio(ratio)
       fauna?.setQuality(quality); grass?.setQuality(quality); particles.setQuality(quality)
+      for (const skin of built?.skins.values() ?? []) skin.setQuality(quality)
+      for (const skin of game?.avatarRig.built.skins.values() ?? []) skin.setQuality(quality)
     }
     restartRequest.current = () => { if (game) { stopGame(true); startGame() } }
     lockRequest.current = () => {
@@ -992,7 +997,7 @@ export default function ThreeViewport({ document, selectedId, active, fitRequest
           continue
         }
         const equipment = createEquipment('blaster')
-        if (!binding || !mountEquipment(equipment, binding, built!.holders)) {
+        if (!binding || !mountEquipment(equipment, binding, built!.holders, built!.skins.get(id))) {
           built!.holders.get(id)!.add(equipment.object)
           equipment.object.position.set(0, enemy.height * 0.55, enemy.radius)
         }

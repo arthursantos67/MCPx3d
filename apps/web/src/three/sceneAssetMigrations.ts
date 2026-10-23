@@ -1,4 +1,5 @@
 import type { SceneNode, ThreeSceneDocument } from './sceneDocument.ts'
+import { prefabParts } from './scenePrefabs.ts'
 
 const close = (a: number, b: number) => Math.abs(a-b)<0.00002
 function bounds(vertices: number[]) {
@@ -10,6 +11,22 @@ function canonicalBatch(node: SceneNode, size: number) {
   if(node.kind!=='mesh' || node.rotation.some(Boolean) || node.scale.some(v=>!close(v,1))) return false
   const {min,max}=bounds(node.geometry.vertices)
   return node.position.every((v,i)=>close(v,(min[i]+max[i])/2*size)) && node.dimensions.every((v,i)=>close(v,(max[i]-min[i])*size))
+}
+
+/** Watchtowers before 0.6 left 1.35 m under the roof, so nobody could step off the ladder. Only untouched roof, pillars and bell move up. */
+export function migrateTowerHeadroom(document: ThreeSceneDocument): ThreeSceneDocument {
+  const replacements=new Map<string,SceneNode>()
+  for(const root of document.nodes) {
+    if(root.asset?.type!=='tower') continue
+    const size=root.asset.size, current=new Map(prefabParts(root.asset).map(part=>[part.id,part]))
+    for(const node of document.nodes) {
+      if(node.parentId!==root.id || !node.assetPart || !/^(roof|pillar\d|bell)$/.test(node.assetPart)) continue
+      const part=current.get(node.assetPart), legacy=node.assetPart==='roof'?7.35:node.assetPart==='bell'?6.2:5.95
+      if(!part || !close(node.position[1],legacy*size) || node.rotation.some(Boolean)) continue
+      replacements.set(node.id,{...node,position:[node.position[0],part.position[1],node.position[2]],dimensions:node.assetPart.startsWith('pillar')?part.dimensions:node.dimensions})
+    }
+  }
+  return replacements.size?{...document,nodes:document.nodes.map(node=>replacements.get(node.id)??node)}:document
 }
 
 /** Surgical migration: remove only the legacy stone face underneath the wood finish.

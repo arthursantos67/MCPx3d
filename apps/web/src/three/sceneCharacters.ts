@@ -190,10 +190,10 @@ function beard(k: Kit, f: Frame, color: string, long: boolean) {
 }
 function sword(k: Kit, parent: string, position: V, rotation: V, blade: Mat, hilt: Mat, length = 0.78) {
   const g = k.joint('sword', parent, 'Espada (empunhadura)', position, rotation)
-  k.mesh('swordGrip', g, 'Cabo da espada', 'cylinder', [0, 0, 0], [0.034, 0.16, 0.034], leather('#3b2a1e'), { geometry: { segments: 8 } })
-  k.mesh('swordPommel', g, 'Pomo', 'sphere', [0, -0.1, 0], [0.05, 0.05, 0.05], hilt, { geometry: { segments: 10 }, collidable: false })
-  k.mesh('swordGuard', g, 'Guarda', 'box', [0, 0.095, 0], [0.24, 0.035, 0.045], hilt)
-  k.mesh('swordBlade', g, 'Lâmina', 'extrude', [0, 0.112 + length / 2, 0], [0.06, length, 0.014], blade, { geometry: { profile: [[-0.5, 0], [0.5, 0], [0.5, 0.86], [0, 1], [-0.5, 0.86]], bevel: 0.02 } })
+  k.mesh('swordGrip', g, 'Cabo da espada', 'lathe', [0, 0, 0], [0.034, 0.16, 0.034], leather('#3b2a1e'), { geometry: { profile: [[0, 0], [0.9, 0.01], [1, 0.2], [0.9, 0.35], [1, 0.5], [0.9, 0.65], [1, 0.8], [0.9, 0.99], [0, 1]], segments: 14 } })
+  k.mesh('swordPommel', g, 'Pomo', 'lathe', [0, -0.1, 0], [0.05, 0.05, 0.05], hilt, { geometry: { profile: [[0, 0], [0.6, 0.06], [1, 0.4], [0.95, 0.65], [0.55, 0.92], [0, 1]], segments: 16 }, collidable: false })
+  k.mesh('swordGuard', g, 'Guarda', 'extrude', [0, 0.095, 0], [0.24, 0.035, 0.045], hilt, { geometry: { profile: [[-0.5, 0.5], [-0.42, 0.1], [-0.2, -0.3], [0, -0.5], [0.2, -0.3], [0.42, 0.1], [0.5, 0.5], [0.4, 0.2], [0.18, 0], [0, -0.1], [-0.18, 0], [-0.4, 0.2]], bevel: 0.08 } })
+  k.mesh('swordBlade', g, 'Lâmina', 'extrude', [0, 0.112 + length / 2, 0], [0.06, length, 0.014], blade, { geometry: { profile: [[-0.5, 0], [0.5, 0], [0.47, 0.6], [0.42, 0.82], [0.24, 0.94], [0, 1], [-0.24, 0.94], [-0.42, 0.82], [-0.47, 0.6]], bevel: 0.04 } })
   k.mesh('swordFuller', g, 'Sulco da lâmina', 'box', [0, 0.112 + length * 0.4, 0], [0.012, length * 0.62, 0.0165], { ...blade, color: shade(blade.color ?? '#999999', 0.7) }, { collidable: false })
 }
 

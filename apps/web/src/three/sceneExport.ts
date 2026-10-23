@@ -4,6 +4,8 @@ import { cycleProgress, playsOnce, samplePose } from './sceneAnimation.ts'
 import { buildScene, createResources } from './sceneBuild.ts'
 import type { SceneNode, ThreeSceneDocument } from './sceneDocument.ts'
 import { terrainGeometryForExport } from './sceneTerrainMaterial.ts'
+import { buildCharacterSkins } from './sceneSkin.ts'
+import { characterExportClips, prepareSkinExport } from './sceneSkinExport.ts'
 
 const MAX_SAMPLES = 240_000
 function tracks(node: SceneNode, holder: THREE.Object3D, frames: number, progressAt: (frame: number) => number, seconds: number) {
@@ -40,14 +42,16 @@ async function exportableTexture(texture: THREE.Texture): Promise<THREE.Texture>
 /** Exports visible nodes as GLB 2.0 with PBR materials, punctual lights and baked animation clips. */
 export async function exportSceneGlb(doc: ThreeSceneDocument): Promise<ArrayBuffer> {
   const resources = createResources()
-  const built = buildScene(doc, resources, { instancing: false, helpers: false })
+  const built = buildScene(doc, resources, { instancing: false, helpers: false, skins: (document, holders) => buildCharacterSkins(document, holders, { quality: 'high', shadows: false }) })
   const converted = new Map<THREE.Texture, THREE.Texture>()
   const exportGeometries:THREE.BufferGeometry[]=[]
+  let disposeSkins = () => {}
   try {
     const animated = doc.nodes.filter((node) => node.animation.kind !== 'none' && built.holders.has(node.id))
     const looping = animated.filter((node) => !playsOnce(node)), once = animated.filter(playsOnce)
     const duration = doc.timeline.duration, frames = Math.max(16, Math.min(Math.ceil(duration * 30), Math.floor(MAX_SAMPLES / Math.max(1, looping.length))))
-    const animations: THREE.AnimationClip[] = []
+    const animations: THREE.AnimationClip[] = characterExportClips(doc, built)
+    disposeSkins = prepareSkinExport(built)
     if (looping.length) animations.push(new THREE.AnimationClip(doc.name, duration, looping.flatMap((node) => tracks(node, built.holders.get(node.id)!, frames, (frame) => cycleProgress(node, duration * frame / frames), duration))))
     for (const node of once) animations.push(new THREE.AnimationClip(`${node.name} (interação)`, node.animation.duration, tracks(node, built.holders.get(node.id)!, Math.max(8, Math.ceil(node.animation.duration * 30)), (frame) => frame / Math.max(8, Math.ceil(node.animation.duration * 30)), node.animation.duration)))
     built.root.name = doc.name
@@ -73,7 +77,7 @@ export async function exportSceneGlb(doc: ThreeSceneDocument): Promise<ArrayBuff
     if (!(result instanceof ArrayBuffer)) throw new Error('O exportador não produziu um GLB binário.')
     return result
   } finally {
-    built.dispose(); resources.dispose()
+    built.dispose(); resources.dispose(); disposeSkins()
     for(const geometry of exportGeometries) geometry.dispose()
     for (const [source, texture] of converted) if (source !== texture) texture.dispose()
   }

@@ -3,7 +3,7 @@ import { hashNoise } from './sceneGeometrySpec.ts'
 import type { PrefabPart } from './scenePrefabs.ts'
 import { createField, dropFragments, ellipsoidPrim, fieldNormals, OP_SUBTRACT, OP_UNION, project, relax, segmentPrim, surfaceNets, type Field, type FieldOp } from './sceneSkinGeometry.ts'
 import { emptyPiece, MATERIAL_BODY, MATERIAL_EYE, MATERIAL_HAIR, MATERIAL_SHELL, normalAt, overrideSlot, PATTERN, singleSlot, slotOf, surfaceAlong, type Piece, type SlotMaterial, type SlotTable } from './sceneSkinMesh.ts'
-import type { FaceRig, SkinBone, SkinPart, SkinRequest, SpringPlan } from './sceneSkinModel.ts'
+import type { FaceRig, FingerRig, SkinBone, SkinPart, SkinRequest, SpringPlan } from './sceneSkinModel.ts'
 import type { SkinPlan } from './sceneSkinPlan.ts'
 
 type V3 = [number, number, number]
@@ -12,10 +12,13 @@ export interface FeatureContext {
   bones: SkinBone[]; boneIndex: Map<string, number>; internal: (name: string, parent: number, local: THREE.Matrix4) => number
   slots: SlotTable; skinParts: SkinPart[]; unitScale: number
   extraOps: { body: number; op: FieldOp; minLevel?: number; maxLevel?: number }[]
-  face: FaceRig | null; springs: SpringPlan[]; eyeSlots: SlotMaterial[]; hairSlots: SlotMaterial[]
+  face: FaceRig | null; hands: FingerRig[]; springs: SpringPlan[]; eyeSlots: SlotMaterial[]; hairSlots: SlotMaterial[]
+  /** Centre of each closed fist in the forearm joint frame; +Z of `quaternion` runs along the hole the fingers wrap. `item` is the held part, re-seated onto the socket. */
+  grips: GripSocket[]
   refineRegions: { body: number; levels: number; center: V3; radius: number; inner?: { center: V3; radius: number } }[]
   decorateBody?: (piece: Piece, level: number, field: Field, body: number) => void
 }
+export interface GripSocket { side: 'L' | 'R'; item: string | null; position: V3; quaternion: [number, number, number, number] }
 type Builder = (level: number, fields: Field[], h: number) => Piece[]
 type Decorator = (piece: Piece, level: number, field: Field, body: number) => void
 
@@ -137,7 +140,7 @@ function face(ctx: FeatureContext, builders: Builder[], decorators: Decorator[])
     for (let i = 0; i < 3; i++) uni(seg(pts[i], pts[i + 1], r * (i === 1 ? 1 : 0.8), r * (i === 1 ? 1 : 0.8)), 0.007)
   }
   lip(0.0045, 0.0026, -0.0022); lip(-0.005, 0.003, -0.0024)
-  const glowEyes = !!ctx.byId.get('eyeL')?.material?.emissive
+  const eyeMaterialOf = ctx.byId.get('eyeL')?.material, glowEyes = !!eyeMaterialOf?.emissive && eyeMaterialOf.emissive.toLowerCase() !== '#000000' && (eyeMaterialOf.emissiveIntensity ?? 1) > 0
   const eyes: { center: V3; forward: V3; side: number }[] = []
   for (const side of [1, -1]) {
     const s = surface(side * eyeX, eyeY), f = norm([side * 0.12, 0.02, 1]), center = sub(s, mul(f, re * 0.78))
@@ -161,7 +164,7 @@ function face(ctx: FeatureContext, builders: Builder[], decorators: Decorator[])
   const browBones = browCenters.map((p, i) => bone(`brow${i ? 'R' : 'L'}`, p)) as [number, number]
   const cornerPoints = [1, -1].map((side) => surface(side * cornerX, mouthY))
   const cornerBones = cornerPoints.map((p, i) => bone(`mouth${i ? 'R' : 'L'}`, p)) as [number, number]
-  const lidOpen = 1.12
+  const lidOpen = 0.98
   ctx.face = { jaw, eyes: eyeBones, lids: lidBones, brows: browBones, corners: cornerBones, scale: hs, lidClosed: Math.PI / 2 + 0.42 - lidOpen }
   // Slots and colours.
   const skinColor = partColor(ctx.byId.get('head'), '#e3b08c')
@@ -177,7 +180,7 @@ function face(ctx: FeatureContext, builders: Builder[], decorators: Decorator[])
   const irisColor = partColor(ctx.byId.get('irisL'), '#5a3b1e'), glowColor = ctx.byId.get('eyeL')?.material?.emissive ?? '#ffd23a'
   ctx.eyeSlots.push(
     { color: glowEyes ? hexMix(glowColor, '#3a2a10', 0.55) : '#efe9e0', roughness: 0.18, metalness: 0, sheen: 0, clearcoat: 1, emissive: glowEyes ? glowColor : '#000000', emissiveIntensity: glowEyes ? 0.35 : 0, pattern: PATTERN.plain },
-    { color: glowEyes ? glowColor : irisColor, roughness: 0.25, metalness: 0, sheen: 0, clearcoat: 1, emissive: glowEyes ? glowColor : '#000000', emissiveIntensity: glowEyes ? 2.2 : 0, pattern: PATTERN.plain },
+    { color: glowEyes ? glowColor : hexMix(irisColor, '#c8b8a0', 0.18), roughness: 0.25, metalness: 0, sheen: 0, clearcoat: 1, emissive: glowEyes ? glowColor : '#000000', emissiveIntensity: glowEyes ? 2.2 : 0, pattern: PATTERN.plain },
     { color: '#0a0807', roughness: 0.15, metalness: 0, sheen: 0, clearcoat: 1, emissive: '#000000', emissiveIntensity: 0, pattern: PATTERN.plain })
   // Refinement: the whole head once, the front of the face twice (LOD0).
   ctx.refineRegions.push({ body: 0, levels: 2, center: world([c[0], c[1] - 0.015 * hs, c[2] + 0.045 * hs]), radius: 0.125 * hs, inner: { center: world([c[0], c[1] - 0.028 * hs, c[2] + 0.085 * hs]), radius: 0.062 * hs } })
@@ -196,10 +199,10 @@ function face(ctx: FeatureContext, builders: Builder[], decorators: Decorator[])
   const beardOn = !!beardPart, beardLong = beardPart?.kind === 'lathe'
   const inBeard = (p: V3) => {
     if (!beardOn) return -1
-    const { elevation, az } = ellipse(p), front = Math.cos(az)
-    const chin = Math.min((mouthY - 0.012 * hs - p[1]) / R[1], front + 0.15)
-    const sideburn = Math.min(Math.abs(az) - 0.85, 1.75 - Math.abs(az), 0.05 - elevation, (eyeY - 0.01 * hs - p[1]) / R[1])
-    return Math.max(chin, sideburn)
+    // Beard line: from the sideburn by the ear down across the cheek to the mouth corner, so the cheekbones stay bare.
+    const { elevation, az } = ellipse(p), side = Math.abs(az)
+    const line = mouthY + 0.004 * hs + (eyeY - 0.034 * hs - mouthY - 0.004 * hs) * smooth(0.55, 1.45, side)
+    return Math.min((line - p[1]) / R[1], 1.72 - side, 0.08 - elevation)
   }
   decorators.push((piece, level, _field, body) => {
     if (body !== 0) return
@@ -255,7 +258,7 @@ function face(ctx: FeatureContext, builders: Builder[], decorators: Decorator[])
   })
   builders.push((level, fields, h) => {
     const eyesPiece = emptyPiece('olhos', MATERIAL_EYE), lids = emptyPiece('pálpebras', MATERIAL_BODY), brows = emptyPiece('sobrancelhas', MATERIAL_HAIR)
-    const rings = [12, 9, 6][level], segments = [16, 12, 8][level], alphaIris = realistic ? 0.5 : 0.6, alphaPupil = alphaIris * (glowEyes ? 0.3 : 0.45)
+    const rings = [12, 9, 6][level], segments = [16, 12, 8][level], alphaIris = realistic ? 0.32 : 0.37, alphaPupil = alphaIris * (glowEyes ? 0.3 : 0.45)
     eyes.forEach((eye, i) => {
       const f = eye.forward, up = norm(sub([0, 1, 0], mul(f, f[1]))), right = cross(up, f), start = eyesPiece.positions.length / 3
       for (let r = 0; r <= rings; r++) {
@@ -286,7 +289,7 @@ function face(ctx: FeatureContext, builders: Builder[], decorators: Decorator[])
         }
       }
       grid(lids, lidStart, lidRows + 2, segments + 1, false)
-      const lowStart = lids.positions.length / 3, lowRows = [3, 2, 1][level], lowOpen = 1.2
+      const lowStart = lids.positions.length / 3, lowRows = [3, 2, 1][level], lowOpen = 1.08
       for (let r = 0; r <= lowRows + 1; r++) {
         const theta = r <= lowRows ? (r / lowRows) * lowOpen : lowOpen + 0.03, radius = r <= lowRows ? 1.11 : 1.04
         for (let s = 0; s <= segments; s++) {
@@ -481,36 +484,80 @@ function hairPieces(ctx: FeatureContext, level: number, field: Field, frame: Hea
   return strands.length ? [sculptedHair(ctx, frame, strands, h, level, outward)] : []
 }
 
-/** Four fingers and a thumb per hand built from the palm frame; curled into a fist when the hand holds something. */
+const FIST = [1.2, 1.45, 0.95], RELAXED = [0.32, 0.45, 0.3]
+const fingerSet = [[0.29, 0.93, 1, 0.07], [0.1, 1, 1.04, 0.02], [-0.1, 0.95, 0.98, -0.03], [-0.29, 0.77, 0.86, -0.09]] as const
+/** Finger centreline in the canonical palm frame (fingers along −Y, fist hole along +Z). */
+function fingerPath(side: number, w: number, h: number, d: number, L: number, finger: number, curl: readonly number[]): V3[] {
+  const [z, length, , spread] = fingerSet[finger], palmSide: V3 = [-side, 0, 0], path: V3[] = [[side * w * 0.05, -h * 0.26, z * d * 0.88]]
+  let direction: V3 = norm([0, -1, spread]), angle = 0
+  path.push(add(path[0], mul(direction, h * 0.16)))
+  for (let j = 0; j < 3; j++) {
+    angle += curl[j]
+    direction = norm(add(mul([0, -1, spread], Math.cos(angle)), mul(palmSide, Math.sin(angle))))
+    const segment = L * length * [0.45, 0.32, 0.23][j], from = path[path.length - 1]
+    path.push(add(from, mul(direction, segment / 2)), add(from, mul(direction, segment)))
+  }
+  return path
+}
+/** Held part on each forearm: weapons, staves and baskets are wrapped; shields are strapped and stay where they are. */
+function heldItem(ctx: FeatureContext, side: 'L' | 'R') {
+  return ctx.parts.find((part) => part.kind === 'group' && !part.id.startsWith('j_') && part.parentId === `j_elbow${side}` && !/shield/i.test(part.id))
+}
+
+/** Four fingers and a thumb per hand built from the palm frame. A held part turns the fist so the fingers wrap its own handle axis. */
 function hands(ctx: FeatureContext, builders: Builder[]) {
-  const holding = new Set(ctx.parts.filter((part) => part.kind === 'group' && !part.id.startsWith('j_') && part.parentId?.startsWith('j_elbow')).map((part) => part.parentId!.slice(-1)))
-  for (const s of ['L', 'R']) {
-    const palm = ctx.byId.get(`palm${s}`)
-    if (palm) ctx.refineRegions.push({ body: 0, levels: 1, center: apply(ctx.bind.get(`palm${s}`)!, [0, 0, 0]), radius: Math.max(...palm.dimensions) * 0.75 })
+  const chains = new Map<string, number[]>()
+  const chain = (side: 'L' | 'R', finger: number, path: V3[], matrix: THREE.Matrix4, parent: number, curl: number[]) => {
+    const key = `${side}${finger}`, known = chains.get(key)
+    if (known) return known
+    const bones: number[] = []
+    for (let j = 0; j < curl.length; j++) {
+      const bind = matrix.clone().setPosition(new THREE.Vector3(...path[Math.min(path.length - 1, finger === 4 ? j * 2 : 1 + j * 2)]))
+      const local = ctx.bones[parent].bind.clone().invert().multiply(bind)
+      parent = ctx.internal(`finger${key}_${j}`, parent, local); bones.push(parent)
+    }
+    ctx.hands.push({ side, finger, bones, curl }); chains.set(key, bones)
+    return bones
+  }
+  const frames = new Map<'L' | 'R', { m: THREE.Matrix4; fist: boolean }>()
+  for (const s of ['L', 'R'] as const) {
+    const palm = ctx.byId.get(`palm${s}`), fingers = ctx.byId.get(`fingers${s}`)
+    if (!palm) continue
+    const palmBind = ctx.bind.get(`palm${s}`)!
+    ctx.refineRegions.push({ body: 0, levels: 1, center: apply(palmBind, [0, 0, 0]), radius: Math.max(...palm.dimensions) * 0.75 })
+    const item = heldItem(ctx, s), side = s === 'L' ? 1 : -1, [w, h, d] = palm.dimensions, L = (fingers?.dimensions[1] ?? h * 0.85) * 0.92
+    // Rotating the canonical fist about the palm centre aligns its hole with the handle; the part is then moved onto the hole.
+    const turn = new THREE.Quaternion()
+    if (item && ctx.bind.has(item.id)) {
+      const handle = rotate(ctx.bind.get(item.id)!, /basket/i.test(item.id) ? [1, 0, 0] : [0, 1, 0]), local = new THREE.Vector3(...rotate(palmBind.clone().invert(), handle))
+      turn.setFromUnitVectors(new THREE.Vector3(0, 0, 1), local.z < 0 ? local.negate() : local)
+    }
+    const m = palmBind.clone().multiply(new THREE.Matrix4().makeRotationFromQuaternion(turn))
+    const hole = [0, 1, 2, 3].flatMap((finger) => fingerPath(side, w, h, d, L, finger, FIST).slice(2))
+    const center = mul(hole.reduce((sum, p) => add(sum, p), [0, 0, 0] as V3), 1 / hole.length)
+    const forearm = ctx.bind.get(`j_elbow${s}`)
+    if (forearm) {
+      const local = forearm.clone().invert().multiply(m).multiply(translation(center)), position = new THREE.Vector3(), q = new THREE.Quaternion()
+      local.decompose(position, q, new THREE.Vector3())
+      ctx.grips.push({ side: s, item: item?.id ?? null, position: position.toArray(), quaternion: [q.x, q.y, q.z, q.w] })
+    }
+    frames.set(s, { m, fist: !!item })
   }
   builders.push((level) => {
     if (level >= 2) return []
     const piece = emptyPiece('dedos', MATERIAL_BODY)
-    for (const s of ['L', 'R']) {
-      const palm = ctx.byId.get(`palm${s}`), fingers = ctx.byId.get(`fingers${s}`), thumb = ctx.byId.get(`thumb${s}`)
-      if (!palm) continue
-      const side = s === 'L' ? 1 : -1, m = ctx.bind.get(`palm${s}`)!, bone = ctx.skinParts.find((part) => part.id === `palm${s}`)?.bone ?? 0
+    for (const s of ['L', 'R'] as const) {
+      const palm = ctx.byId.get(`palm${s}`), fingers = ctx.byId.get(`fingers${s}`), thumb = ctx.byId.get(`thumb${s}`), frame = frames.get(s)
+      if (!palm || !frame) continue
+      const side = s === 'L' ? 1 : -1, { m, fist } = frame, bone = ctx.skinParts.find((part) => part.id === `palm${s}`)?.bone ?? 0
       const [w, h, d] = palm.dimensions, slot = ctx.skinParts.find((part) => part.id === `palm${s}`)?.slot ?? 0
       const gloved = (palm.material?.metalness ?? 0) > 0.3 || palm.material?.texture === 'fabric', nail = gloved ? slot : ctx.slots.add({ ...slotOf(palm.material), color: hexMix(palm.material?.color ?? '#e3b08c', '#ffe8e0', 0.35), roughness: 0.3, clearcoat: 0.5 })
-      const fist = holding.has(s), curl = fist ? [1.2, 1.45, 0.95] : [0.32, 0.45, 0.3], L = (fingers?.dimensions[1] ?? h * 0.85) * 0.92, sides = level ? 5 : 7
-      const palmSide: V3 = [-side, 0, 0]
-      ;[[0.29, 0.93, 1, 0.07], [0.1, 1, 1.04, 0.02], [-0.1, 0.95, 0.98, -0.03], [-0.29, 0.77, 0.86, -0.09]].forEach(([z, length, girth, spread]) => {
-        const r = d * 0.122 * girth, path: V3[] = [[side * w * 0.05, -h * 0.26, z * d * 0.88]]
-        let direction: V3 = norm([0, -1, spread]), angle = 0
-        path.push(add(path[0], mul(direction, h * 0.16)))
-        for (let j = 0; j < 3; j++) {
-          angle += curl[j]
-          direction = norm(add(mul([0, -1, spread], Math.cos(angle)), mul(palmSide, Math.sin(angle))))
-          const segment = L * length * [0.45, 0.32, 0.23][j], from = path[path.length - 1]
-          path.push(add(from, mul(direction, segment / 2)), add(from, mul(direction, segment)))
-        }
+      const curl = fist ? FIST : RELAXED, L = (fingers?.dimensions[1] ?? h * 0.85) * 0.92, sides = level ? 5 : 7
+      fingerSet.forEach(([, , girth], finger) => {
+        const r = d * 0.122 * girth, path = fingerPath(side, w, h, d, L, finger, curl)
         const radii = path.map((_, i): [number, number] => { const t = Math.max(0, i - 1) / (path.length - 2); return [r * (1 - 0.22 * t) * 0.9, r * (1 - 0.22 * t)] })
-        tube(piece, path.map((p) => apply(m, p)), radii, rotate(m, [0, 0, 1]), sides, () => [[bone, 1]], (i, around) => {
+        const joints = chain(s, finger, path.map((p) => apply(m, p)), m, bone, [...curl])
+        tube(piece, path.map((p) => apply(m, p)), radii, rotate(m, [0, 0, 1]), sides, (i) => i === 0 ? [[bone, 1]] : [[joints[Math.min(2, Math.floor((i - 1) / 2))], 1]], (i, around) => {
           const slots = singleSlot(slot)
           if (!gloved && i >= path.length - 2) { const back = dot(around, rotate(m, [side, 0, 0])); slots[nail] = Math.min(slots[nail], (0.45 - back) * r) }
           return slots
@@ -525,7 +572,8 @@ function hands(ctx: FeatureContext, builders: Builder[]) {
           path.push(point)
           direction = norm(add(direction, mul([-side, -0.2, 0.1], fist ? 0.45 : 0.16)))
         }
-        tube(piece, path.map((p) => apply(m, p)), path.map((_, j): [number, number] => [tw * 0.48 * (1 - j * 0.07), tw * 0.52 * (1 - j * 0.07)]), rotate(m, [0, 0, 1]), sides, () => [[bone, 1]], (i, around) => {
+        const joints = chain(s, 4, path.map((p) => apply(m, p)), m, bone, fist ? [0.7, 0.7] : [0.2, 0.2])
+        tube(piece, path.map((p) => apply(m, p)), path.map((_, j): [number, number] => [tw * 0.48 * (1 - j * 0.07), tw * 0.52 * (1 - j * 0.07)]), rotate(m, [0, 0, 1]), sides, (i) => [[joints[Math.min(1, Math.floor(i / 2))], 1]], (i, around) => {
           const slots = singleSlot(slot)
           if (!gloved && i >= path.length - 2) { const back = dot(around, rotate(m, [side, 0, 0.4])); slots[nail] = Math.min(slots[nail], (0.4 - back) * tw) }
           return slots

@@ -1,6 +1,6 @@
 import { insertionPosition } from './scenePlacement.ts'
 import { prefabSpec, type PrefabSpec } from './scenePrefabs.ts'
-import { migrateHouseFloorSurfaces } from './sceneAssetMigrations.ts'
+import { migrateHouseFloorSurfaces, migrateTowerHeadroom } from './sceneAssetMigrations.ts'
 import { expandSceneDraft } from './sceneDraft.ts'
 import { defaultGeometry, estimateTriangles, MAX_SCENE_TRIANGLES, validateGeometry, type GeometrySpec } from './sceneGeometrySpec.ts'
 export type Vector3Tuple = [number, number, number]
@@ -372,9 +372,9 @@ export function validateScene(value: unknown): ThreeSceneDocument {
       parentId = parent.parentId
     }
   }
-  return migrateHouseFloorSurfaces({ version: '1.4', name: text(doc.name, 'Nome do projeto'), nodes,
+  return migrateTowerHeadroom(migrateHouseFloorSurfaces({ version: '1.4', name: text(doc.name, 'Nome do projeto'), nodes,
     timeline: { duration: doc.timeline === undefined ? 20 : number(record(doc.timeline).duration, 'Duração da timeline', 1, 120) },
-    environment: validateEnvironment(doc.environment) })
+    environment: validateEnvironment(doc.environment) }))
 }
 export function parseScene(source: string): ThreeSceneDocument {
   if (new TextEncoder().encode(source).byteLength > MAX_SCENE_BYTES) throw new Error('O projeto excede o limite de 32 MB.')

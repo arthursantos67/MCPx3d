@@ -155,7 +155,7 @@ export function buildWorldPrefab(spec: PrefabSpec): PrefabPart[] {
         const pennant = G('pennant', 'Flâmula', [0.04, 13.65, 0], { animation: loop('swing', 'y', 2.4 + random(3), 14, random(4) * 360) })
         slab('pennantCloth', 'Flâmula', [[0, 0.2], [0.9, 0], [0, -0.2]], 0, 0.02, cloth(flagColor), { parentId: pennant, collidable: false })
       } else {
-        prism('deck', 'Piso do topo', circle(1.75, 32), 7.82, 0.15, paving, {}, [[[-0.45, -1.6], [0.45, -1.6], [0.45, -1], [-0.45, -1]]])
+        prism('deck', 'Piso do topo', circle(1.75, 32), 7.82, 0.15, paving, {}, [[[-0.6, -1.62], [0.6, -1.62], [0.6, -0.58], [-0.6, -0.58]]])
         ladder('inner', 0, -1.45, 0.2, 8.7, 16)
         for (let i = 0; i < 10; i++) { const a = rad(i * 36 + 18); P(`merlon${i}`, 'box', 'Merlão', [round(Math.cos(a) * 2.27), 9.2, round(Math.sin(a) * 2.27)], [0.7, 0.6, 0.5], S, { rotation: [0, yaw(a), 0] }) }
         P('flagpole', 'cylinder', 'Mastro', [0.6, 9.885, 0.4], [0.08, 3.83, 0.08], darkWood)

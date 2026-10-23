@@ -153,3 +153,25 @@ export function slotMaterial(slots: SlotMaterial[], options: { side: THREE.Side;
   material.userData.skinSlots = uniforms
   return material
 }
+
+/** Eyes: sclera, iris and pupil from the per-vertex region distances (slotA.xyz), with anti-aliased borders, a wet clearcoat and glowing irises. */
+export function eyeMaterial(slots: SlotMaterial[], side: THREE.Side): THREE.MeshPhysicalMaterial {
+  const tone = (i: number) => new THREE.Color(slots[Math.min(i, slots.length - 1)]?.color ?? '#000000')
+  const shine = (i: number) => { const slot = slots[Math.min(i, slots.length - 1)]; return slot ? new THREE.Color(slot.emissive).multiplyScalar(slot.emissiveIntensity) : new THREE.Color(0, 0, 0) }
+  const uniforms = { eyeTone: { value: [tone(0), tone(1), tone(2)] }, eyeShine: { value: [shine(0), shine(1), shine(2)] } }
+  const material = new THREE.MeshPhysicalMaterial({ color: '#ffffff', roughness: 0.12, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.04, side, name: 'Olhos' })
+  material.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, uniforms)
+    shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nattribute vec4 slotA;\nvarying vec3 vEyeRegion;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvEyeRegion = slotA.xyz;')
+    shader.fragmentShader = shader.fragmentShader.replace('#include <common>', '#include <common>\nuniform vec3 eyeTone[3];\nuniform vec3 eyeShine[3];\nvarying vec3 vEyeRegion;\nvec3 eyeWeights() {\n  float iris = vEyeRegion.y - vEyeRegion.x, pupil = vEyeRegion.z - min(vEyeRegion.x, vEyeRegion.y);\n  float a = 1.0 - smoothstep(-fwidth(iris), fwidth(iris), iris), b = 1.0 - smoothstep(-fwidth(pupil), fwidth(pupil), pupil);\n  return vec3((1.0 - a) * (1.0 - b), a * (1.0 - b), b);\n}')
+      .replace('#include <color_fragment>', '#include <color_fragment>\nvec3 eyeW = eyeWeights();\nfloat eyeRim = smoothstep(-0.004, 0.0, vEyeRegion.y - vEyeRegion.x) * eyeW.y;\ndiffuseColor.rgb *= (eyeTone[0] * eyeW.x + eyeTone[1] * eyeW.y * (1.0 - 0.55 * eyeRim) + eyeTone[2] * eyeW.z);')
+      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += eyeShine[0] * eyeW.x + eyeShine[1] * eyeW.y + eyeShine[2] * eyeW.z;')
+  }
+  material.customProgramCacheKey = () => 'forma-eye-1'
+  // The GLB baker reads the same region table as the other skin materials.
+  const table = slotMaterial(slots, { side, name: 'Olhos' })
+  material.userData.skinSlots = table.userData.skinSlots
+  table.dispose()
+  return material
+}

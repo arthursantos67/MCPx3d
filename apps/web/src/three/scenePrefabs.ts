@@ -135,11 +135,11 @@ function build(spec: PrefabSpec): PrefabPart[] {
       // The front rail leaves an opening above the ladder so the player can step onto the deck.
       for (const [i, [x, z, w, dd]] of [[0, -1.5, 3.1, 0.08], [-1.05, 1.5, 1, 0.08], [1.05, 1.5, 1, 0.08], [-1.5, 0, 0.08, 2.92], [1.5, 0, 0.08, 2.92]].entries())
         add({ id: `rail${i}`, parentId: null, name: 'Guarda-corpo', kind: 'box', position: [x, 6.05, z], dimensions: [w, 0.08, dd], material: wood })
-      for (const [i, [x, z]] of [[-1.4, -1.4], [1.4, -1.4], [-1.4, 1.4], [1.4, 1.4]].entries()) add({ id: `pillar${i}`, parentId: null, name: 'Pilar', kind: 'box', position: [x, 5.95, z], dimensions: [0.12, 1.4, 0.12], material: wood })
-      add({ id: 'roof', parentId: null, name: 'Cobertura', kind: 'cone', position: [0, 7.35, 0], dimensions: [3.8, 1.5, 3.8], material: { color: secondary ?? '#a5523a', texture: 'tiles', textureScale: 2, roughness: 0.7, metalness: 0 }, geometry: { segments: 8 } })
+      for (const [i, [x, z]] of [[-1.4, -1.4], [1.4, -1.4], [-1.4, 1.4], [1.4, 1.4]].entries()) add({ id: `pillar${i}`, parentId: null, name: 'Pilar', kind: 'box', position: [x, 6.37, z], dimensions: [0.12, 2.25, 0.12], material: wood })
+      add({ id: 'roof', parentId: null, name: 'Cobertura', kind: 'cone', position: [0, 8.25, 0], dimensions: [3.8, 1.5, 3.8], material: { color: secondary ?? '#a5523a', texture: 'tiles', textureScale: 2, roughness: 0.7, metalness: 0 }, geometry: { segments: 8 } })
       for (const side of [-1, 1]) add({ id: `ladder${side}`, parentId: null, name: 'Montante da escada', kind: 'box', position: [side * 0.25, 2.75, 1.62], dimensions: [0.06, 5.5, 0.06], material: wood, behavior: climb })
       for (let i = 0; i < 10; i++) add({ id: `rung${i}`, parentId: null, name: 'Degrau', kind: 'box', position: [0, 0.4 + i * 0.55, 1.62], dimensions: [0.56, 0.05, 0.05], material: wood, behavior: climb })
-      if (spec.interactive) add({ id: 'bell', parentId: null, name: 'Sino', kind: 'lathe', position: [0, 6.2, 0], dimensions: [0.5, 0.55, 0.5], material: { color: '#c79a52', metalness: 1, roughness: 0.3 },
+      if (spec.interactive) add({ id: 'bell', parentId: null, name: 'Sino', kind: 'lathe', position: [0, 6.9, 0], dimensions: [0.5, 0.55, 0.5], material: { color: '#c79a52', metalness: 1, roughness: 0.3 },
         geometry: { profile: [[0, 1], [0.12, 1], [0.18, 0.7], [0.3, 0.1], [0.36, 0], [0, 0]] }, animation: { kind: 'swing', axis: 'z', duration: 2.4, amplitude: 18, phase: 0, start: 'trigger', easing: 'smooth', keys: [] },
         interaction: { trigger: 'click', key: '', radius: 4, action: 'toggleAnimation', targetId: null, message: spec.text || 'O sino ecoa pela ilha.' } })
       break

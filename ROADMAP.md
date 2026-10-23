@@ -27,6 +27,8 @@ Princípios que não mudam: a IA devolve somente dados estruturados; tudo que ap
 Prioridade definida pelo usuário em 2026-10-22: personagens muito mais bem trabalhados, HUD com padrão de mercado e animação de personagem e de mundo.
 
 **Personagens de qualidade comercial**
+
+Estado técnico em 22/10/2026: pele procedural nativa, avatar, falanges, face, roupas, LOD/cache e exportação GLB com esqueleto/clipes estão implementados ([detalhes](docs/threejs-characters-hud.md)). Importação/redirecionamento de esqueletos externos e os critérios artísticos/FPS de saída abaixo continuam pendentes; a 0.6 ainda não recebe aprovação comercial por testes unitários.
 - Malha contínua com pele (`SkinnedMesh`) gerada por procedimento: corpo modelado por seções transversais ao longo dos ossos (tronco, membros, mãos com dedos, pés), suavizado e com pesos de pele; sem peças rígidas visíveis.
 - Rosto com olhos (esclera, íris, pálpebras que piscam), sobrancelhas, nariz, boca com articulação de fala e expressões básicas; cabelo em cartões/mechas e barba; mãos com dedos articulados.
 - Roupas e armaduras em camadas sobre a pele (túnica, capa, couraça, botas, luvas, elmos), com variação por semente e paleta; materiais de pele com brilho subsuperficial, tecido com `sheen`, metal desgastado.

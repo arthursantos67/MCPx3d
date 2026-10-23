@@ -6,7 +6,7 @@ import type { CharacterSpec } from './sceneCharacterArchetype.ts'
 import { createField, dropFragments, fieldNormals, OP_CLAMP, OP_SUBTRACT, OP_UNION, primDistance, primFrom, refine, relax, project, surfaceNets, type Field, type FieldOp, type Prim, type RawMesh } from './sceneSkinGeometry.ts'
 import { emptyPiece, SLOTS, MATERIAL_BODY, normalizeSlots, pushWeights, slotOf, smoothWeights, SlotTable, type Piece, type SlotMaterial } from './sceneSkinMesh.ts'
 import { skinPlan, type SkinPlan } from './sceneSkinPlan.ts'
-import { buildFeatures, type FeatureContext } from './sceneSkinFeatures.ts'
+import { buildFeatures, type FeatureContext, type GripSocket } from './sceneSkinFeatures.ts'
 
 type V3 = [number, number, number]
 /** A bone of the generated skeleton. Joint bones are attached (identity) to the holder of `joint`; internal bones hang from `parent` with `local`. */
@@ -18,10 +18,11 @@ export interface SkinLod {
   bodyTriangles: number; components: { name: string; start: number; count: number }[]
 }
 export interface FaceRig { jaw: number; eyes: [number, number]; lids: [number, number]; brows: [number, number]; corners: [number, number]; scale: number; lidClosed: number }
+export interface FingerRig { side: 'L' | 'R'; finger: number; bones: number[]; curl: number[] }
 export interface SpringPlan { bones: number[]; stiffness: number; damping: number; gravity: number; limit: number; wind: number }
 export interface SkinModel {
   bones: SkinBone[]; lods: SkinLod[]; slots: SlotMaterial[]; eyeSlots: SlotMaterial[]; hairSlots: SlotMaterial[]
-  hidden: string[]; springs: SpringPlan[]; face: FaceRig | null; height: number; milliseconds: number
+  hidden: string[]; springs: SpringPlan[]; face: FaceRig | null; hands: FingerRig[]; grips: GripSocket[]; height: number; milliseconds: number
 }
 export interface SkinRequest { type: string; parts: PrefabPart[]; quality: QualityLevel; seed: number; overrides?: Map<string, { position: V3; quaternion: [number, number, number, number] }>; avatar?: string; character?: CharacterSpec }
 
@@ -80,7 +81,7 @@ export function buildSkinModel(request: SkinRequest): SkinModel | null {
       bone: boneOf(id), slot: slots.add(plan.slotOverride[id] ?? slotOf(part.material)), body: plan.bodyOf(id), inset: plan.inset[id] ?? 0 })
   }
   const unitScale = plan.scale, cut = 0.14 * unitScale
-  const ctx: FeatureContext = { request, plan, parts, byId, bind, bones, boneIndex, internal, slots, skinParts, unitScale, extraOps: [], face: null, springs: [], eyeSlots: [], hairSlots: [], refineRegions: [] }
+  const ctx: FeatureContext = { request, plan, parts, byId, bind, bones, boneIndex, internal, slots, skinParts, unitScale, extraOps: [], face: null, hands: [], springs: [], eyeSlots: [], hairSlots: [], refineRegions: [], grips: [] }
   const features = buildFeatures(ctx)
   const inLevel = (id: string, level: number) => { const range = plan.levels[id]; return !range || (level >= range[0] && level <= range[1]) }
   const cache = new Map<string, BodyBuild>()
@@ -114,7 +115,7 @@ export function buildSkinModel(request: SkinRequest): SkinModel | null {
     lods.push(assemble(pieces))
   }
   const height = Math.max(...[...bind.values()].map((m) => m.elements[13])) - Math.min(0, ...[...bind.values()].map((m) => m.elements[13]))
-  return { bones, lods, slots: slots.slots, eyeSlots: ctx.eyeSlots, hairSlots: ctx.hairSlots, hidden: plan.hidden, springs: ctx.springs, face: ctx.face, height, milliseconds: performance.now() - started }
+  return { bones, lods, slots: slots.slots, eyeSlots: ctx.eyeSlots, hairSlots: ctx.hairSlots, hidden: plan.hidden, springs: ctx.springs, face: ctx.face, hands: ctx.hands, grips: ctx.grips, height, milliseconds: performance.now() - started }
 }
 
 /** Polygonizes one body, refines the declared regions, relaxes and computes normals, weights and slots. */

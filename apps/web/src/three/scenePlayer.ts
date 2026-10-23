@@ -160,26 +160,40 @@ export function stepPlayer(state: PlayerState, input: PlayerInput, collider: Pla
       state.position.addScaledVector(state.velocity, h)
       collide(state, collider)
       if (!input.forward) continue
-      const landing = state.position.clone().addScaledVector(forward, PLAYER_RADIUS * 2 + 0.18)
-      const ray = new THREE.Ray(landing.clone().add(new THREE.Vector3(0, 0.3, 0)), new THREE.Vector3(0, -1, 0))
-      const hit = collider.bvh?.raycastFirst(ray, THREE.DoubleSide, 0, 0.65)
-      let support = hit?.face && hit.face.normal.y > 0.55 ? hit.point.y : null
-      for (const box of collider.boxes) {
-        const offset = ray.origin.clone().sub(box.center)
-        if (box.axes[1].y > 0.99 && Math.abs(offset.dot(box.axes[0])) <= box.half.x && Math.abs(offset.dot(box.axes[2])) <= box.half.z) {
-          const top = box.center.y + box.half.y
-          if (top <= ray.origin.y && top >= ray.origin.y - 0.65) support = Math.max(support ?? -Infinity, top)
+      // The landing is searched both where the player looks and straight across the ladder, at a few distances, so a ladder
+      // that ends at a hatch, a wall walk or a tower deck can be left without aiming precisely.
+      const nearest = collider.climb!.reduce((best, box) => box.center.distanceToSquared(state.position) < best.center.distanceToSquared(state.position) ? box : best)
+      const across = nearest.center.clone().sub(state.position).setY(0)
+      const directions = across.lengthSq() > 1e-6 ? [forward, across.normalize(), across.clone().negate()] : [forward]
+      const top = Math.max(...collider.climb!.filter((box) => Math.hypot(box.center.x - state.position.x, box.center.z - state.position.z) < 1.2).map((box) => box.center.y + Math.abs(box.axes[0].y * box.half.x) + Math.abs(box.axes[1].y * box.half.y) + Math.abs(box.axes[2].y * box.half.z)))
+      if (top > state.position.y + 1.2) continue
+      let exit: THREE.Vector3 | null = null
+      for (const direction of directions) for (const reach of [PLAYER_RADIUS * 2 + 0.18, PLAYER_RADIUS * 2 + 0.45, PLAYER_RADIUS + 0.12]) {
+        if (exit) break
+        const landing = state.position.clone().addScaledVector(direction, reach)
+        const ray = new THREE.Ray(landing.clone().add(new THREE.Vector3(0, 0.45, 0)), new THREE.Vector3(0, -1, 0))
+        const hit = collider.bvh?.raycastFirst(ray, THREE.DoubleSide, 0, 0.85)
+        let support = hit?.face && hit.face.normal.y > 0.55 ? hit.point.y : null
+        for (const box of collider.boxes) {
+          const offset = ray.origin.clone().sub(box.center)
+          if (box.axes[1].y > 0.99 && Math.abs(offset.dot(box.axes[0])) <= box.half.x && Math.abs(offset.dot(box.axes[2])) <= box.half.z) {
+            const top = box.center.y + box.half.y
+            if (top <= ray.origin.y && top >= ray.origin.y - 0.85) support = Math.max(support ?? -Infinity, top)
+          }
         }
+        if (support === null || support < state.position.y - 0.12) continue
+        const saved = state.position.clone()
+        state.position.copy(saved).setY(Math.max(saved.y, support + 0.025))
+        let clear = collide(state, collider).lengthSq() < 1e-8
+        for (let j = 0; j < 8 && clear; j++) {
+          state.position.addScaledVector(direction, reach / 8)
+          clear = collide(state, collider).lengthSq() < 1e-8
+        }
+        if (clear) exit = state.position.clone()
+        state.position.copy(saved)
       }
-      if (support === null) continue
-      const saved = state.position.clone(), candidate = saved.clone().setY(Math.max(saved.y, support + 0.025))
-      state.position.copy(candidate)
-      let clear = collide(state, collider).lengthSq() < 1e-8
-      for (let j = 0; j < 8 && clear; j++) {
-        state.position.addScaledVector(forward, (PLAYER_RADIUS * 2 + 0.18) / 8)
-        clear = collide(state, collider).lengthSq() < 1e-8
-      }
-      if (!clear) { state.position.copy(saved); continue }
+      if (!exit) continue
+      state.position.copy(exit)
       state.climbing = false; state.onGround = true; state.velocity.set(0, 0, 0)
       return
     }

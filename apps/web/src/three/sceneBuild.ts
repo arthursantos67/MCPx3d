@@ -8,6 +8,10 @@ import { prepareTerrainLayers, usesTerrainLayers } from './sceneTerrainMaterial.
 import type { CharacterSkin } from './sceneRuntimeTypes.ts'
 
 export const HELPER_LAYER = 1
+export function pickVisible(object: THREE.Object3D): boolean {
+  for (let current: THREE.Object3D | null = object.userData.skinProxy ? object.parent : object; current; current = current.parent) if (!current.visible) return false
+  return true
+}
 const MIN_BATCH = 3
 const unitScale = new THREE.Vector3()
 
@@ -234,8 +238,7 @@ export function buildScene(doc: ThreeSceneDocument, resources: SceneResources, o
     root.updateMatrixWorld(true)
     for (const skin of options.skins(doc, holders)) {
       skins.set(skin.rootId, skin)
-      for (const id of skin.hidden) { const mesh = meshes.get(id); if (mesh) { mesh.visible = false; mesh.castShadow = false } }
-      for (const mesh of skin.meshes) pickables.push(mesh)
+      for (const id of skin.hidden) { const mesh = meshes.get(id); if (mesh) { mesh.visible = false; mesh.castShadow = false; mesh.userData.skinProxy = true; mesh.userData.skinRoot = skin.rootId } }
     }
   }
   resources.prune()
@@ -247,6 +250,7 @@ export function buildScene(doc: ThreeSceneDocument, resources: SceneResources, o
 
 export function pickNodeId(intersection: THREE.Intersection): string | null {
   const object = intersection.object
+  if (typeof object.userData.skinRoot === 'string') return object.userData.skinRoot
   if (object instanceof THREE.InstancedMesh && intersection.instanceId !== undefined) return (object.userData.nodeIds as string[])[intersection.instanceId] ?? null
   return (object.userData.nodeId as string | undefined) ?? null
 }

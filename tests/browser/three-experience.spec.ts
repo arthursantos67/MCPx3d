@@ -18,6 +18,8 @@ async function exported(page: Page) {
 }
 
 test('creation gives the scene the main area, keeps technical controls optional and expands gameplay', async ({ page }) => {
+  // The 800-node valley is played and rebuilt twice in software WebGL.
+  test.setTimeout(180_000)
   const errors: string[] = []
   page.on('pageerror', (error) => errors.push(error.message))
   page.on('console', (message) => { if (/Shader Error|THREE.WebGLProgram|GL_INVALID/.test(message.text())) errors.push(message.text()) })
