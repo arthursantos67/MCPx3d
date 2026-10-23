@@ -122,6 +122,8 @@ export default function ThreeViewport({ document, selectedId, active, fitRequest
     renderer.domElement.tabIndex = 0
     container.appendChild(renderer.domElement)
     const scene = new THREE.Scene()
+    // World matrices are refreshed once per frame in render(); every composer pass would otherwise recompose all rigs again.
+    scene.matrixWorldAutoUpdate = false
     const content = new THREE.Group()
     scene.add(content)
     const rig = createEnvironmentRig(renderer, scene)
@@ -182,7 +184,7 @@ export default function ThreeViewport({ document, selectedId, active, fitRequest
     outline.visibleEdgeColor.set('#f2a93b'); outline.hiddenEdgeColor.set('#6d4512'); outline.edgeStrength = 4; outline.edgeThickness = 1.2
     outline.enabled = false
     const skyCamera = new THREE.PerspectiveCamera()
-    const skyPass = new RenderPass(scene, skyCamera)
+    const skyPass = new RenderPass(rig.skyScene, skyCamera)
     skyPass.clear = false
     composer.addPass(new RenderPass(scene, camera))
     composer.addPass(occlusion)
@@ -204,13 +206,13 @@ export default function ThreeViewport({ document, selectedId, active, fitRequest
     let lastTimestamp: number | null = null, lastReport = 0, fpsFrames = 0, fpsStarted = 0, statsReported = 0
     let selected: string | null = null, gizmoMode: GizmoMode = 'translate', snapping = false
     let proxies: THREE.Mesh[] = [], suppressed = new Set<string>()
-    let enabled = false, lost = false, disposed = false, frame = 0
+    let enabled = false, lost = false, disposed = false, frame = 0, ready = true, warming = 0
     interface EnemyState extends EnemyMotion { radius:number; height:number; eyeHeight:number; moved: boolean; attackTime: number; step: EnemyStep | null; shown: THREE.Vector3 | null; equipment?: Equipment; shotPending?: boolean; strikeHit?: boolean }
     let game: { runtime: SceneRuntime; player: PlayerState; input: PlayerInput; collider: PlayerCollider; saved: { position: THREE.Vector3; target: THREE.Vector3; fov: number; near: number; far: number }; last: number | null; aim: string | null; strike: string | null; hud: string; locked: boolean; help: boolean
       view: 'first' | 'third'; spawn: THREE.Vector3; stride: number; sounds: SceneNode[]; projectiles: Projectile[]; attackCooldown: number; swing: number; hudAt: number; platforms: Map<string, THREE.Matrix4>
       modes: Map<string, string>; rigMotion: Map<string, CharacterMotion>; avatarRig: { built: BuiltScene; resources: SceneResources; binding: RigBinding; animator: Animator; feet: FootIKMemory; springs: SpringSystem; equipment: Equipment; climb: ClimbMemory; ladder: Ladder | null; seenHurt: number; seenSwing: number }; swings: number; heavy: boolean; meleeHits: Set<string>; blade: THREE.Line3 | null; dialogue: { id: string; name: string; line: string; index: number; total: number; until: number } | null; spawnNotice: number; enemies: Map<string, EnemyState>; enemyParts:Set<string>; parts: Map<string, SceneNode[]>; water: number | null; avatar: THREE.Group; hurt: number; goalCooldown: number; nav: NavigationMesh | null; router: Router; routines: Map<string, RoutinePlan>; guards: Set<string>
       paused: boolean; dismissed: boolean; interacted: boolean; device: 'keyboard' | 'gamepad'; pad: GamepadState; stamina: number; dodge: number; dodged: boolean; damageTaken: number; falls: number; lastHealth: number
-      subtitle: { speaker: string; text: string; until: number } | null; greeted: Map<string, number>; omitted: number } | null = null
+      subtitle: { speaker: string; text: string; until: number } | null; greeted: Map<string, number>; omitted: number; aimables: THREE.Object3D[] } | null = null
     /** The third-person avatar is compiled from the same procedural parts and rig as scene characters, with its own GPU resources. */
     const createAvatar = (kind: typeof avatarKinds[number], weapon: WeaponKind) => {
       const { built: avatarBuilt, resources: avatarResources, binding } = buildPlayerAvatar(kind, { quality, shadows: doc?.environment.shadows ?? true }, weapon)
@@ -246,6 +248,7 @@ export default function ThreeViewport({ document, selectedId, active, fitRequest
       renderer.info.reset()
       if (game) rig.frame(game.player.position,24)
       rig.follow(camera)
+      scene.updateMatrixWorld()
       built?.updateShadows(game?game.player.position:controls.target)
       skyPass.enabled = rig.skyVisible()
       skyCamera.copy(camera)
@@ -357,6 +360,7 @@ export default function ThreeViewport({ document, selectedId, active, fitRequest
       } else {
         camera.add(equipment.object)
         poseFirstPersonEquipment(equipment, avatar.animator)
+        equipment.object.updateMatrixWorld()
       }
       equipment.object.visible = !state.paused && runtime.outcome === 'playing' && !player.climbing
       if (pose.events.includes('attackStart')) { state.meleeHits.clear(); state.blade = null }
@@ -371,9 +375,17 @@ export default function ThreeViewport({ document, selectedId, active, fitRequest
         }
       }
       if (stats.kind === 'melee' && sw && a.time >= sw.a && a.time - delta <= sw.a + sw.s) {
-        const source = player.position.clone().add(new THREE.Vector3(0, 1.1, 0)), previous = state.blade ?? blade
+        const source = player.position.clone().add(new THREE.Vector3(0, 1.1, 0)), path = [state.blade ?? blade]
+        // A long frame would join two distant blade poses with a straight chord that cuts inside the arc; the first-person pose is sampled at 60 Hz instead.
+        if (state.view === 'first' && delta > 1 / 60) {
+          const now = a.time, steps = Math.ceil(delta * 60)
+          for (let i = 1; i < steps; i++) { a.time = now - delta * (1 - i / steps); poseFirstPersonEquipment(equipment, a); equipment.object.updateMatrixWorld(); path.push(equipment.segment()) }
+          a.time = now; poseFirstPersonEquipment(equipment, a); equipment.object.updateMatrixWorld()
+        }
+        path.push(blade)
         const targets = foeTargets(state), npcs = [...state.enemies.keys()].filter((id) => byId.get(id)?.behavior?.type === 'npc' && !runtime.hidden.has(id)).flatMap((id) => partBoxes(state, id, true).map((box) => ({ id, box })))
-        for (const id of sweptMeleeTargets(previous, blade, equipment.radius, [...targets, ...npcs], combatCollider, source)) {
+        const struck = new Set(path.slice(1).flatMap((segment, i) => sweptMeleeTargets(path[i], segment, equipment.radius, [...targets, ...npcs], combatCollider, source)))
+        for (const id of struck) {
           if (state.meleeHits.has(id)) continue
           state.meleeHits.add(id)
           if (byId.get(id)?.behavior?.type === 'npc') provokeNpc(state.enemies.get(id)!, player.position, byId.get(id)!.behavior!.reaction)
@@ -474,7 +486,7 @@ export default function ThreeViewport({ document, selectedId, active, fitRequest
       }
       for (const id of built!.dynamic) built!.holders.get(id)!.visible = runtimeVisible(runtime, byId.get(id)!)
       for (const [id, motion] of state.rigMotion) if (runtime.defeated.has(id) && motion.collapse < 1) built!.holders.get(id)!.visible = true
-      scene.updateMatrixWorld(true)
+      scene.updateMatrixWorld()
       const surfaces = (include: (id: string) => boolean) => [...built!.dynamic].filter(include).flatMap((id) => {
         const node = byId.get(id)!, holder = built!.holders.get(id)!
         if (!hasSurface(node.kind) || node.collidable === false || !visible(holder)) return []
@@ -533,8 +545,8 @@ export default function ThreeViewport({ document, selectedId, active, fitRequest
         if (holder.parent) { holder.position.copy(holder.parent.worldToLocal(world)); heading.premultiply(holder.parent.getWorldQuaternion(new THREE.Quaternion()).invert()) }
         else holder.position.copy(world)
         holder.quaternion.copy(heading)
+        holder.updateMatrixWorld()
       }
-      scene.updateMatrixWorld(true)
       state.collider.boxes = surfaces(() => true).map((item) => item.box)
       const modifiers = playerModifiers(runtime)
       const fall = player.velocity.y, wasGrounded = player.onGround, wantsJump = input.jump
@@ -627,7 +639,9 @@ export default function ThreeViewport({ document, selectedId, active, fitRequest
       }
       raycaster.set(head, new THREE.Vector3(0, 0, -1).applyEuler(orientation))
       raycaster.far = 50
-      const hit = raycaster.intersectObjects(built!.pickables, false).find((item) => pickVisible(item.object) && !(item.object.layers.mask === 1 << HELPER_LAYER) )
+      // Only targets and moving parts are tested per triangle; the static collider's BVH stands in for every other wall.
+      const wall = state.collider.bvh?.raycastFirst(raycaster.ray, THREE.DoubleSide, 0, 50)?.distance ?? Infinity
+      const hit = raycaster.intersectObjects(state.aimables, false).find((item) => item.distance <= wall + 0.01 && pickVisible(item.object) && !(item.object.layers.mask === 1 << HELPER_LAYER))
       const chain = hit ? nodeChain(pickNodeId(hit)) : []
       const weapon = settings.weapon ?? 'none', reach = weaponStats[weapon].kind === 'melee' ? weaponStats[weapon].range : weaponStats[weapon].range
       const foe = hit && hit.distance <= reach ? chain.find((node) => node.behavior?.type === 'enemy' && activeEnemy(runtime, node.id)) : undefined
@@ -690,6 +704,7 @@ export default function ThreeViewport({ document, selectedId, active, fitRequest
     const draw = (timestamp: number) => {
       frame = 0
       if (!enabled || lost || disposed || !container.clientWidth || !container.clientHeight || !built) return
+      if (!ready) { if (game) { game.last = null; frame = requestAnimationFrame(draw) } return }
       if (game) { gameFrame(timestamp); frame = requestAnimationFrame(draw); return }
       if (playback) {
         if (lastTimestamp !== null) time = (time + Math.min((timestamp - lastTimestamp) / 1000, 0.1)) % duration
@@ -702,12 +717,26 @@ export default function ThreeViewport({ document, selectedId, active, fitRequest
         holder.rotation.set(...pose.rotation.map(THREE.MathUtils.degToRad) as [number, number, number])
         holder.scale.fromArray(pose.scale)
       }
-      scene.updateMatrixWorld(true)
+      scene.updateMatrixWorld()
       render()
       if (playback) { countFrame(timestamp); if (timestamp - lastReport > 100) { lastReport = timestamp; callbacks.current.onTimeChange(time) } }
       if ((playback || (presenting && ambientMotion)) && enabled && !lost && !disposed) frame = requestAnimationFrame(draw)
     }
     const invalidate = () => { if (enabled && !lost && !disposed && !frame) frame = requestAnimationFrame(draw) }
+    /** Links new shader programs in parallel before the first frame that needs them; otherwise each first use blocks the page until the driver finishes. */
+    const warmUp = () => {
+      const token = ++warming
+      ready = false
+      // Programs depend on which lights cast shadows, so the scheduler picks them before compiling.
+      scene.updateMatrixWorld(true)
+      built?.updateShadows(game ? game.player.position : controls.target)
+      // The composer draws the scene into its buffer, whose tone mapping and color space are part of each program's key.
+      const output = renderer.getRenderTarget()
+      renderer.setRenderTarget(composer.readBuffer)
+      const compiled = Promise.all([renderer.compileAsync(scene, camera), renderer.compileAsync(rig.skyScene, camera)])
+      renderer.setRenderTarget(output)
+      void compiled.catch(() => {}).then(() => { if (token === warming && !disposed) { ready = true; invalidate() } })
+    }
     const resize = () => {
       const width = container.clientWidth, height = container.clientHeight
       if (!width || !height) return
@@ -753,6 +782,8 @@ export default function ThreeViewport({ document, selectedId, active, fitRequest
       outline.enabled = objects.length > 0
       const node = byId.get(selected)!
       if (gizmoMode && node.animation.kind === 'none') {
+        built.holders.get(selected)!.matrixAutoUpdate = true
+        for (let object: THREE.Object3D | null = built.holders.get(selected)!; object; object = object.parent) object.matrixWorldAutoUpdate = true
         transform.attach(built.holders.get(selected)!)
         transform.setMode(gizmoMode)
         transform.setSpace(gizmoMode === 'translate' ? 'world' : 'local')
@@ -1003,6 +1034,8 @@ export default function ThreeViewport({ document, selectedId, active, fitRequest
         }
         enemy.equipment = equipment
       }
+      const aimable = (id: string | undefined) => !!id && (built!.dynamic.has(id) || nodeChain(id).some((node) => node.behavior?.type === 'enemy' || node.interaction?.trigger === 'click'))
+      const aimables = built.pickables.filter((object) => (object.userData.skinRoot ? [object.userData.skinRoot as string] : (object.userData.nodeIds as string[] | undefined) ?? [object.userData.nodeId as string | undefined]).some(aimable))
       const avatarRig = createAvatar(settings.avatar ?? 'explorer', settings.weapon ?? 'none'), avatar = new THREE.Group()
       avatar.add(avatarRig.built.root)
       avatar.rotation.y = THREE.MathUtils.degToRad(settings.yaw) + Math.PI
@@ -1016,7 +1049,7 @@ export default function ThreeViewport({ document, selectedId, active, fitRequest
         saved: { position: camera.position.clone(), target: controls.target.clone(), fov: camera.fov, near: camera.near, far: camera.far }, last: null, aim: null, strike: null, hud: '', locked: false, help: false,
         view: settings.camera ?? 'first', spawn: spawn.clone(), stride: 0, sounds: doc.nodes.filter((node) => node.sound), projectiles: [], attackCooldown: 0, swing: 0, hudAt: 0, platforms: new Map(), modes: new Map(), rigMotion: new Map(), avatarRig, swings: 0, heavy: false, meleeHits: new Set(), blade: null, dialogue: null, spawnNotice: -10, enemies, enemyParts:new Set([...enemies.keys()].flatMap(id=>[...subtreeIds(doc!.nodes,id)])),parts, water, avatar, hurt: 0, goalCooldown: 0,
         nav: null, router: createRouter(null), routines, paused: false, dismissed: false, interacted: false, device: 'keyboard', pad: createGamepadState(), stamina: 100, dodge: 0, dodged: false,
-        damageTaken: 0, falls: 0, lastHealth: settings.health ?? 100, subtitle: null, greeted: new Map(), omitted, guards: new Set([...enemies.keys()].filter((id) => isGuardPlan(routines.get(id)))) }
+        damageTaken: 0, falls: 0, lastHealth: settings.health ?? 100, subtitle: null, greeted: new Map(), omitted, aimables, guards: new Set([...enemies.keys()].filter((id) => isGuardPlan(routines.get(id)))) }
       const session = game
       if (enemies.size) void buildNavigation(entries, focus, { radius: 0.35, height: 1.7, climb: 0.27 }, { floor }).then((nav) => {
         if (game === session && nav) { game.nav = nav; game.router = createRouter(nav) } else nav?.dispose()
@@ -1027,6 +1060,7 @@ export default function ThreeViewport({ document, selectedId, active, fitRequest
       camera.updateProjectionMatrix()
       renderer.domElement.focus()
       if (frame) { cancelAnimationFrame(frame); frame = 0 }
+      warmUp()
       invalidate()
     }
     const stopGame = (rebuild = true) => {
@@ -1116,6 +1150,7 @@ export default function ThreeViewport({ document, selectedId, active, fitRequest
           ground.scale.set(radius * 4, radius * 4, 1)
         }
         applySelection()
+        warmUp()
         invalidate()
       },
       select(id) { selected = id; applySelection(); invalidate() },

@@ -77,6 +77,8 @@ export function timeOfDayLighting(env: SceneEnvironment, day: DayState): TimeOfD
 export interface EnvironmentRig {
   /** True when the procedural sky is drawn in its own pass, after bloom and behind scene depth. */
   skyVisible: () => boolean
+  /** The sky pass draws this scene: rendering the main scene through a sky-only camera would hide its lights and invalidate every material's program each frame. */
+  skyScene: THREE.Scene
   sun: THREE.DirectionalLight
   hemisphere: THREE.HemisphereLight
   /** Applies the preset and returns the effective tone-mapping exposure. */
@@ -104,7 +106,8 @@ export function createEnvironmentRig(renderer: THREE.WebGLRenderer, scene: THREE
   const sky = createSky()
   sky.layers.set(SKY_LAYER)
   sky.visible = false
-  scene.add(sky)
+  const skyScene = new THREE.Scene()
+  skyScene.add(sky)
   const starPositions: number[] = []
   for (let i = 0; i < 2600; i++) {
     const u = hashNoise(i, 1, 7) * 2 - 1, theta = hashNoise(i, 2, 7) * Math.PI * 2, r = Math.sqrt(1 - u * u)
@@ -117,17 +120,17 @@ export function createEnvironmentRig(renderer: THREE.WebGLRenderer, scene: THREE
   scene.add(stars)
   let skyTarget: THREE.WebGLRenderTarget | null = null, skyKey = '', direction = new THREE.Vector3(1, 2, 1.5).normalize(), shadowRadius = 24
   let cycle = false, stamp: ReflectionStamp | null = null
+  // One persistent probe: disposing it after each capture released its program, recompiling the sky shader on every day-cycle refresh.
+  const probe = createSky(), captureScene = new THREE.Scene().add(probe)
+  probe.scale.setScalar(50)
+  probe.material.uniforms.showSunDisc.value = 0
   const capture = (key: string, settings: SkyParameters, sunPosition: THREE.Vector3, fade: number) => {
     if (key !== skyKey || !skyTarget) {
-      const probe = createSky(), uniforms = probe.material.uniforms
-      probe.scale.setScalar(50)
       skyParameters(probe, settings)
-      uniforms.showSunDisc.value = 0; uniforms.uDay.value = fade
-      uniforms.sunPosition.value.copy(sunPosition)
-      const captureScene = new THREE.Scene().add(probe)
+      probe.material.uniforms.uDay.value = fade
+      probe.material.uniforms.sunPosition.value.copy(sunPosition)
       skyTarget?.dispose()
       skyTarget = pmrem.fromScene(captureScene, 0, 0.1, 100)
-      probe.geometry.dispose(); probe.material.dispose()
       skyKey = key
     }
     return skyTarget.texture
@@ -138,6 +141,7 @@ export function createEnvironmentRig(renderer: THREE.WebGLRenderer, scene: THREE
     if (cycle === value) return
     cycle = value
     stars.layers.set(value ? SKY_LAYER : 0)
+    ;(value ? skyScene : scene).add(stars)
     stars.renderOrder = value ? 1 : 0
     stars.material.transparent = value
     stars.material.opacity = 1
@@ -146,7 +150,7 @@ export function createEnvironmentRig(renderer: THREE.WebGLRenderer, scene: THREE
   }
   const placeSun = () => sun.position.copy(sun.target.position).addScaledVector(direction, shadowRadius * 2.5)
   return {
-    sun, hemisphere, skyVisible: () => sky.visible,
+    sun, hemisphere, skyScene, skyVisible: () => sky.visible,
     apply(env) {
       const preset = env.sky ?? 'studio', strength = env.lightIntensity
       direction = sunDirection(env)
@@ -231,9 +235,9 @@ export function createEnvironmentRig(renderer: THREE.WebGLRenderer, scene: THREE
       stars.position.copy(camera.position); stars.scale.setScalar(far * 0.45)
     },
     dispose() {
-      studio.dispose(); skyTarget?.dispose(); pmrem.dispose()
+      studio.dispose(); skyTarget?.dispose(); pmrem.dispose(); probe.geometry.dispose(); probe.material.dispose()
       sky.geometry.dispose(); sky.material.dispose(); starGeometry.dispose(); stars.material.dispose()
-      scene.remove(hemisphere, sun, sun.target, sky, stars)
+      scene.remove(hemisphere, sun, sun.target, stars); skyScene.remove(sky, stars)
     },
   }
 }

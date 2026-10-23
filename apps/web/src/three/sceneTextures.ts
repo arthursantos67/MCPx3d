@@ -107,31 +107,39 @@ function sample(kind: SurfaceTextureKind, u: number, v: number): Sample {
 
 function generate(kind: SurfaceTextureKind): TextureData {
   const color = new Uint8Array(SIZE * SIZE * 4), normal = new Uint8Array(SIZE * SIZE * 4), rough = new Uint8Array(SIZE * SIZE * 4), heights = new Float32Array(SIZE * SIZE)
-  for (let y = 0; y < SIZE; y++) for (let x = 0; x < SIZE; x++) {
-    const s = sample(kind, x / SIZE, y / SIZE), index = y * SIZE + x
+  const byte = (value: number) => Math.round(clamp01(value) * 255)
+  for (let y = 0, index = 0; y < SIZE; y++) for (let x = 0; x < SIZE; x++, index++) {
+    const s = sample(kind, x / SIZE, y / SIZE), o = index * 4
     heights[index] = s.height
-    color.set([Math.round(clamp01(s.rgb[0] / 255) * 255), Math.round(clamp01(s.rgb[1] / 255) * 255), Math.round(clamp01(s.rgb[2] / 255) * 255), Math.round((s.alpha??1)*255)], index * 4)
-    rough.set([255, Math.round(clamp01(s.rough) * 255), 255, 255], index * 4)
+    color[o] = byte(s.rgb[0] / 255); color[o + 1] = byte(s.rgb[1] / 255); color[o + 2] = byte(s.rgb[2] / 255); color[o + 3] = Math.round((s.alpha ?? 1) * 255)
+    rough[o] = 255; rough[o + 1] = byte(s.rough); rough[o + 2] = 255; rough[o + 3] = 255
   }
-  for (let y = 0; y < SIZE; y++) for (let x = 0; x < SIZE; x++) {
-    const h = (i: number, j: number) => heights[((j + SIZE) % SIZE) * SIZE + (i + SIZE) % SIZE]
+  const h = (i: number, j: number) => heights[((j + SIZE) % SIZE) * SIZE + (i + SIZE) % SIZE]
+  for (let y = 0, o = 0; y < SIZE; y++) for (let x = 0; x < SIZE; x++, o += 4) {
     const dx = (h(x + 1, y) - h(x - 1, y)) * 4, dy = (h(x, y + 1) - h(x, y - 1)) * 4, length = Math.hypot(dx, dy, 1)
-    normal.set([Math.round((-dx / length * 0.5 + 0.5) * 255), Math.round((-dy / length * 0.5 + 0.5) * 255), Math.round((1 / length * 0.5 + 0.5) * 255), 255], (y * SIZE + x) * 4)
+    normal[o] = Math.round((-dx / length * 0.5 + 0.5) * 255); normal[o + 1] = Math.round((-dy / length * 0.5 + 0.5) * 255); normal[o + 2] = Math.round((1 / length * 0.5 + 0.5) * 255); normal[o + 3] = 255
   }
   return { color, normal, rough }
 }
 
 /** Deterministic, seamless UV textures generated locally without CDN/image dependencies. */
+const sources = new Map<string, THREE.DataTexture>()
+/** Deterministic, seamless UV textures generated locally without CDN/image dependencies. Every scale clones one texture, so the GPU holds a single upload per kind and channel. */
 export function proceduralTexture(kind: SurfaceTextureKind, channel: 'map' | 'normal' | 'rough', scale = 1): THREE.DataTexture {
-  if (!cache.has(kind)) cache.set(kind, generate(kind))
-  const data = cache.get(kind)!
-  const result = new THREE.DataTexture(channel === 'map' ? data.color : channel === 'normal' ? data.normal : data.rough, SIZE, SIZE, THREE.RGBAFormat)
-  result.colorSpace = channel === 'map' ? THREE.SRGBColorSpace : THREE.NoColorSpace
-  result.wrapS = result.wrapT = THREE.RepeatWrapping
+  const key = `${kind}:${channel}`
+  if (!sources.has(key)) {
+    if (!cache.has(kind)) cache.set(kind, generate(kind))
+    const data = cache.get(kind)!
+    const base = new THREE.DataTexture(channel === 'map' ? data.color : channel === 'normal' ? data.normal : data.rough, SIZE, SIZE, THREE.RGBAFormat)
+    base.colorSpace = channel === 'map' ? THREE.SRGBColorSpace : THREE.NoColorSpace
+    base.wrapS = base.wrapT = THREE.RepeatWrapping
+    base.generateMipmaps = true
+    base.minFilter = THREE.LinearMipmapLinearFilter
+    base.magFilter = THREE.LinearFilter
+    base.needsUpdate = true
+    sources.set(key, base)
+  }
+  const result = sources.get(key)!.clone()
   result.repeat.set(scale, scale)
-  result.generateMipmaps = true
-  result.minFilter = THREE.LinearMipmapLinearFilter
-  result.magFilter = THREE.LinearFilter
-  result.needsUpdate = true
   return result
 }

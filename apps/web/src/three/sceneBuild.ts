@@ -13,6 +13,13 @@ export function pickVisible(object: THREE.Object3D): boolean {
   return true
 }
 const MIN_BATCH = 3
+/** Translucent glowing surfaces (flames, energy) emit light rather than block it, and small glowing ones (fireflies, bulbs, gems) leave imperceptible shadows.
+ * Letting them cast would force animated fire and fireflies to redraw a nearby light's cube shadow every frame. */
+const castsShadow = (node: SceneNode, collected: Set<string>) => {
+  const { transparent, opacity = 1, emissive = '#000000', emissiveIntensity = 0 } = node.material
+  const glowing = emissiveIntensity >= 1 && emissive !== '#000000'
+  return node.kind !== 'text' && !collected.has(node.id) && !(transparent && opacity < 0.5) && !(glowing && (transparent || Math.max(...node.dimensions) < 0.25))
+}
 const unitScale = new THREE.Vector3()
 
 export interface SceneResources {
@@ -124,6 +131,7 @@ export interface BuiltScene {
   dynamic: Set<string>
   /** Recomputes instance matrices; suppressed instances collapse while a regular proxy replaces them. */
   sync: (suppressed?: Set<string>) => void
+  /** Expects current world matrices. */
   updateShadows: (focus:THREE.Vector3) => void
   /** Continuous skinned bodies by character root id; their rigid proxies stay in `meshes` but are hidden. */
   skins: Map<string, CharacterSkin>
@@ -136,6 +144,22 @@ export interface BuildOptions {
   /** Replaces the cached geometry of a node (e.g. tessellated water). */
   geometry?: (node: SceneNode) => THREE.BufferGeometry | null
   skins?: (doc: ThreeSceneDocument, holders: Map<string, THREE.Object3D>) => CharacterSkin[]
+}
+const CHUNKS_PER_AXIS = 4, MIN_CHUNK = 24, CHUNKED_TRIANGLES = 30000
+const chunkPoint = new THREE.Vector3()
+/** Splits a heavy batch spread over a large area into up to 4×4 cells, so the camera and the sun's shadow camera can cull the parts out of view. Light batches stay one draw call. */
+function spatialChunks(nodes: SceneNode[], holders: Map<string, THREE.Object3D>, geometry: THREE.BufferGeometry): SceneNode[][] {
+  if (nodes.length * (geometry.index?.count ?? geometry.attributes.position.count) / 3 < CHUNKED_TRIANGLES) return [nodes]
+  const points = nodes.map((node) => holders.get(node.id)!.getWorldPosition(chunkPoint).clone())
+  const min = points.reduce((a, p) => a.min(p), points[0].clone()), max = points.reduce((a, p) => a.max(p), points[0].clone())
+  const cell = Math.max(MIN_CHUNK, (max.x - min.x) / CHUNKS_PER_AXIS, (max.z - min.z) / CHUNKS_PER_AXIS)
+  if (max.x - min.x <= cell && max.z - min.z <= cell) return [nodes]
+  const cells = new Map<string, SceneNode[]>()
+  nodes.forEach((node, i) => {
+    const key = `${Math.min(CHUNKS_PER_AXIS - 1, Math.floor((points[i].x - min.x) / cell))},${Math.min(CHUNKS_PER_AXIS - 1, Math.floor((points[i].z - min.z) / cell))}`
+    cells.set(key, [...cells.get(key) ?? [], node])
+  })
+  return [...cells.values()]
 }
 export function surfaceMatrix(holder: THREE.Object3D, node: SceneNode, target = new THREE.Matrix4()): THREE.Matrix4 {
   return target.copy(holder.matrixWorld).scale(unitScale.fromArray(node.dimensions))
@@ -154,7 +178,8 @@ export function buildScene(doc: ThreeSceneDocument, resources: SceneResources, o
   }
   const characters = new Set(doc.nodes.filter((node) => node.asset && isCharacterType(node.asset.type)).flatMap((node) => [...subtreeIds(doc.nodes, node.id)]))
   const variants = new Map(doc.nodes.map((node) => [node.id, hasSurface(node.kind) ? options.variant?.(node) ?? null : null]))
-  const material = (node: SceneNode) => { const variant = variants.get(node.id); return resources.material(node, doc.environment.wireframe, variant?.key, variant?.prepare) }
+  // Instanced and regular meshes never share a material: alternating between them makes the renderer re-derive the program on every draw.
+  const material = (node: SceneNode, instanced = false) => { const variant = variants.get(node.id); return resources.material(node, doc.environment.wireframe, instanced ? `${variant?.key ?? ''}#instanced` : variant?.key, variant?.prepare) }
   const geometry = (node: SceneNode) => options.geometry?.(node) ?? resources.geometry(node)
   const hiddenChain = (node: SceneNode): boolean => !node.visible || (!!node.parentId && hiddenChain(byId.get(node.parentId)!))
   const batches = new Map<string, SceneNode[]>()
@@ -179,7 +204,7 @@ export function buildScene(doc: ThreeSceneDocument, resources: SceneResources, o
       const depth = variants.get(node.id)?.depth?.()
       if (depth) mesh.customDepthMaterial = depth
       mesh.scale.fromArray(node.dimensions)
-      mesh.castShadow = node.kind !== 'text' && !collected.has(node.id) && !(node.material.transparent && (node.material.opacity ?? 1) < 0.5)
+      mesh.castShadow = castsShadow(node, collected)
       mesh.receiveShadow = true
       mesh.userData.nodeId = node.id
       mesh.name = node.name
@@ -211,12 +236,12 @@ export function buildScene(doc: ThreeSceneDocument, resources: SceneResources, o
   }
   for (const node of doc.nodes) (holders.get(node.parentId ?? '') ?? root).add(holders.get(node.id)!)
   const batchMeshes: THREE.InstancedMesh[] = []
-  for (const nodes of batches.values()) {
-    if (nodes.length < MIN_BATCH) continue
-    const mesh = new THREE.InstancedMesh(resources.geometry(nodes[0]), material(nodes[0]), nodes.length)
+  root.updateMatrixWorld(true)
+  for (const nodes of [...batches.values()].filter((group) => group.length >= MIN_BATCH).flatMap((group) => spatialChunks(group, holders, resources.geometry(group[0])))) {
+    const mesh = new THREE.InstancedMesh(resources.geometry(nodes[0]), material(nodes[0], true), nodes.length)
     const depth = variants.get(nodes[0].id)?.depth?.()
     if (depth) mesh.customDepthMaterial = depth
-    mesh.castShadow = true
+    mesh.castShadow = castsShadow(nodes[0], collected)
     mesh.receiveShadow = true
     mesh.userData.nodeIds = nodes.map((node) => node.id)
     mesh.name = `${nodes[0].name} ×${nodes.length}`
@@ -241,10 +266,24 @@ export function buildScene(doc: ThreeSceneDocument, resources: SceneResources, o
       for (const id of skin.hidden) { const mesh = meshes.get(id); if (mesh) { mesh.visible = false; mesh.castShadow = false; mesh.userData.skinProxy = true; mesh.userData.skinRoot = skin.rootId } }
     }
   }
+  // Static parts keep their local matrices, and wholly static subtrees are skipped by per-frame world updates; only what can move is recomposed.
+  const fixed = (node: SceneNode) => !dynamic.has(node.id) && !characters.has(node.id)
+  const children = new Map<string, SceneNode[]>()
+  for (const node of doc.nodes) if (node.parentId) children.set(node.parentId, [...children.get(node.parentId) ?? [], node])
+  const settled = new Map<string, boolean>()
+  const frozen = (node: SceneNode): boolean => {
+    if (!settled.has(node.id)) settled.set(node.id, fixed(node) && (children.get(node.id) ?? []).every(frozen))
+    return settled.get(node.id)!
+  }
+  for (const node of doc.nodes) if (fixed(node)) {
+    for (const object of [holders.get(node.id)!, meshes.get(node.id)]) if (object) { object.matrixAutoUpdate = false; object.updateMatrix() }
+    if (frozen(node)) holders.get(node.id)!.matrixWorldAutoUpdate = false
+  }
+  root.updateMatrixWorld(true)
   resources.prune()
   const shadowScheduler=createShadowScheduler([...lights].filter(([id])=>byId.get(id)?.light?.castShadow).map(([id,light])=>({id,light})),
-    doc.nodes.filter(node=>hasSurface(node.kind)&&node.kind!=='text'&&!collected.has(node.id)&&meshes.get(node.id)?.visible!==false&&!(node.material.transparent&&(node.material.opacity??1)<0.5)).map(node=>({id:node.id,object:holders.get(node.id)!,dimensions:node.dimensions})))
-  return { root, holders, meshes, instances, lights, pickables, dynamic, sync, skins,updateShadows:focus=>{root.updateWorldMatrix(true,true);shadowScheduler.update(focus)},
+    doc.nodes.filter(node=>hasSurface(node.kind)&&castsShadow(node,collected)&&meshes.get(node.id)?.visible!==false).map(node=>({id:node.id,object:holders.get(node.id)!,dimensions:node.dimensions})))
+  return { root, holders, meshes, instances, lights, pickables, dynamic, sync, skins,updateShadows:focus=>{shadowScheduler.update(focus)},
     dispose() { shadowScheduler.dispose();for (const skin of skins.values()) { skin.object.removeFromParent(); skin.dispose() };for (const mesh of batchMeshes) mesh.dispose(); for (const resource of helperResources) resource.dispose(); for (const light of lights.values()) light.dispose() } }
 }
 

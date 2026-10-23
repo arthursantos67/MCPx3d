@@ -5,9 +5,12 @@ export interface ShadowSource { id:string; light:THREE.PointLight|THREE.SpotLigh
 const visible=(object:THREE.Object3D)=>{for(let p:THREE.Object3D|null=object;p;p=p.parent) if(!p.visible) return false;return true}
 const release=(light:THREE.PointLight|THREE.SpotLight)=>{light.shadow.dispose();light.shadow.map=null;light.shadow.mapPass=null;light.castShadow=false}
 
-/** Shadow maps of static fixtures are reused; the four nearest useful lights own the GPU budget. */
+/** Shadow maps of static fixtures are reused; the nearest useful lights own the GPU budget.
+ * Slots are fixed per light type: shader programs depend on how many point and spot lights cast shadows, so a changing count would recompile every material mid-game. */
 export function createShadowScheduler(sources:ShadowSource[],casters:ShadowCaster[],budget=4) {
   const history=new Map<string,{matrix:THREE.Matrix4;visible:boolean;bounds:THREE.Box3}>(),lightMatrices=new Map<string,THREE.Matrix4>()
+  const points=sources.filter(({light})=>light instanceof THREE.PointLight).length,spots=sources.length-points
+  const pointSlots=Math.min(points,budget-Math.min(spots,Math.floor(budget/2))),slots={point:pointSlots,spot:Math.min(spots,budget-pointSlots)}
   let active=new Set<string>()
   for(const {light} of sources) {
     light.castShadow=false;light.shadow.autoUpdate=false;light.shadow.mapSize.set(1024,1024)
@@ -24,15 +27,19 @@ export function createShadowScheduler(sources:ShadowSource[],casters:ShadowCaste
         if(shown) changed.push(bounds)
         history.set(caster.id,{matrix,visible:shown,bounds})
       }
-      const candidates=sources.filter(({light})=>visible(light)&&light.intensity>0).map(source=>({ ...source,score:source.light.getWorldPosition(new THREE.Vector3()).distanceTo(focus)/Math.max(4,source.light.distance||100) }))
-        .sort((a,b)=>a.score-b.score||a.id.localeCompare(b.id)).slice(0,budget)
+      // Unlit lights (a day cycle dims practical lamps) keep their slot without redrawing; they still lose it to nearer lit ones.
+      const ranked=sources.filter(({light})=>visible(light)).map(source=>({ ...source,lit:source.light.intensity>0,score:source.light.getWorldPosition(point).distanceTo(focus)/Math.max(4,source.light.distance||100) }))
+        .sort((a,b)=>Number(b.lit)-Number(a.lit)||a.score-b.score||a.id.localeCompare(b.id))
+      const candidates=[...ranked.filter(({light})=>light instanceof THREE.PointLight).slice(0,slots.point),...ranked.filter(({light})=>!(light instanceof THREE.PointLight)).slice(0,slots.spot)]
+        .sort((a,b)=>Number(b.lit)-Number(a.lit)||a.score-b.score||a.id.localeCompare(b.id))
       const next=new Set(candidates.map(source=>source.id)),refreshed:string[]=[]
       for(const source of sources) if(active.has(source.id)&&!next.has(source.id)) release(source.light)
-      for(const {id,light} of candidates) {
+      for(const {id,light,lit} of candidates) {
+        light.castShadow=true
+        if(!lit) { lightMatrices.delete(id); continue }
         const moved=!lightMatrices.get(id)?.equals(light.matrixWorld),fresh=!active.has(id)
         const position=light.getWorldPosition(point)
         if(fresh || moved || changed.some(bounds=>bounds.distanceToPoint(position)<(light.distance||Infinity))) {light.shadow.needsUpdate=true;refreshed.push(id)}
-        light.castShadow=true
         lightMatrices.set(id,light.matrixWorld.clone())
       }
       active=next

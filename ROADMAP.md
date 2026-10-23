@@ -1,6 +1,6 @@
 # Forma — roteiro até a versão 1.0
 
-Atualizado em 2026-10-22, com as prioridades do usuário para a 0.6 (personagens, HUD, animação) e a 0.7 (mundos vastos). Complementa o [PRD](PRD.md), o [estado atual](ISSUES.md) e a [arquitetura](docs/architecture.md). Datas são ordem de prioridade, não compromissos de calendário.
+Atualizado em 2026-10-23, com as prioridades do usuário para a 0.6 (personagens, HUD, animação) e a 0.7 (mundos vastos, com orçamento de desempenho e regra de não regressão). Complementa o [PRD](PRD.md), o [estado atual](ISSUES.md) e a [arquitetura](docs/architecture.md). Datas são ordem de prioridade, não compromissos de calendário.
 
 ## Visão da 1.0
 
@@ -76,27 +76,58 @@ X3D
 
 ### 0.7 — Mundos vastos
 
-Hoje as cenas são ilhas e arenas de algumas centenas de metros. A 0.7 cria mundos reais para explorar.
+Hoje as cenas são ilhas e arenas de algumas centenas de metros. A 0.7 cria mundos reais para explorar **sem reduzir o FPS nem a qualidade visual das cenas atuais**. O desempenho é requisito de entrada de cada fase, não um ajuste final.
+
+**Regra de não regressão**
+- Antes de qualquer código da 0.7, um benchmark reproduzível (`scripts/benchmark-three-fps.mjs`): Chrome com GPU real, rota fixa em modo jogo, tempo de quadro (mediana, p95, máximo), quadros > 50 ms, draw calls, triângulos, memória de GPU estimada, tempo até o primeiro quadro jogável e tempo de troca de cena. Linha de base gravada para os exemplos atuais (Vale dos Ventos, Mercado de Valemar, Floresta encantada, Ermo, Ilha do Farol) e anexada a cada fase.
+- Nenhuma fase é concluída se uma cena 1.x existente piorar mais que o ruído medido (mediana ou p95), se surgir quadro > 100 ms durante o jogo, ou se a página bloquear por mais de 100 ms em carga ou streaming.
+- Medição em três classes de GPU (integrada, média, dedicada), declarando o hardware. Sem a máquina de uma classe, o resultado fica "não medido", nunca estimado.
+
+**Orçamento por quadro (16,6 ms em GPU média, 1080p, qualidade média)**
+- CPU da thread principal ≤ 8 ms: simulação e IA de NPCs ≤ 3 ms, preparação de render ≤ 3 ms, streaming (upload e anexação de blocos) ≤ 2 ms com fila fatiada por quadro.
+- GPU: ≤ 1,5 M triângulos somando todas as passadas, ≤ 600 draw calls, sombra do sol limitada ao entorno do jogador, quantidade fixa de luzes pontuais com sombra.
+- Fauna, partículas, grama e personagens com tetos por nível de qualidade, já existentes; personagens distantes com animação em frequência reduzida e sem IK/molas, a partir de distâncias em que a diferença não é visível.
+
+**Arquitetura de desempenho**
+- Geração de relevo, biomas, splat, rios, posicionamento de conteúdo e BVH de colisão em Web Workers, com dados transferíveis; a thread principal só anexa resultados prontos.
+- Blocos (chunks) com LOD contínuo (CDLOD/quadtree, morph entre níveis) escolhido por erro em tela de até 1 pixel, de modo que a troca de nível não seja perceptível. Anéis de streaming: colisão e lógica perto, malha completa no meio, impostores e silhuetas de montanhas no horizonte.
+- Origem flutuante: recentrar o mundo perto do jogador para manter precisão em 4 km, sem tremor de vértices ou de sombras.
+- Instâncias e materiais compartilhados entre blocos; instâncias agrupadas por bloco para descarte por frustum e pela sombra. Assentamentos distantes como HLOD (malha combinada simplificada) ou impostores.
+- Shaders: o conjunto de programas do mundo é compilado com `compileAsync` antes de jogar, no mesmo alvo do compositor. O streaming nunca cria variante nova de material nem altera a contagem de luzes ou sombras durante o jogo, o que recompilaria todos os materiais.
+- Memória: orçamento de GPU por qualidade, descarte dos blocos distantes com histerese e cache em IndexedDB de blocos gerados por semente, para recarga rápida.
+- Escalonamento dinâmico de resolução e de distância de visão fica opcional e desligado por padrão; nunca substitui a otimização sem perda.
 
 **Terreno em escala de quilômetros**
-- Mundo de 4×4 km (alvo inicial) em blocos com streaming e LOD contínuo (CDLOD/quadtree com transição suave), sem limite visível de borda.
-- Geração por mapas de clima (temperatura, umidade, altitude) que definem biomas contínuos; montanhas, vales, planaltos, falésias e litoral; erosão hidráulica simplificada; rios que descem pelo relevo até lagos e mar.
-- Materiais por camadas (splat) com mistura por inclinação, altura e umidade; horizonte distante com montanhas em impostores e dispersão atmosférica.
+- Mundo de 4×4 km (alvo inicial) em blocos com streaming, sem borda visível.
+- Geração por mapas de clima (temperatura, umidade, altitude) com biomas contínuos; montanhas, vales, planaltos, falésias e litoral; erosão hidráulica simplificada, feita em worker; rios que descem pelo relevo até lagos e mar.
+- Materiais por camadas (splat), com mistura por inclinação, altura e umidade, em um único material por bloco; horizonte com impostores e dispersão atmosférica.
 
 **Conteúdo distribuído pelo mundo**
 - Vegetação instanciada por densidade de bioma, com impostores à distância e grama apenas perto da câmera.
-- Assentamentos (vilas, castelos, portos, acampamentos), masmorras, ruínas e marcos posicionados por regras de terreno e conectados por estradas que seguem o relevo.
-- Regiões com identidade (nome, bioma, perigo, música) e transição de ambiência/música ao cruzá-las.
+- Assentamentos (vilas, castelos, portos, acampamentos), masmorras, ruínas e marcos posicionados por regras de terreno e ligados por estradas que seguem o relevo. Locais detalhados são cenas 1.x carregadas por proximidade, compiladas e anexadas fora do caminho crítico.
+- Regiões com identidade (nome, bioma, perigo, música) e transição de ambiência e música ao cruzá-las.
 
 **Geração com IA em duas escalas**
-- A IA produz um **atlas** do mundo (regiões, biomas, cidades, masmorras, rotas e história) e, sob demanda, detalha cada região/local com o pipeline atual de cenas — sem precisar gerar o mundo inteiro numa resposta.
+- A IA produz um **atlas** do mundo (regiões, biomas, cidades, masmorras, rotas e história) e, sob demanda, detalha cada região ou local com o pipeline atual de cenas, sem gerar o mundo inteiro numa resposta.
 - Edição local: "coloque uma vila de pescadores na costa leste" altera só aquela região.
+- O agente recebe orçamentos explícitos no contrato: densidade por bioma, nós por local, luzes com sombra por região. O saneamento aplica esses orçamentos de forma determinística, para que nenhum mundo gerado ultrapasse o limite de desempenho.
 
 **Exploração**
-- Mapa do mundo com névoa de guerra, pontos descobertos e viagem rápida; montaria ou veículo para cruzar distâncias; ciclo dia/noite e clima dinâmico por região.
-- Persistência de mundos e progresso em IndexedDB (e servidor opcional); contrato de mundo (`ThreeWorldDocument` 2.0) com regiões e cenas por bloco, mantendo compatibilidade com cenas 1.x como locais.
+- Mapa do mundo com névoa de guerra, pontos descobertos e viagem rápida (destino pré-carregado antes da transição); montaria ou veículo para cruzar distâncias. O streaming é dimensionado para a velocidade máxima de deslocamento.
+- Ciclo dia/noite e clima dinâmico por região, sem recaptura bloqueante de reflexos.
+- Persistência de mundos e progresso em IndexedDB (servidor opcional); contrato de mundo (`ThreeWorldDocument` 2.0) com regiões e cenas por bloco, mantendo compatibilidade com cenas 1.x como locais.
 
-**Critérios de saída:** atravessar o mundo de ponta a ponta sem carregamentos visíveis, a 60 FPS em GPU média; geração de atlas + 3 regiões detalhadas dentro do prazo configurado com provedor real, medida.
+**Fases, cada uma com gate de desempenho**
+1. Benchmark e linha de base; contrato 2.0 com migração de 1.x (sem mudança no runtime).
+2. Terreno em blocos com LOD, streaming em workers e origem flutuante, testado com relevo sintético antes de biomas.
+3. Biomas, rios e splat.
+4. Vegetação, impostores, HLOD e conteúdo por regras.
+5. Atlas da IA, detalhamento sob demanda e edição local, com orçamentos no contrato.
+6. Mapa, névoa de guerra, viagem rápida, montaria e persistência.
+
+Cada fase só avança com o benchmark dentro do orçamento e sem regressão nas cenas 1.x.
+
+**Critérios de saída:** atravessar o mundo de ponta a ponta na velocidade máxima da montaria sem carregamentos visíveis nem quadros > 50 ms, a 60 FPS (p95 ≤ 20 ms) em GPU média e ≥ 30 FPS em GPU integrada, medidos e publicados por classe de hardware; cenas 1.x existentes sem regressão de FPS; geração de atlas + 3 regiões detalhadas dentro do prazo configurado com provedor real, medida.
 
 CAD
 - Classes de ajuste ISO e raízes de rosca arredondadas; engrenamento verificado entre engrenagens.

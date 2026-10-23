@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import ThreeViewport, { type GizmoMode, type TransformPatch, type ViewportController } from './ThreeViewport.tsx'
 import ThreeStage from './ThreeStage.tsx'
 import GeometryEditor from './GeometryEditor.tsx'
@@ -439,7 +439,12 @@ export default function ThreeWorkspace({ active, provider, ready, onBusyChange, 
   }, [projectMenu])
 
   const descendants = selected ? subtreeIds(doc.nodes, selected.id) : new Set<string>()
-  const visibleRows = (parentId: string | null, depth = 0): ReactNode => doc.nodes.filter((node) => node.parentId === parentId).map((node) => {
+  const children = useMemo(() => {
+    const map = new Map<string | null, SceneNode[]>()
+    for (const node of doc.nodes) map.set(node.parentId, [...map.get(node.parentId) ?? [], node])
+    return map
+  }, [doc.nodes])
+  const visibleRows = (parentId: string | null, depth = 0): ReactNode => (children.get(parentId) ?? []).map((node) => {
     const matches = !filter || node.name.toLocaleLowerCase().includes(filter.toLocaleLowerCase())
     return <div key={node.id}>{matches && <button type="button" className="three-tree__node" aria-pressed={selectedId === node.id}
       style={{ paddingLeft: 12 + depth * 14 }} onClick={() => setSelectedId(node.id)}>
