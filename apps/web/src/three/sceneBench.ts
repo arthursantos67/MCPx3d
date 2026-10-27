@@ -7,8 +7,8 @@ import type { PlayerInput, PlayerState } from './scenePlayer.ts'
  * Records per-frame timing and renderer counters, drives a fixed route in play mode and estimates GPU memory.
  * Without the parameter `sceneBench()` returns null and the viewport behaves exactly as before.
  */
-export interface BenchFrame { at: number; interval: number; cpu: number; calls: number; triangles: number; game: boolean; streamMs?: number; selectMs?: number; deficit?: number }
-export interface BenchWorldFrame { selectMs: number; deficit: number; stream: { applyMs: number } }
+export interface BenchFrame { at: number; interval: number; cpu: number; calls: number; triangles: number; game: boolean; streamMs?: number; selectMs?: number; deficit?: number; resident?: number; pending?: number }
+export interface BenchWorldFrame { selectMs: number; deficit: number; stream: { applyMs: number; resident?: number; inFlight?: number; ready?: number } }
 export interface BenchGpuSample { at: number; ms: number; game: boolean }
 export interface BenchRoute { points: [number, number][]; sweep: number; sprint?: boolean; /** Fly this many metres above `ground`. */ altitude?: number }
 export interface SceneBench {
@@ -167,7 +167,7 @@ export function createSceneBench(search: string): SceneBench | null {
       last = timestamp
       if (game && bench.marks.gameReady > (bench.marks.gameStart ?? 0) && !(bench.marks.firstGameFrame > bench.marks.gameReady)) bench.mark('firstGameFrame')
       if (!bench.recording || bench.frames.length >= MAX_FRAMES) return
-      bench.frames.push({ at: timestamp, interval, cpu, calls: info.calls, triangles: info.triangles, game, ...(world ? { streamMs: world.stream.applyMs, selectMs: world.selectMs, deficit: world.deficit } : {}) })
+      bench.frames.push({ at: timestamp, interval, cpu, calls: info.calls, triangles: info.triangles, game, ...(world ? { streamMs: world.stream.applyMs, selectMs: world.selectMs, deficit: world.deficit, resident: world.stream.resident, pending: (world.stream.inFlight ?? 0) + (world.stream.ready ?? 0) } : {}) })
     },
     drive(nextPlayer, input, elapsed) {
       if (player !== nextPlayer) { player = nextPlayer; Object.assign(steer, { index: 0, since: 0, best: Infinity, turned: 0 }) }

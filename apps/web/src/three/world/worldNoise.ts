@@ -22,16 +22,23 @@ export function random(seed: number): () => number {
 
 export interface NoiseSample { value: number; dx: number; dz: number }
 
-/** Value noise in [-1, 1] with quintic fade and analytic derivatives. */
+/** Gradient noise scaled to the variance of [-1, 1] value noise, with quintic fade and analytic derivatives. Unlike
+ * value noise it has no flat lattice corners, so relief built from it shows no axis-aligned plateaus. */
+const NOISE_SCALE = 2.1
+/** Sixteen unit gradient directions as literals, so no trigonometry enters the arithmetic. */
+const GX = [0.98078528040323, 0.831469612302545, 0.555570233019602, 0.195090322016128, -0.195090322016128, -0.555570233019602, -0.831469612302545, -0.98078528040323, -0.98078528040323, -0.831469612302545, -0.555570233019602, -0.195090322016129, 0.195090322016128, 0.555570233019602, 0.831469612302545, 0.98078528040323]
+const GZ = [0.195090322016128, 0.555570233019602, 0.831469612302545, 0.98078528040323, 0.98078528040323, 0.831469612302545, 0.555570233019602, 0.195090322016129, -0.195090322016128, -0.555570233019602, -0.831469612302545, -0.98078528040323, -0.98078528040323, -0.831469612302545, -0.555570233019602, -0.195090322016129]
 export function noised(x: number, z: number, seed: number, out: NoiseSample): NoiseSample {
   const ix = Math.floor(x), iz = Math.floor(z), fx = x - ix, fz = z - iz
   const u = fx * fx * fx * (fx * (fx * 6 - 15) + 10), w = fz * fz * fz * (fz * (fz * 6 - 15) + 10)
   const du = 30 * fx * fx * (fx * (fx - 2) + 1), dw = 30 * fz * fz * (fz * (fz - 2) + 1)
-  const a = hash2(ix, iz, seed) * 2 - 1, b = hash2(ix + 1, iz, seed) * 2 - 1, c = hash2(ix, iz + 1, seed) * 2 - 1, d = hash2(ix + 1, iz + 1, seed) * 2 - 1
+  const ga = hash2(ix, iz, seed) * 16 | 0, gb = hash2(ix + 1, iz, seed) * 16 | 0, gc = hash2(ix, iz + 1, seed) * 16 | 0, gd = hash2(ix + 1, iz + 1, seed) * 16 | 0
+  const ax = GX[ga], az = GZ[ga], bx = GX[gb], bz = GZ[gb], cx = GX[gc], cz = GZ[gc], dx = GX[gd], dz = GZ[gd]
+  const a = ax * fx + az * fz, b = bx * (fx - 1) + bz * fz, c = cx * fx + cz * (fz - 1), d = dx * (fx - 1) + dz * (fz - 1)
   const k1 = b - a, k2 = c - a, k3 = a - b - c + d
-  out.value = a + k1 * u + k2 * w + k3 * u * w
-  out.dx = du * (k1 + k3 * w)
-  out.dz = dw * (k2 + k3 * u)
+  out.value = NOISE_SCALE * (a + k1 * u + k2 * w + k3 * u * w)
+  out.dx = NOISE_SCALE * (ax + u * (bx - ax) + w * (cx - ax) + u * w * (ax - bx - cx + dx) + du * (k1 + k3 * w))
+  out.dz = NOISE_SCALE * (az + u * (bz - az) + w * (cz - az) + u * w * (az - bz - cz + dz) + dw * (k2 + k3 * u))
   return out
 }
 

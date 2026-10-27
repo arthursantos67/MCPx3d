@@ -167,6 +167,15 @@ export function surfaceMatrix(holder: THREE.Object3D, node: SceneNode, target = 
 
 /** Builds the render graph. Static repeated surfaces become one InstancedMesh per geometry/material. */
 export function buildScene(doc: ThreeSceneDocument, resources: SceneResources, options: BuildOptions): BuiltScene {
+  const steps = buildSceneSteps(doc, resources, options)
+  for (let step = steps.next(); ; step = steps.next()) if (step.done) return step.value
+}
+
+/**
+ * The same build as `buildScene`, paused at regular points (every few nodes, before instancing and between character
+ * skins) so a caller can spread a large scene over several frames. Running it to completion gives the same result.
+ */
+export function* buildSceneSteps(doc: ThreeSceneDocument, resources: SceneResources, options: BuildOptions): Generator<void, BuiltScene> {
   resources.begin()
   const root = new THREE.Group(), holders = new Map<string, THREE.Object3D>(), meshes = new Map<string, THREE.Mesh>()
   const instances = new Map<string, { mesh: THREE.InstancedMesh; index: number }>(), lights = new Map<string, THREE.PointLight | THREE.SpotLight>()
@@ -191,7 +200,10 @@ export function buildScene(doc: ThreeSceneDocument, resources: SceneResources, o
   }
   const batched = new Set([...batches.values()].filter((nodes) => nodes.length >= MIN_BATCH).flat().map((node) => node.id))
   const collected=new Set(doc.nodes.filter(node=>node.interaction?.action==='collect').flatMap(node=>[...subtreeIds(doc.nodes,node.id)]))
+  yield
+  let built = 0
   for (const node of doc.nodes) {
+    if (++built % 24 === 0) yield
     const holder = node.kind === 'group' ? new THREE.Group() : new THREE.Object3D()
     holder.position.fromArray(node.position)
     holder.rotation.set(...node.rotation.map(THREE.MathUtils.degToRad) as [number, number, number])
@@ -236,6 +248,7 @@ export function buildScene(doc: ThreeSceneDocument, resources: SceneResources, o
   }
   for (const node of doc.nodes) (holders.get(node.parentId ?? '') ?? root).add(holders.get(node.id)!)
   const batchMeshes: THREE.InstancedMesh[] = []
+  yield
   root.updateMatrixWorld(true)
   for (const nodes of [...batches.values()].filter((group) => group.length >= MIN_BATCH).flatMap((group) => spatialChunks(group, holders, resources.geometry(group[0])))) {
     const mesh = new THREE.InstancedMesh(resources.geometry(nodes[0]), material(nodes[0], true), nodes.length)
@@ -260,6 +273,7 @@ export function buildScene(doc: ThreeSceneDocument, resources: SceneResources, o
   sync()
   const skins = new Map<string, CharacterSkin>()
   if (options.skins) {
+    yield
     root.updateMatrixWorld(true)
     for (const skin of options.skins(doc, holders)) {
       skins.set(skin.rootId, skin)

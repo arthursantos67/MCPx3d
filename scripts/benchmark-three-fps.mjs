@@ -1,6 +1,7 @@
 // Three.js frame-time benchmark on a real GPU: fixed route in play mode for each example scene.
 // Usage: node scripts/benchmark-three-fps.mjs [--skip-build] [--runs 3] [--seconds 60] [--warmup 5]
 //   [--scenes "Vale dos Ventos,..."] [--modes gpu,cpu] [--label baseline] [--out file.json] [--compare base.json]
+// Default is headless (real GPU, immune to the desktop); --headed opens a window that must stay visible.
 // "gpu" renders at the quality's pixel ratio; "cpu" lowers the internal resolution to 0.25 to isolate main-thread cost.
 import { spawn, execFileSync } from 'node:child_process'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
@@ -16,6 +17,8 @@ const loop = (half) => [[half, 0], [half, half], [-half, half], [-half, -half], 
 const WORLDS = {
   'Mundo 4 km · a pé': { button: 'Relevo sintético 4 km', query: `route=${loop(600)}&sprint=1` },
   'Mundo 4 km · voo 36 m/s': { button: 'Relevo sintético 4 km', query: `route=${loop(1500)}&sprint=1&fly=40&speed=20` },
+  'Aurora 4 km · a pé': { button: 'Terras de Aurora 4 km', query: `route=${loop(600)}&sprint=1` },
+  'Aurora 4 km · voo 36 m/s': { button: 'Terras de Aurora 4 km', query: `route=${loop(1500)}&sprint=1&fly=40&speed=20` },
 }
 const WORLD_SCENES = Object.keys(WORLDS)
 const TITLES = { 'Exemplo jogável': 'Ilha do Farol' }
@@ -51,7 +54,9 @@ async function startPreview() {
 }
 
 async function launch() {
-  return chromium.launch({ executablePath: chrome, headless: false,
+  // Headless Chrome keeps the real GPU (ANGLE/D3D11) and a steady vsync, and no other window can occlude or minimise
+  // it; `--headed` shows the window instead.
+  return chromium.launch({ executablePath: chrome, headless: !flag('headed'),
     args: ['--use-angle=d3d11', '--enable-gpu', '--ignore-gpu-blocklist', '--enable-gpu-rasterization', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows', '--disable-features=CalculateNativeWinOcclusion', `--window-size=${viewport.width},${viewport.height + 120}`] })
 }
 
@@ -149,7 +154,9 @@ async function measure(url, scene, mode) {
       memory: { ...result.memory, estimatedGpuMiB: round((result.memory.geometryBytes + result.memory.textureBytes) / 2 ** 20, 1), jsHeapMiB: result.heap ? round(result.heap / 2 ** 20, 1) : null },
       sceneSwitchMs: round(sceneReady - switchStart, 0), streamMs: world ? { median: round(median(frames.map((frame) => frame.streamMs ?? 0)), 3), max: round(Math.max(0, ...frames.map((frame) => frame.streamMs ?? 0)), 3) } : null,
       selectMs: world ? { median: round(median(frames.map((frame) => frame.selectMs ?? 0)), 3), max: round(Math.max(0, ...frames.map((frame) => frame.selectMs ?? 0)), 3) } : null,
-      deficitFrames: world ? frames.filter((frame) => frame.deficit > 0).length : null, timeToPlayableMs: round(firstGameFrame - playClick, 0),
+      deficitFrames: world ? frames.filter((frame) => frame.deficit > 0).length : null,
+      ...(world ? { residency: { max: Math.max(0, ...frames.map((frame) => frame.resident ?? 0)), pendingMax: Math.max(0, ...frames.map((frame) => frame.pending ?? 0)), firstDeficit: frames.find((frame) => frame.deficit > 0) ?? null } } : {}),
+      timeToPlayableMs: round(firstGameFrame - playClick, 0),
       loadLongestTaskMs: round(Math.max(0, ...loadTasks), 0), loadTasksOver100: loadTasks.filter((value) => value > 100).length,
       loadTasks: result.longTasks.filter(([start]) => start >= switchStart && start <= firstGameFrame).map(([start, duration]) => [round(start - switchStart, 0), round(duration, 0)]).filter(([, duration]) => duration > 50),
       gameLongestTaskMs: round(Math.max(0, ...gameTasks), 0), playStartLongestTaskMs: round(Math.max(0, ...playTasks), 0),
@@ -214,18 +221,32 @@ if (!flag('skip-build')) run(process.platform === 'win32' ? 'npm.cmd run build' 
 const { server, url } = await startPreview()
 const report = { label, date: new Date().toISOString(), commit: execFileSync('git', ['rev-parse', '--short', 'HEAD'], { encoding: 'utf8' }).trim(),
   dirty: execFileSync('git', ['status', '--porcelain'], { encoding: 'utf8' }).trim().length > 0,
-  settings: { runs, seconds, warmup, modes, quality: 'auto → médio em GPU real', ratios, build: 'vite build (produção)', vsync: 'ativo' }, hardware: null, runs: [], summary: {} }
+  settings: { runs, seconds, warmup, modes, quality: 'auto → médio em GPU real', ratios, build: 'vite build (produção)', vsync: 'ativo', window: flag('headed') ? 'janela visível' : 'headless' }, hardware: null, runs: [], summary: {} }
 try {
   const probe = await launch()
   try { report.hardware = await hardware(probe) } finally { await probe.close() }
   console.log(JSON.stringify(report.hardware))
+  // --resume keeps the runs already saved in the output (same commit), so an interrupted session continues.
+  const previous = flag('resume') ? await readFile(out, 'utf8').then((text) => JSON.parse(text), () => null) : null
+  const saved = previous && previous.commit === report.commit ? previous.runs.map((run, order) => ({ ...run, order })) : []
+  await mkdir(dirname(out), { recursive: true })
   for (const mode of modes) for (let index = 0; index < runs; index++) {
     const order = index % 2 ? [...scenes].reverse() : scenes
     for (const scene of order) {
-      let result = await measure(url, scene, mode)
+      const done = saved.filter((run) => run.mode === mode && run.scene === scene)
+      if (done.length > index) { report.runs.push(done[index]); continue }
+      let result = null
+      for (let attempt = 0; !result; attempt++) {
+        try { result = await measure(url, scene, mode) } catch (error) {
+          if (attempt >= 2) throw error
+          console.log(`${mode} ${scene}: falha do navegador (${String(error.message).split(/\r?\n/)[0]}), repetindo`)
+        }
+      }
       for (let retry = 0; result.throttled && retry < 3; retry++) { console.log(`${mode} ${scene}: janela limitada pelo navegador, repetindo`); result = await measure(url, scene, mode) }
       if (result.throttled) throw new Error(`Execução ${scene} continua limitada a 1 Hz pelo navegador; mantenha a janela do Chrome visível.`)
       report.runs.push(result)
+      await writeFile(out, `${JSON.stringify(report, null, 2)}
+`)
       console.log(`${mode} #${index + 1} ${scene}: mediana ${result.frameMs.median} ms, p95 ${result.frameMs.p95} ms, CPU ${result.cpuMs.median} ms, ${result.drawCalls.median} calls, ${result.triangles.median} tri, jogável em ${result.timeToPlayableMs} ms`)
     }
   }

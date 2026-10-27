@@ -325,3 +325,14 @@
 }
 .three-routine { display: grid; gap: 8px; }
 .three-routine__step { display: grid; gap: 6px; padding: 8px; border: 1px solid var(--line, #d5dde3); border-radius: 8px; }
+
+.three-world-map { position: absolute; inset: 0; z-index: 40; display: grid; place-items: center; background: rgba(8, 12, 14, 0.66); }
+.three-world-map__sheet { position: relative; width: min(82vh, 86vw); aspect-ratio: 1; border-radius: 10px; overflow: hidden; box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45); outline: 3px solid rgba(230, 220, 196, 0.55); }
+.three-world-map__sheet canvas { width: 100%; height: 100%; display: block; image-rendering: auto; }
+.three-world-map__marker { position: absolute; transform: translate(-50%, -50%); width: 14px; height: 14px; padding: 0; border-radius: 50%; border: 2px solid #fff7e4; background: #c8613a; cursor: pointer; }
+.three-world-map__marker.is-visited { background: #3a8c6a; }
+.three-world-map__marker span { position: absolute; left: 50%; top: -22px; transform: translateX(-50%); white-space: nowrap; font-size: 12px; font-weight: 600; color: #fff7e4; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8); pointer-events: none; }
+.three-world-map__player { position: absolute; width: 0; height: 0; border-left: 7px solid transparent; border-right: 7px solid transparent; border-bottom: 16px solid #f2d14b; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.7)); }
+.three-world-map__hint { margin-top: 10px; color: #f0ead8; font-size: 13px; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8); }
+.three-world-travel { position: absolute; inset: 0; z-index: 45; display: grid; place-items: center; background: #0b1013; color: #f0ead8; font-size: 18px; letter-spacing: 0.02em; transition: opacity 0.4s ease; }
+@media (max-width: 640px) { .three-world-map__sheet { width: 92vw; } }

@@ -1,0 +1,2713 @@
+{
+  "label": "0.7-baseline-headless",
+  "date": "2026-10-27T12:12:20.704Z",
+  "commit": "b3c857d",
+  "dirty": false,
+  "settings": {
+    "runs": 3,
+    "seconds": 60,
+    "warmup": 5,
+    "modes": [
+      "gpu",
+      "cpu"
+    ],
+    "quality": "auto → médio em GPU real",
+    "ratios": {
+      "gpu": null,
+      "cpu": 0.25
+    },
+    "build": "vite build (produção)",
+    "vsync": "ativo",
+    "window": "headless"
+  },
+  "hardware": {
+    "gpu": {
+      "vendor": "Google Inc. (NVIDIA)",
+      "renderer": "ANGLE (NVIDIA, NVIDIA GeForce GT 710 (0x0000128B) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+      "parallelCompile": true,
+      "timerQuery": true
+    },
+    "gpuDriver": "NVIDIA GeForce GT 710, 475.14, 2048 MiB",
+    "cpu": "Intel(R) Core(TM) i7-8700 CPU @ 3.20GHz",
+    "threads": 12,
+    "memoryGiB": 15.9,
+    "os": "Windows 10.0.19045",
+    "chrome": "156.0.8078.48",
+    "viewport": {
+      "width": 1920,
+      "height": 1080
+    }
+  },
+  "runs": [
+    {
+      "scene": "Vale dos Ventos",
+      "mode": "gpu",
+      "throttled": false,
+      "frames": 299,
+      "playing": true,
+      "canvas": [
+        1920,
+        1080
+      ],
+      "travelledMetres": 82.6,
+      "frameMs": {
+        "median": 200,
+        "p95": 266.8,
+        "max": 653.4
+      },
+      "over50": 288,
+      "over100": 288,
+      "cpuMs": {
+        "median": 15.4,
+        "p95": 23.8,
+        "max": 44.5
+      },
+      "gpuMs": {
+        "median": 184.27,
+        "p95": 239.86,
+        "max": 281.3,
+        "samples": 299
+      },
+      "drawCalls": {
+        "median": 289,
+        "max": 537
+      },
+      "triangles": {
+        "median": 550511,
+        "max": 1308693
+      },
+      "memory": {
+        "geometryBytes": 9323216,
+        "textureBytes": 103148203,
+        "geometries": 208,
+        "textures": 73,
+        "programs": 86,
+        "estimatedGpuMiB": 107.3,
+        "jsHeapMiB": 113.8
+      },
+      "sceneSwitchMs": 14161,
+      "streamMs": null,
+      "selectMs": null,
+      "deficitFrames": null,
+      "timeToPlayableMs": 9677,
+      "loadLongestTaskMs": 1480,
+      "loadTasksOver100": 3,
+      "loadTasks": [
+        [
+          9234,
+          62
+        ],
+        [
+          9362,
+          392
+        ],
+        [
+          14162,
+          1480
+        ],
+        [
+          15745,
+          1004
+        ],
+        [
+          17815,
+          88
+        ],
+        [
+          25334,
+          89
+        ]
+      ],
+      "gameLongestTaskMs": 57,
+      "playStartLongestTaskMs": 1004,
+      "errors": []
+    },
+    {
+      "scene": "Mercado de Valemar",
+      "mode": "gpu",
+      "throttled": false,
+      "frames": 517,
+      "playing": true,
+      "canvas": [
+        1920,
+        1080
+      ],
+      "travelledMetres": 163,
+      "frameMs": {
+        "median": 120,
+        "p95": 146.8,
+        "max": 306.9
+      },
+      "over50": 516,
+      "over100": 446,
+      "cpuMs": {
+        "median": 20.1,
+        "p95": 40.4,
+        "max": 213.4
+      },
+      "gpuMs": {
+        "median": 106.65,
+        "p95": 121.2,
+        "max": 259.32,
+        "samples": 517
+      },
+      "drawCalls": {
+        "median": 565,
+        "max": 906
+      },
+      "triangles": {
+        "median": 457652,
+        "max": 544650
+      },
+      "memory": {
+        "geometryBytes": 14612298,
+        "textureBytes": 114562389,
+        "geometries": 235,
+        "textures": 82,
+        "programs": 82,
+        "estimatedGpuMiB": 123.2,
+        "jsHeapMiB": 108.2
+      },
+      "sceneSwitchMs": 19153,
+      "streamMs": null,
+      "selectMs": null,
+      "deficitFrames": null,
+      "timeToPlayableMs": 902,
+      "loadLongestTaskMs": 1211,
+      "loadTasksOver100": 3,
+      "loadTasks": [
+        [
+          8467,
+          268
+        ],
+        [
+          19154,
+          1211
+        ],
+        [
+          20619,
+          813
+        ],
+        [
+          21433,
+          96
+        ]
+      ],
+      "gameLongestTaskMs": 215,
+      "playStartLongestTaskMs": 813,
+      "errors": []
+    },
+    {
+      "scene": "Floresta encantada",
+      "mode": "gpu",
+      "throttled": false,
+      "frames": 492,
+      "playing": true,
+      "canvas": [
+        1920,
+        1080
+      ],
+      "travelledMetres": 180.8,
+      "frameMs": {
+        "median": 120,
+        "p95": 173.4,
+        "max": 200.2
+      },
+      "over50": 492,
+      "over100": 328,
+      "cpuMs": {
+        "median": 5.9,
+        "p95": 16,
+        "max": 22.1
+      },
+      "gpuMs": {
+        "median": 101.04,
+        "p95": 159.99,
+        "max": 168.46,
+        "samples": 492
+      },
+      "drawCalls": {
+        "median": 116,
+        "max": 279
+      },
+      "triangles": {
+        "median": 555381,
+        "max": 981711
+      },
+      "memory": {
+        "geometryBytes": 7134910,
+        "textureBytes": 62914560,
+        "geometries": 147,
+        "textures": 45,
+        "programs": 72,
+        "estimatedGpuMiB": 66.8,
+        "jsHeapMiB": 95.6
+      },
+      "sceneSwitchMs": 6203,
+      "streamMs": null,
+      "selectMs": null,
+      "deficitFrames": null,
+      "timeToPlayableMs": 7693,
+      "loadLongestTaskMs": 1280,
+      "loadTasksOver100": 3,
+      "loadTasks": [
+        [
+          5529,
+          110
+        ],
+        [
+          6204,
+          906
+        ],
+        [
+          7302,
+          1280
+        ]
+      ],
+      "gameLongestTaskMs": 0,
+      "playStartLongestTaskMs": 1280,
+      "errors": []
+    },
+    {
+      "scene": "Ermo dos Saqueadores",
+      "mode": "gpu",
+      "throttled": false,
+      "frames": 634,
+      "playing": true,
+      "canvas": [
+        1920,
+        1080
+      ],
+      "travelledMetres": 242.8,
+      "frameMs": {
+        "median": 93.3,
+        "p95": 107.1,
+        "max": 1800.1
+      },
+      "over50": 607,
+      "over100": 144,
+      "cpuMs": {
+        "median": 7.3,
+        "p95": 16.6,
+        "max": 1803.6
+      },
+      "gpuMs": {
+        "median": 84.26,
+        "p95": 95.28,
+        "max": 617.79,
+        "samples": 634
+      },
+      "drawCalls": {
+        "median": 225,
+        "max": 433
+      },
+      "triangles": {
+        "median": 76328,
+        "max": 208322
+      },
+      "memory": {
+        "geometryBytes": 14402992,
+        "textureBytes": 58261504,
+        "geometries": 189,
+        "textures": 43,
+        "programs": 119,
+        "estimatedGpuMiB": 69.3,
+        "jsHeapMiB": 98.3
+      },
+      "sceneSwitchMs": 6538,
+      "streamMs": null,
+      "selectMs": null,
+      "deficitFrames": null,
+      "timeToPlayableMs": 7766,
+      "loadLongestTaskMs": 6740,
+      "loadTasksOver100": 3,
+      "loadTasks": [
+        [
+          6538,
+          632
+        ],
+        [
+          7236,
+          192
+        ],
+        [
+          8262,
+          6740
+        ]
+      ],
+      "gameLongestTaskMs": 1805,
+      "playStartLongestTaskMs": 6740,
+      "errors": []
+    },
+    {
+      "scene": "Exemplo jogável",
+      "mode": "gpu",
+      "throttled": false,
+      "frames": 447,
+      "playing": true,
+      "canvas": [
+        1920,
+        1080
+      ],
+      "travelledMetres": 135.4,
+      "frameMs": {
+        "median": 120,
+        "p95": 200.1,
+        "max": 226.7
+      },
+      "over50": 446,
+      "over100": 376,
+      "cpuMs": {
+        "median": 3.7,
+        "p95": 8.1,
+        "max": 14.8
+      },
+      "gpuMs": {
+        "median": 108.55,
+        "p95": 186.64,
+        "max": 198.54,
+        "samples": 447
+      },
+      "drawCalls": {
+        "median": 85,
+        "max": 160
+      },
+      "triangles": {
+        "median": 361984,
+        "max": 645008
+      },
+      "memory": {
+        "geometryBytes": 7934666,
+        "textureBytes": 86370987,
+        "geometries": 135,
+        "textures": 61,
+        "programs": 61,
+        "estimatedGpuMiB": 89.9,
+        "jsHeapMiB": 80
+      },
+      "sceneSwitchMs": 3903,
+      "streamMs": null,
+      "selectMs": null,
+      "deficitFrames": null,
+      "timeToPlayableMs": 4572,
+      "loadLongestTaskMs": 966,
+      "loadTasksOver100": 3,
+      "loadTasks": [
+        [
+          2198,
+          966
+        ],
+        [
+          3903,
+          444
+        ],
+        [
+          4383,
+          787
+        ]
+      ],
+      "gameLongestTaskMs": 0,
+      "playStartLongestTaskMs": 787,
+      "errors": []
+    },
+    {
+      "scene": "Exemplo jogável",
+      "mode": "gpu",
+      "throttled": false,
+      "frames": 455,
+      "playing": true,
+      "canvas": [
+        1920,
+        1080
+      ],
+      "travelledMetres": 134,
+      "frameMs": {
+        "median": 120,
+        "p95": 200,
+        "max": 213.4
+      },
+      "over50": 454,
+      "over100": 362,
+      "cpuMs": {
+        "median": 3.3,
+        "p95": 6.5,
+        "max": 12.4
+      },
+      "gpuMs": {
+        "median": 107.78,
+        "p95": 184.63,
+        "max": 195.14,
+        "samples": 455
+      },
+      "drawCalls": {
+        "median": 85,
+        "max": 162
+      },
+      "triangles": {
+        "median": 362000,
+        "max": 645106
+      },
+      "memory": {
+        "geometryBytes": 7934666,
+        "textureBytes": 86370987,
+        "geometries": 135,
+        "textures": 61,
+        "programs": 61,
+        "estimatedGpuMiB": 89.9,
+        "jsHeapMiB": 80.1
+      },
+      "sceneSwitchMs": 3505,
+      "streamMs": null,
+      "selectMs": null,
+      "deficitFrames": null,
+      "timeToPlayableMs": 3133,
+      "loadLongestTaskMs": 718,
+      "loadTasksOver100": 3,
+      "loadTasks": [
+        [
+          1829,
+          277
+        ],
+        [
+          3505,
+          400
+        ],
+        [
+          3936,
+          718
+        ]
+      ],
+      "gameLongestTaskMs": 0,
+      "playStartLongestTaskMs": 718,
+      "errors": []
+    },
+    {
+      "scene": "Ermo dos Saqueadores",
+      "mode": "gpu",
+      "throttled": false,
+      "frames": 648,
+      "playing": true,
+      "canvas": [
+        1920,
+        1080
+      ],
+      "travelledMetres": 250.7,
+      "frameMs": {
+        "median": 93.3,
+        "p95": 106.7,
+        "max": 1866.9
+      },
+      "over50": 630,
+      "over100": 51,
+      "cpuMs": {
+        "median": 6.6,
+        "p95": 12.4,
+        "max": 1860.4
+      },
+      "gpuMs": {
+        "median": 82.41,
+        "p95": 90.5,
+        "max": 980.54,
+        "samples": 648
+      },
+      "drawCalls": {
+        "median": 233,
+        "max": 428
+      },
+      "triangles": {
+        "median": 75468,
+        "max": 202032
+      },
+      "memory": {
+        "geometryBytes": 14402992,
+        "textureBytes": 58261504,
+        "geometries": 189,
+        "textures": 43,
+        "programs": 117,
+        "estimatedGpuMiB": 69.3,
+        "jsHeapMiB": 104.5
+      },
+      "sceneSwitchMs": 5588,
+      "streamMs": null,
+      "selectMs": null,
+      "deficitFrames": null,
+      "timeToPlayableMs": 6071,
+      "loadLongestTaskMs": 5168,
+      "loadTasksOver100": 4,
+      "loadTasks": [
+        [
+          3394,
+          144
+        ],
+        [
+          5588,
+          642
+        ],
+        [
+          6299,
+          184
+        ],
+        [
+          7203,
+          5168
+        ]
+      ],
+      "gameLongestTaskMs": 1861,
+      "playStartLongestTaskMs": 5168,
+      "errors": []
+    },
+    {
+      "scene": "Floresta encantada",
+      "mode": "gpu",
+      "throttled": false,
+      "frames": 486,
+      "playing": true,
+      "canvas": [
+        1920,
+        1080
+      ],
+      "travelledMetres": 182.7,
+      "frameMs": {
+        "median": 119.9,
+        "p95": 173.4,
+        "max": 186.8
+      },
+      "over50": 486,
+      "over100": 348,
+      "cpuMs": {
+        "median": 4.8,
+        "p95": 10.4,
+        "max": 16.2
+      },
+      "gpuMs": {
+        "median": 101.79,
+        "p95": 161.01,
+        "max": 170,
+        "samples": 486
+      },
+      "drawCalls": {
+        "median": 116,
+        "max": 279
+      },
+      "triangles": {
+        "median": 555367,
+        "max": 981679
+      },
+      "memory": {
+        "geometryBytes": 7134910,
+        "textureBytes": 62914560,
+        "geometries": 147,
+        "textures": 45,
+        "programs": 72,
+        "estimatedGpuMiB": 66.8,
+        "jsHeapMiB": 94.9
+      },
+      "sceneSwitchMs": 4562,
+      "streamMs": null,
+      "selectMs": null,
+      "deficitFrames": null,
+      "timeToPlayableMs": 3990,
+      "loadLongestTaskMs": 638,
+      "loadTasksOver100": 2,
+      "loadTasks": [
+        [
+          4562,
+          492
+        ],
+        [
+          5136,
+          638
+        ]
+      ],
+      "gameLongestTaskMs": 0,
+      "playStartLongestTaskMs": 638,
+      "errors": []
+    },
+    {
+      "scene": "Mercado de Valemar",
+      "mode": "gpu",
+      "throttled": false,
+      "frames": 488,
+      "playing": true,
+      "canvas": [
+        1920,
+        1080
+      ],
+      "travelledMetres": 118,
+      "frameMs": {
+        "median": 120.1,
+        "p95": 146.8,
+        "max": 200.2
+      },
+      "over50": 488,
+      "over100": 450,
+      "cpuMs": {
+        "median": 13.8,
+        "p95": 24.1,
+        "max": 45.8
+      },
+      "gpuMs": {
+        "median": 111.88,
+        "p95": 122.54,
+        "max": 143.91,
+        "samples": 488
+      },
+      "drawCalls": {
+        "median": 669,
+        "max": 867
+      },
+      "triangles": {
+        "median": 463404,
+        "max": 541518
+      },
+      "memory": {
+        "geometryBytes": 14612298,
+        "textureBytes": 114562389,
+        "geometries": 235,
+        "textures": 82,
+        "programs": 82,
+        "estimatedGpuMiB": 123.2,
+        "jsHeapMiB": 119.1
+      },
+      "sceneSwitchMs": 13533,
+      "streamMs": null,
+      "selectMs": null,
+      "deficitFrames": null,
+      "timeToPlayableMs": 665,
+      "loadLongestTaskMs": 916,
+      "loadTasksOver100": 2,
+      "loadTasks": [
+        [
+          13534,
+          916
+        ],
+        [
+          14607,
+          608
+        ],
+        [
+          15216,
+          66
+        ]
+      ],
+      "gameLongestTaskMs": 49,
+      "playStartLongestTaskMs": 608,
+      "errors": []
+    },
+    {
+      "scene": "Vale dos Ventos",
+      "mode": "gpu",
+      "throttled": false,
+      "frames": 383,
+      "playing": true,
+      "canvas": [
+        1920,
+        1080
+      ],
+      "travelledMetres": 123.8,
+      "frameMs": {
+        "median": 160,
+        "p95": 186.7,
+        "max": 266.7
+      },
+      "over50": 383,
+      "over100": 383,
+      "cpuMs": {
+        "median": 6.4,
+        "p95": 13.1,
+        "max": 21.7
+      },
+      "gpuMs": {
+        "median": 145.91,
+        "p95": 165.58,
+        "max": 238.27,
+        "samples": 383
+      },
+      "drawCalls": {
+        "median": 275,
+        "max": 541
+      },
+      "triangles": {
+        "median": 546233,
+        "max": 1308681
+      },
+      "memory": {
+        "geometryBytes": 9323216,
+        "textureBytes": 103148203,
+        "geometries": 208,
+        "textures": 73,
+        "programs": 87,
+        "estimatedGpuMiB": 107.3,
+        "jsHeapMiB": 116.4
+      },
+      "sceneSwitchMs": 10089,
+      "streamMs": null,
+      "selectMs": null,
+      "deficitFrames": null,
+      "timeToPlayableMs": 7547,
+      "loadLongestTaskMs": 985,
+      "loadTasksOver100": 2,
+      "loadTasks": [
+        [
+          6204,
+          67
+        ],
+        [
+          10089,
+          985
+        ],
+        [
+          11192,
+          827
+        ],
+        [
+          18667,
+          71
+        ]
+      ],
+      "gameLongestTaskMs": 0,
+      "playStartLongestTaskMs": 827,
+      "errors": []
+    },
+    {
+      "scene": "Vale dos Ventos",
+      "mode": "gpu",
+      "throttled": false,
+      "frames": 369,
+      "playing": true,
+      "canvas": [
+        1920,
+        1080
+      ],
+      "travelledMetres": 118.6,
+      "frameMs": {
+        "median": 160.1,
+        "p95": 199.9,
+        "max": 266.7
+      },
+      "over50": 369,
+      "over100": 369,
+      "cpuMs": {
+        "median": 7,
+        "p95": 13.6,
+        "max": 27.6
+      },
+      "gpuMs": {
+        "median": 149.61,
+        "p95": 175.2,
+        "max": 222.64,
+        "samples": 369
+      },
+      "drawCalls": {
+        "median": 276,
+        "max": 541
+      },
+      "triangles": {
+        "median": 546527,
+        "max": 1308685
+      },
+      "memory": {
+        "geometryBytes": 9323216,
+        "textureBytes": 103148203,
+        "geometries": 208,
+        "textures": 73,
+        "programs": 86,
+        "estimatedGpuMiB": 107.3,
+        "jsHeapMiB": 113.7
+      },
+      "sceneSwitchMs": 10057,
+      "streamMs": null,
+      "selectMs": null,
+      "deficitFrames": null,
+      "timeToPlayableMs": 8285,
+      "loadLongestTaskMs": 910,
+      "loadTasksOver100": 3,
+      "loadTasks": [
+        [
+          5846,
+          498
+        ],
+        [
+          10058,
+          910
+        ],
+        [
+          11073,
+          808
+        ],
+        [
+          19298,
+          61
+        ]
+      ],
+      "gameLongestTaskMs": 0,
+      "playStartLongestTaskMs": 808,
+      "errors": []
+    },
+    {
+      "scene": "Mercado de Valemar",
+      "mode": "gpu",
+      "throttled": false,
+      "frames": 479,
+      "playing": true,
+      "canvas": [
+        1920,
+        1080
+      ],
+      "travelledMetres": 113.7,
+      "frameMs": {
+        "median": 120.1,
+        "p95": 146.8,
+        "max": 200
+      },
+      "over50": 479,
+      "over100": 467,
+      "cpuMs": {
+        "median": 12.4,
+        "p95": 21.5,
+        "max": 35.8
+      },
+      "gpuMs": {
+        "median": 111.71,
+        "p95": 123.84,
+        "max": 144.51,
+        "samples": 479
+      },
+      "drawCalls": {
+        "median": 671,
+        "max": 874
+      },
+      "triangles": {
+        "median": 463476,
+        "max": 541472
+      },
+      "memory": {
+        "geometryBytes": 14612298,
+        "textureBytes": 114562389,
+        "geometries": 235,
+        "textures": 82,
+        "programs": 82,
+        "estimatedGpuMiB": 123.2,
+        "jsHeapMiB": 128.5
+      },
+      "sceneSwitchMs": 14013,
+      "streamMs": null,
+      "selectMs": null,
+      "deficitFrames": null,
+      "timeToPlayableMs": 646,
+      "loadLongestTaskMs": 1021,
+      "loadTasksOver100": 2,
+      "loadTasks": [
+        [
+          14013,
+          1021
+        ],
+        [
+          15202,
+          597
+        ],
+        [
+          15800,
+          56
+        ]
+      ],
+      "gameLongestTaskMs": 0,
+      "playStartLongestTaskMs": 597,
+      "errors": []
+    },
+    {
+      "scene": "Floresta encantada",
+      "mode": "gpu",
+      "throttled": false,
+      "frames": 471,
+      "playing": true,
+      "canvas": [
+        1920,
+        1080
+      ],
+      "travelledMetres": 167.4,
+      "frameMs": {
+        "median": 133.3,
+        "p95": 173.4,
+        "max": 200.1
+      },
+      "over50": 471,
+      "over100": 353,
+      "cpuMs": {
+        "median": 4.6,
+        "p95": 13.1,
+        "max": 18.4
+      },
+      "gpuMs": {
+        "median": 123.31,
+        "p95": 160.53,
+        "max": 177.06,
+        "samples": 471
+      },
+      "drawCalls": {
+        "median": 123,
+        "max": 279
+      },
+      "triangles": {
+        "median": 580793,
+        "max": 986467
+      },
+      "memory": {
+        "geometryBytes": 7134910,
+        "textureBytes": 62914560,
+        "geometries": 147,
+        "textures": 45,
+        "programs": 71,
+        "estimatedGpuMiB": 66.8,
+        "jsHeapMiB": 95.1
+      },
+      "sceneSwitchMs": 5321,
+      "streamMs": null,
+      "selectMs": null,
+      "deficitFrames": null,
+      "timeToPlayableMs": 4579,
+      "loadLongestTaskMs": 842,
+      "loadTasksOver100": 3,
+      "loadTasks": [
+        [
+          4955,
+          135
+        ],
+        [
+          5322,
+          626
+        ],
+        [
+          6046,
+          842
+        ]
+      ],
+      "gameLongestTaskMs": 0,
+      "playStartLongestTaskMs": 842,
+      "errors": []
+    },
+    {
+      "scene": "Ermo dos Saqueadores",
+      "mode": "gpu",
+      "throttled": false,
+      "frames": 623,
+      "playing": true,
+      "canvas": [
+        1920,
+        1080
+      ],
+      "travelledMetres": 245.3,
+      "frameMs": {
+        "median": 93.4,
+        "p95": 119.9,
+        "max": 1946.9
+      },
+      "over50": 598,
+      "over100": 204,
+      "cpuMs": {
+        "median": 6.9,
+        "p95": 14.1,
+        "max": 1943.3
+      },
+      "gpuMs": {
+        "median": 84.33,
+        "p95": 94.88,
+        "max": 563.56,
+        "samples": 621
+      },
+      "drawCalls": {
+        "median": 227,
+        "max": 431
+      },
+      "triangles": {
+        "median": 80312,
+        "max": 202004
+      },
+      "memory": {
+        "geometryBytes": 14402992,
+        "textureBytes": 58261504,
+        "geometries": 189,
+        "textures": 43,
+        "programs": 119,
+        "estimatedGpuMiB": 69.3,
+        "jsHeapMiB": 93.6
+      },
+      "sceneSwitchMs": 5752,
+      "streamMs": null,
+      "selectMs": null,
+      "deficitFrames": null,
+      "timeToPlayableMs": 5887,
+      "loadLongestTaskMs": 4980,
+      "loadTasksOver100": 3,
+      "loadTasks": [
+        [
+          5753,
+          631
+        ],
+        [
+          6452,
+          183
+        ],
+        [
+          7359,
+          4980
+        ]
+      ],
+      "gameLongestTaskMs": 1944,
+      "playStartLongestTaskMs": 4980,
+      "errors": []
+    },
+    {
+      "scene": "Exemplo jogável",
+      "mode": "gpu",
+      "throttled": false,
+      "frames": 443,
+      "playing": true,
+      "canvas": [
+        1920,
+        1080
+      ],
+      "travelledMetres": 135,
+      "frameMs": {
+        "median": 120,
+        "p95": 200,
+        "max": 213.4
+      },
+      "over50": 443,
+      "over100": 387,
+      "cpuMs": {
+        "median": 3.8,
+        "p95": 7.2,
+        "max": 15.2
+      },
+      "gpuMs": {
+        "median": 108.01,
+        "p95": 184.35,
+        "max": 193.76,
+        "samples": 443
+      },
+      "drawCalls": {
+        "median": 85,
+        "max": 160
+      },
+      "triangles": {
+        "median": 361986,
+        "max": 644998
+      },
+      "memory": {
+        "geometryBytes": 7934666,
+        "textureBytes": 86370987,
+        "geometries": 135,
+        "textures": 61,
+        "programs": 62,
+        "estimatedGpuMiB": 89.9,
+        "jsHeapMiB": 80.5
+      },
+      "sceneSwitchMs": 3923,
+      "streamMs": null,
+      "selectMs": null,
+      "deficitFrames": null,
+      "timeToPlayableMs": 4368,
+      "loadLongestTaskMs": 778,
+      "loadTasksOver100": 2,
+      "loadTasks": [
+        [
+          3923,
+          448
+        ],
+        [
+          4428,
+          778
+        ]
+      ],
+      "gameLongestTaskMs": 0,
+      "playStartLongestTaskMs": 778,
+      "errors": []
+    },
+    {
+      "scene": "Vale dos Ventos",
+      "mode": "cpu",
+      "throttled": false,
+      "frames": 1682,
+      "playing": true,
+      "canvas": [
+        480,
+        270
+      ],
+      "travelledMetres": 228.4,
+      "frameMs": {
+        "median": 40,
+        "p95": 40.2,
+        "max": 80.1
+      },
+      "over50": 63,
+      "over100": 0,
+      "cpuMs": {
+        "median": 6,
+        "p95": 14.6,
+        "max": 25.6
+      },
+      "gpuMs": {
+        "median": 27.83,
+        "p95": 34.54,
+        "max": 70.66,
+        "samples": 1682
+      },
+      "drawCalls": {
+        "median": 266,
+        "max": 551
+      },
+      "triangles": {
+        "median": 545997,
+        "max": 1312013
+      },
+      "memory": {
+        "geometryBytes": 9323216,
+        "textureBytes": 103148203,
+        "geometries": 208,
+        "textures": 73,
+        "programs": 86,
+        "estimatedGpuMiB": 107.3,
+        "jsHeapMiB": 160
+      },
+      "sceneSwitchMs": 9567,
+      "streamMs": null,
+      "selectMs": null,
+      "deficitFrames": null,
+      "timeToPlayableMs": 9317,
+      "loadLongestTaskMs": 869,
+      "loadTasksOver100": 3,
+      "loadTasks": [
+        [
+          5564,
+          332
+        ],
+        [
+          9567,
+          800
+        ],
+        [
+          10501,
+          869
+        ]
+      ],
+      "gameLongestTaskMs": 0,
+      "playStartLongestTaskMs": 869,
+      "errors": []
+    },
+    {
+      "scene": "Mercado de Valemar",
+      "mode": "cpu",
+      "throttled": false,
+      "frames": 2151,
+      "playing": true,
+      "canvas": [
+        480,
+        270
+      ],
+      "travelledMetres": 220.2,
+      "frameMs": {
+        "median": 26.7,
+        "p95": 40,
+        "max": 93.5
+      },
+      "over50": 29,
+      "over100": 0,
+      "cpuMs": {
+        "median": 9.6,
+        "p95": 21.3,
+        "max": 64.4
+      },
+      "gpuMs": {
+        "median": 20,
+        "p95": 26.89,
+        "max": 37.36,
+        "samples": 2151
+      },
+      "drawCalls": {
+        "median": 512,
+        "max": 911
+      },
+      "triangles": {
+        "median": 449282,
+        "max": 549602
+      },
+      "memory": {
+        "geometryBytes": 14612298,
+        "textureBytes": 114562389,
+        "geometries": 235,
+        "textures": 82,
+        "programs": 82,
+        "estimatedGpuMiB": 123.2,
+        "jsHeapMiB": 124.3
+      },
+      "sceneSwitchMs": 12382,
+      "streamMs": null,
+      "selectMs": null,
+      "deficitFrames": null,
+      "timeToPlayableMs": 481,
+      "loadLongestTaskMs": 796,
+      "loadTasksOver100": 4,
+      "loadTasks": [
+        [
+          4808,
+          289
+        ],
+        [
+          7069,
+          136
+        ],
+        [
+          9996,
+          51
+        ],
+        [
+          12382,
+          796
+        ],
+        [
+          13313,
+          442
+        ]
+      ],
+      "gameLongestTaskMs": 65,
+      "playStartLongestTaskMs": 442,
+      "errors": []
+    },
+    {
+      "scene": "Floresta encantada",
+      "mode": "cpu",
+      "throttled": false,
+      "frames": 2068,
+      "playing": true,
+      "canvas": [
+        480,
+        270
+      ],
+      "travelledMetres": 234.6,
+      "frameMs": {
+        "median": 26.7,
+        "p95": 40.1,
+        "max": 146.7
+      },
+      "over50": 16,
+      "over100": 5,
+      "cpuMs": {
+        "median": 4.3,
+        "p95": 12.5,
+        "max": 18.7
+      },
+      "gpuMs": {
+        "median": 20.79,
+        "p95": 29.19,
+        "max": 102.82,
+        "samples": 2068
+      },
+      "drawCalls": {
+        "median": 117,
+        "max": 283
+      },
+      "triangles": {
+        "median": 560405,
+        "max": 993671
+      },
+      "memory": {
+        "geometryBytes": 7134910,
+        "textureBytes": 62914560,
+        "geometries": 147,
+        "textures": 45,
+        "programs": 72,
+        "estimatedGpuMiB": 66.8,
+        "jsHeapMiB": 102.1
+      },
+      "sceneSwitchMs": 4839,
+      "streamMs": null,
+      "selectMs": null,
+      "deficitFrames": null,
+      "timeToPlayableMs": 3380,
+      "loadLongestTaskMs": 659,
+      "loadTasksOver100": 3,
+      "loadTasks": [
+        [
+          4164,
+          158
+        ],
+        [
+          4839,
+          521
+        ],
+        [
+          5450,
+          659
+        ]
+      ],
+      "gameLongestTaskMs": 0,
+      "playStartLongestTaskMs": 659,
+      "errors": []
+    },
+    {
+      "scene": "Ermo dos Saqueadores",
+      "mode": "cpu",
+      "throttled": false,
+      "frames": 3559,
+      "playing": true,
+      "canvas": [
+        480,
+        270
+      ],
+      "travelledMetres": 261.1,
+      "frameMs": {
+        "median": 13.4,
+        "p95": 26.7,
+        "max": 1613.5
+      },
+      "over50": 7,
+      "over100": 7,
+      "cpuMs": {
+        "median": 5.4,
+        "p95": 11,
+        "max": 1621.8
+      },
+      "gpuMs": {
+        "median": 10.34,
+        "p95": 12.6,
+        "max": 740.28,
+        "samples": 3559
+      },
+      "drawCalls": {
+        "median": 230,
+        "max": 428
+      },
+      "triangles": {
+        "median": 76356,
+        "max": 185194
+      },
+      "memory": {
+        "geometryBytes": 14402992,
+        "textureBytes": 58261504,
+        "geometries": 189,
+        "textures": 43,
+        "programs": 118,
+        "estimatedGpuMiB": 69.3,
+        "jsHeapMiB": 99.8
+      },
+      "sceneSwitchMs": 5520,
+      "streamMs": null,
+      "selectMs": null,
+      "deficitFrames": null,
+      "timeToPlayableMs": 5216,
+      "loadLongestTaskMs": 5025,
+      "loadTasksOver100": 3,
+      "loadTasks": [
+        [
+          5520,
+          611
+        ],
+        [
+          6193,
+          175
+        ],
+        [
+          6384,
+          5025
+        ]
+      ],
+      "gameLongestTaskMs": 1622,
+      "playStartLongestTaskMs": 5025,
+      "errors": []
+    },
+    {
+      "scene": "Exemplo jogável",
+      "mode": "cpu",
+      "throttled": false,
+      "frames": 2191,
+      "playing": true,
+      "canvas": [
+        480,
+        270
+      ],
+      "travelledMetres": 177.1,
+      "frameMs": {
+        "median": 26.7,
+        "p95": 40.1,
+        "max": 79.9
+      },
+      "over50": 29,
+      "over100": 0,
+      "cpuMs": {
+        "median": 3.3,
+        "p95": 10,
+        "max": 17.4
+      },
+      "gpuMs": {
+        "median": 18.47,
+        "p95": 32.56,
+        "max": 40.42,
+        "samples": 2191
+      },
+      "drawCalls": {
+        "median": 85,
+        "max": 162
+      },
+      "triangles": {
+        "median": 362026,
+        "max": 644980
+      },
+      "memory": {
+        "geometryBytes": 7934666,
+        "textureBytes": 86370987,
+        "geometries": 135,
+        "textures": 61,
+        "programs": 62,
+        "estimatedGpuMiB": 89.9,
+        "jsHeapMiB": 88
+      },
+      "sceneSwitchMs": 3503,
+      "streamMs": null,
+      "selectMs": null,
+      "deficitFrames": null,
+      "timeToPlayableMs": 3125,
+      "loadLongestTaskMs": 672,
+      "loadTasksOver100": 2,
+      "loadTasks": [
+        [
+          3503,
+          293
+        ],
+        [
+          3841,
+          672
+        ]
+      ],
+      "gameLongestTaskMs": 0,
+      "playStartLongestTaskMs": 672,
+      "errors": []
+    },
+    {
+      "scene": "Exemplo jogável",
+      "mode": "cpu",
+      "throttled": false,
+      "frames": 2215,
+      "playing": true,
+      "canvas": [
+        480,
+        270
+      ],
+      "travelledMetres": 171.8,
+      "frameMs": {
+        "median": 26.7,
+        "p95": 40.1,
+        "max": 93.1
+      },
+      "over50": 28,
+      "over100": 0,
+      "cpuMs": {
+        "median": 3.3,
+        "p95": 9.3,
+        "max": 16
+      },
+      "gpuMs": {
+        "median": 18.36,
+        "p95": 32.36,
+        "max": 38.72,
+        "samples": 2215
+      },
+      "drawCalls": {
+        "median": 85,
+        "max": 162
+      },
+      "triangles": {
+        "median": 362060,
+        "max": 645052
+      },
+      "memory": {
+        "geometryBytes": 7934666,
+        "textureBytes": 86370987,
+        "geometries": 135,
+        "textures": 61,
+        "programs": 61,
+        "estimatedGpuMiB": 89.9,
+        "jsHeapMiB": 85.5
+      },
+      "sceneSwitchMs": 3581,
+      "streamMs": null,
+      "selectMs": null,
+      "deficitFrames": null,
+      "timeToPlayableMs": 3254,
+      "loadLongestTaskMs": 767,
+      "loadTasksOver100": 3,
+      "loadTasks": [
+        [
+          1965,
+          285
+        ],
+        [
+          3582,
+          281
+        ],
+        [
+          3896,
+          767
+        ]
+      ],
+      "gameLongestTaskMs": 0,
+      "playStartLongestTaskMs": 767,
+      "errors": []
+    },
+    {
+      "scene": "Ermo dos Saqueadores",
+      "mode": "cpu",
+      "throttled": false,
+      "frames": 3577,
+      "playing": true,
+      "canvas": [
+        480,
+        270
+      ],
+      "travelledMetres": 264.9,
+      "frameMs": {
+        "median": 13.4,
+        "p95": 26.7,
+        "max": 1813.6
+      },
+      "over50": 7,
+      "over100": 7,
+      "cpuMs": {
+        "median": 5.1,
+        "p95": 8.8,
+        "max": 1821.1
+      },
+      "gpuMs": {
+        "median": 10.41,
+        "p95": 12.51,
+        "max": 765.92,
+        "samples": 3577
+      },
+      "drawCalls": {
+        "median": 232,
+        "max": 428
+      },
+      "triangles": {
+        "median": 75842,
+        "max": 185220
+      },
+      "memory": {
+        "geometryBytes": 14402992,
+        "textureBytes": 58261504,
+        "geometries": 189,
+        "textures": 43,
+        "programs": 120,
+        "estimatedGpuMiB": 69.3,
+        "jsHeapMiB": 116.6
+      },
+      "sceneSwitchMs": 5562,
+      "streamMs": null,
+      "selectMs": null,
+      "deficitFrames": null,
+      "timeToPlayableMs": 5015,
+      "loadLongestTaskMs": 4811,
+      "loadTasksOver100": 3,
+      "loadTasks": [
+        [
+          5562,
+          640
+        ],
+        [
+          6270,
+          192
+        ],
+        [
+          6475,
+          4811
+        ]
+      ],
+      "gameLongestTaskMs": 1821,
+      "playStartLongestTaskMs": 4811,
+      "errors": []
+    },
+    {
+      "scene": "Floresta encantada",
+      "mode": "cpu",
+      "throttled": false,
+      "frames": 2132,
+      "playing": true,
+      "canvas": [
+        480,
+        270
+      ],
+      "travelledMetres": 235,
+      "frameMs": {
+        "median": 26.7,
+        "p95": 40.1,
+        "max": 66.7
+      },
+      "over50": 5,
+      "over100": 0,
+      "cpuMs": {
+        "median": 4.2,
+        "p95": 12,
+        "max": 19.3
+      },
+      "gpuMs": {
+        "median": 19.81,
+        "p95": 29.1,
+        "max": 35.38,
+        "samples": 2132
+      },
+      "drawCalls": {
+        "median": 116,
+        "max": 283
+      },
+      "triangles": {
+        "median": 557635,
+        "max": 993885
+      },
+      "memory": {
+        "geometryBytes": 7134910,
+        "textureBytes": 62914560,
+        "geometries": 147,
+        "textures": 45,
+        "programs": 72,
+        "estimatedGpuMiB": 66.8,
+        "jsHeapMiB": 103.6
+      },
+      "sceneSwitchMs": 4498,
+      "streamMs": null,
+      "selectMs": null,
+      "deficitFrames": null,
+      "timeToPlayableMs": 3076,
+      "loadLongestTaskMs": 693,
+      "loadTasksOver100": 2,
+      "loadTasks": [
+        [
+          4499,
+          481
+        ],
+        [
+          5059,
+          693
+        ]
+      ],
+      "gameLongestTaskMs": 0,
+      "playStartLongestTaskMs": 693,
+      "errors": []
+    },
+    {
+      "scene": "Mercado de Valemar",
+      "mode": "cpu",
+      "throttled": false,
+      "frames": 2271,
+      "playing": true,
+      "canvas": [
+        480,
+        270
+      ],
+      "travelledMetres": 219.4,
+      "frameMs": {
+        "median": 26.7,
+        "p95": 40,
+        "max": 93.5
+      },
+      "over50": 22,
+      "over100": 0,
+      "cpuMs": {
+        "median": 9,
+        "p95": 19.7,
+        "max": 49.1
+      },
+      "gpuMs": {
+        "median": 19.38,
+        "p95": 25.72,
+        "max": 31.49,
+        "samples": 2271
+      },
+      "drawCalls": {
+        "median": 510,
+        "max": 911
+      },
+      "triangles": {
+        "median": 448668,
+        "max": 549616
+      },
+      "memory": {
+        "geometryBytes": 14612298,
+        "textureBytes": 114562389,
+        "geometries": 235,
+        "textures": 82,
+        "programs": 83,
+        "estimatedGpuMiB": 123.2,
+        "jsHeapMiB": 109.5
+      },
+      "sceneSwitchMs": 11555,
+      "streamMs": null,
+      "selectMs": null,
+      "deficitFrames": null,
+      "timeToPlayableMs": 483,
+      "loadLongestTaskMs": 754,
+      "loadTasksOver100": 2,
+      "loadTasks": [
+        [
+          11555,
+          754
+        ],
+        [
+          12420,
+          450
+        ]
+      ],
+      "gameLongestTaskMs": 52,
+      "playStartLongestTaskMs": 450,
+      "errors": []
+    },
+    {
+      "scene": "Vale dos Ventos",
+      "mode": "cpu",
+      "throttled": false,
+      "frames": 1720,
+      "playing": true,
+      "canvas": [
+        480,
+        270
+      ],
+      "travelledMetres": 228.1,
+      "frameMs": {
+        "median": 39.9,
+        "p95": 40.1,
+        "max": 66.8
+      },
+      "over50": 48,
+      "over100": 0,
+      "cpuMs": {
+        "median": 5.6,
+        "p95": 14.9,
+        "max": 27.2
+      },
+      "gpuMs": {
+        "median": 27.42,
+        "p95": 34.15,
+        "max": 48.36,
+        "samples": 1720
+      },
+      "drawCalls": {
+        "median": 266,
+        "max": 552
+      },
+      "triangles": {
+        "median": 545989,
+        "max": 1312065
+      },
+      "memory": {
+        "geometryBytes": 9323216,
+        "textureBytes": 103148203,
+        "geometries": 208,
+        "textures": 73,
+        "programs": 87,
+        "estimatedGpuMiB": 107.3,
+        "jsHeapMiB": 125.7
+      },
+      "sceneSwitchMs": 9463,
+      "streamMs": null,
+      "selectMs": null,
+      "deficitFrames": null,
+      "timeToPlayableMs": 6176,
+      "loadLongestTaskMs": 660,
+      "loadTasksOver100": 2,
+      "loadTasks": [
+        [
+          9463,
+          656
+        ],
+        [
+          10208,
+          660
+        ]
+      ],
+      "gameLongestTaskMs": 0,
+      "playStartLongestTaskMs": 660,
+      "errors": []
+    },
+    {
+      "scene": "Vale dos Ventos",
+      "mode": "cpu",
+      "throttled": false,
+      "frames": 1721,
+      "playing": true,
+      "canvas": [
+        480,
+        270
+      ],
+      "travelledMetres": 228,
+      "frameMs": {
+        "median": 39.9,
+        "p95": 40.1,
+        "max": 66.7
+      },
+      "over50": 33,
+      "over100": 0,
+      "cpuMs": {
+        "median": 5.5,
+        "p95": 15.3,
+        "max": 21.5
+      },
+      "gpuMs": {
+        "median": 27.27,
+        "p95": 33.99,
+        "max": 44.8,
+        "samples": 1721
+      },
+      "drawCalls": {
+        "median": 267,
+        "max": 550
+      },
+      "triangles": {
+        "median": 545963,
+        "max": 1312045
+      },
+      "memory": {
+        "geometryBytes": 9323216,
+        "textureBytes": 103148203,
+        "geometries": 208,
+        "textures": 73,
+        "programs": 87,
+        "estimatedGpuMiB": 107.3,
+        "jsHeapMiB": 124.4
+      },
+      "sceneSwitchMs": 9195,
+      "streamMs": null,
+      "selectMs": null,
+      "deficitFrames": null,
+      "timeToPlayableMs": 5265,
+      "loadLongestTaskMs": 712,
+      "loadTasksOver100": 2,
+      "loadTasks": [
+        [
+          9196,
+          712
+        ],
+        [
+          10031,
+          691
+        ]
+      ],
+      "gameLongestTaskMs": 0,
+      "playStartLongestTaskMs": 691,
+      "errors": []
+    },
+    {
+      "scene": "Mercado de Valemar",
+      "mode": "cpu",
+      "throttled": false,
+      "frames": 2276,
+      "playing": true,
+      "canvas": [
+        480,
+        270
+      ],
+      "travelledMetres": 221.1,
+      "frameMs": {
+        "median": 26.7,
+        "p95": 40,
+        "max": 93.5
+      },
+      "over50": 23,
+      "over100": 0,
+      "cpuMs": {
+        "median": 9.2,
+        "p95": 19.8,
+        "max": 48.2
+      },
+      "gpuMs": {
+        "median": 19.3,
+        "p95": 25.69,
+        "max": 32.19,
+        "samples": 2276
+      },
+      "drawCalls": {
+        "median": 512,
+        "max": 911
+      },
+      "triangles": {
+        "median": 448842,
+        "max": 548356
+      },
+      "memory": {
+        "geometryBytes": 14612298,
+        "textureBytes": 114562389,
+        "geometries": 235,
+        "textures": 82,
+        "programs": 83,
+        "estimatedGpuMiB": 123.2,
+        "jsHeapMiB": 117.4
+      },
+      "sceneSwitchMs": 11537,
+      "streamMs": null,
+      "selectMs": null,
+      "deficitFrames": null,
+      "timeToPlayableMs": 472,
+      "loadLongestTaskMs": 2481,
+      "loadTasksOver100": 3,
+      "loadTasks": [
+        [
+          6446,
+          79
+        ],
+        [
+          6752,
+          2481
+        ],
+        [
+          11538,
+          782
+        ],
+        [
+          12446,
+          436
+        ]
+      ],
+      "gameLongestTaskMs": 50,
+      "playStartLongestTaskMs": 436,
+      "errors": []
+    },
+    {
+      "scene": "Floresta encantada",
+      "mode": "cpu",
+      "throttled": false,
+      "frames": 2135,
+      "playing": true,
+      "canvas": [
+        480,
+        270
+      ],
+      "travelledMetres": 234.7,
+      "frameMs": {
+        "median": 26.7,
+        "p95": 40.1,
+        "max": 79.9
+      },
+      "over50": 10,
+      "over100": 0,
+      "cpuMs": {
+        "median": 4.4,
+        "p95": 12.4,
+        "max": 21
+      },
+      "gpuMs": {
+        "median": 19.57,
+        "p95": 28.88,
+        "max": 36.9,
+        "samples": 2135
+      },
+      "drawCalls": {
+        "median": 117,
+        "max": 283
+      },
+      "triangles": {
+        "median": 557635,
+        "max": 992439
+      },
+      "memory": {
+        "geometryBytes": 7134910,
+        "textureBytes": 62914560,
+        "geometries": 147,
+        "textures": 45,
+        "programs": 72,
+        "estimatedGpuMiB": 66.8,
+        "jsHeapMiB": 103.3
+      },
+      "sceneSwitchMs": 4422,
+      "streamMs": null,
+      "selectMs": null,
+      "deficitFrames": null,
+      "timeToPlayableMs": 2997,
+      "loadLongestTaskMs": 647,
+      "loadTasksOver100": 2,
+      "loadTasks": [
+        [
+          4422,
+          482
+        ],
+        [
+          4991,
+          647
+        ]
+      ],
+      "gameLongestTaskMs": 0,
+      "playStartLongestTaskMs": 647,
+      "errors": []
+    },
+    {
+      "scene": "Ermo dos Saqueadores",
+      "mode": "cpu",
+      "throttled": false,
+      "frames": 3573,
+      "playing": true,
+      "canvas": [
+        480,
+        270
+      ],
+      "travelledMetres": 256.3,
+      "frameMs": {
+        "median": 13.4,
+        "p95": 26.7,
+        "max": 1626.8
+      },
+      "over50": 10,
+      "over100": 8,
+      "cpuMs": {
+        "median": 5,
+        "p95": 11.4,
+        "max": 1629
+      },
+      "gpuMs": {
+        "median": 10.24,
+        "p95": 12.43,
+        "max": 845.72,
+        "samples": 3573
+      },
+      "drawCalls": {
+        "median": 226,
+        "max": 428
+      },
+      "triangles": {
+        "median": 75360,
+        "max": 183776
+      },
+      "memory": {
+        "geometryBytes": 14402992,
+        "textureBytes": 58261504,
+        "geometries": 189,
+        "textures": 43,
+        "programs": 120,
+        "estimatedGpuMiB": 69.3,
+        "jsHeapMiB": 127.6
+      },
+      "sceneSwitchMs": 5502,
+      "streamMs": null,
+      "selectMs": null,
+      "deficitFrames": null,
+      "timeToPlayableMs": 5111,
+      "loadLongestTaskMs": 4919,
+      "loadTasksOver100": 3,
+      "loadTasks": [
+        [
+          5502,
+          625
+        ],
+        [
+          6194,
+          179
+        ],
+        [
+          6386,
+          4919
+        ]
+      ],
+      "gameLongestTaskMs": 1629,
+      "playStartLongestTaskMs": 4919,
+      "errors": []
+    },
+    {
+      "scene": "Exemplo jogável",
+      "mode": "cpu",
+      "throttled": false,
+      "frames": 2196,
+      "playing": true,
+      "canvas": [
+        480,
+        270
+      ],
+      "travelledMetres": 175.2,
+      "frameMs": {
+        "median": 26.7,
+        "p95": 40.1,
+        "max": 66.7
+      },
+      "over50": 25,
+      "over100": 0,
+      "cpuMs": {
+        "median": 3.3,
+        "p95": 9.8,
+        "max": 16.6
+      },
+      "gpuMs": {
+        "median": 18.48,
+        "p95": 32.39,
+        "max": 38.63,
+        "samples": 2196
+      },
+      "drawCalls": {
+        "median": 85,
+        "max": 162
+      },
+      "triangles": {
+        "median": 362022,
+        "max": 645046
+      },
+      "memory": {
+        "geometryBytes": 7934666,
+        "textureBytes": 86370987,
+        "geometries": 135,
+        "textures": 61,
+        "programs": 62,
+        "estimatedGpuMiB": 89.9,
+        "jsHeapMiB": 87
+      },
+      "sceneSwitchMs": 3473,
+      "streamMs": null,
+      "selectMs": null,
+      "deficitFrames": null,
+      "timeToPlayableMs": 3501,
+      "loadLongestTaskMs": 680,
+      "loadTasksOver100": 2,
+      "loadTasks": [
+        [
+          3473,
+          270
+        ],
+        [
+          3789,
+          680
+        ]
+      ],
+      "gameLongestTaskMs": 0,
+      "playStartLongestTaskMs": 680,
+      "errors": []
+    }
+  ],
+  "summary": {
+    "gpu · Vale dos Ventos": {
+      "runs": 3,
+      "frameMs": {
+        "median": 160.1,
+        "p95": 199.9,
+        "max": 653.4
+      },
+      "noiseMs": {
+        "median": 4.8,
+        "p95": 26.4
+      },
+      "fps": 6.2,
+      "cpuMs": {
+        "median": 7,
+        "p95": 13.6,
+        "max": 44.5
+      },
+      "gpuMs": {
+        "median": 149.61,
+        "p95": 175.2
+      },
+      "over50": [
+        288,
+        383,
+        369
+      ],
+      "over100": [
+        288,
+        383,
+        369
+      ],
+      "drawCalls": {
+        "median": 276,
+        "max": 541
+      },
+      "triangles": {
+        "median": 546527,
+        "max": 1308693
+      },
+      "estimatedGpuMiB": 107.3,
+      "jsHeapMiB": 113.8,
+      "programs": 86,
+      "sceneSwitchMs": 10089,
+      "timeToPlayableMs": 8285,
+      "loadLongestTaskMs": 1480,
+      "gameLongestTaskMs": 57,
+      "playStartLongestTaskMs": 1004,
+      "travelledMetres": [
+        82.6,
+        123.8,
+        118.6
+      ]
+    },
+    "gpu · Mercado de Valemar": {
+      "runs": 3,
+      "frameMs": {
+        "median": 120.1,
+        "p95": 146.8,
+        "max": 306.9
+      },
+      "noiseMs": {
+        "median": 3.6,
+        "p95": 4.4
+      },
+      "fps": 8.3,
+      "cpuMs": {
+        "median": 13.8,
+        "p95": 24.1,
+        "max": 213.4
+      },
+      "gpuMs": {
+        "median": 111.71,
+        "p95": 122.54
+      },
+      "over50": [
+        516,
+        488,
+        479
+      ],
+      "over100": [
+        446,
+        450,
+        467
+      ],
+      "drawCalls": {
+        "median": 669,
+        "max": 906
+      },
+      "triangles": {
+        "median": 463404,
+        "max": 544650
+      },
+      "estimatedGpuMiB": 123.2,
+      "jsHeapMiB": 119.1,
+      "programs": 82,
+      "sceneSwitchMs": 14013,
+      "timeToPlayableMs": 665,
+      "loadLongestTaskMs": 1211,
+      "gameLongestTaskMs": 215,
+      "playStartLongestTaskMs": 813,
+      "travelledMetres": [
+        163,
+        118,
+        113.7
+      ]
+    },
+    "gpu · Floresta encantada": {
+      "runs": 3,
+      "frameMs": {
+        "median": 120,
+        "p95": 173.4,
+        "max": 200.2
+      },
+      "noiseMs": {
+        "median": 3.6,
+        "p95": 5.2
+      },
+      "fps": 8.3,
+      "cpuMs": {
+        "median": 4.8,
+        "p95": 13.1,
+        "max": 22.1
+      },
+      "gpuMs": {
+        "median": 101.79,
+        "p95": 160.53
+      },
+      "over50": [
+        492,
+        486,
+        471
+      ],
+      "over100": [
+        328,
+        348,
+        353
+      ],
+      "drawCalls": {
+        "median": 116,
+        "max": 279
+      },
+      "triangles": {
+        "median": 555381,
+        "max": 986467
+      },
+      "estimatedGpuMiB": 66.8,
+      "jsHeapMiB": 95.1,
+      "programs": 72,
+      "sceneSwitchMs": 5321,
+      "timeToPlayableMs": 4579,
+      "loadLongestTaskMs": 1280,
+      "gameLongestTaskMs": 0,
+      "playStartLongestTaskMs": 1280,
+      "travelledMetres": [
+        180.8,
+        182.7,
+        167.4
+      ]
+    },
+    "gpu · Ermo dos Saqueadores": {
+      "runs": 3,
+      "frameMs": {
+        "median": 93.3,
+        "p95": 107.1,
+        "max": 1946.9
+      },
+      "noiseMs": {
+        "median": 2.8,
+        "p95": 3.21
+      },
+      "fps": 10.7,
+      "cpuMs": {
+        "median": 6.9,
+        "p95": 14.1,
+        "max": 1943.3
+      },
+      "gpuMs": {
+        "median": 84.26,
+        "p95": 94.88
+      },
+      "over50": [
+        607,
+        630,
+        598
+      ],
+      "over100": [
+        144,
+        51,
+        204
+      ],
+      "drawCalls": {
+        "median": 227,
+        "max": 433
+      },
+      "triangles": {
+        "median": 76328,
+        "max": 208322
+      },
+      "estimatedGpuMiB": 69.3,
+      "jsHeapMiB": 98.3,
+      "programs": 119,
+      "sceneSwitchMs": 5752,
+      "timeToPlayableMs": 6071,
+      "loadLongestTaskMs": 6740,
+      "gameLongestTaskMs": 1944,
+      "playStartLongestTaskMs": 6740,
+      "travelledMetres": [
+        242.8,
+        250.7,
+        245.3
+      ]
+    },
+    "gpu · Ilha do Farol": {
+      "runs": 3,
+      "frameMs": {
+        "median": 120,
+        "p95": 200,
+        "max": 226.7
+      },
+      "noiseMs": {
+        "median": 3.6,
+        "p95": 6
+      },
+      "fps": 8.3,
+      "cpuMs": {
+        "median": 3.7,
+        "p95": 7.2,
+        "max": 15.2
+      },
+      "gpuMs": {
+        "median": 108.01,
+        "p95": 184.63
+      },
+      "over50": [
+        446,
+        454,
+        443
+      ],
+      "over100": [
+        376,
+        362,
+        387
+      ],
+      "drawCalls": {
+        "median": 85,
+        "max": 162
+      },
+      "triangles": {
+        "median": 361986,
+        "max": 645106
+      },
+      "estimatedGpuMiB": 89.9,
+      "jsHeapMiB": 80.1,
+      "programs": 61,
+      "sceneSwitchMs": 3903,
+      "timeToPlayableMs": 4368,
+      "loadLongestTaskMs": 966,
+      "gameLongestTaskMs": 0,
+      "playStartLongestTaskMs": 787,
+      "travelledMetres": [
+        135.4,
+        134,
+        135
+      ]
+    },
+    "cpu · Vale dos Ventos": {
+      "runs": 3,
+      "frameMs": {
+        "median": 39.9,
+        "p95": 40.1,
+        "max": 80.1
+      },
+      "noiseMs": {
+        "median": 1.2,
+        "p95": 1.2
+      },
+      "fps": 25.1,
+      "cpuMs": {
+        "median": 5.6,
+        "p95": 14.9,
+        "max": 27.2
+      },
+      "gpuMs": {
+        "median": 27.42,
+        "p95": 34.15
+      },
+      "over50": [
+        63,
+        48,
+        33
+      ],
+      "over100": [
+        0,
+        0,
+        0
+      ],
+      "drawCalls": {
+        "median": 266,
+        "max": 552
+      },
+      "triangles": {
+        "median": 545989,
+        "max": 1312065
+      },
+      "estimatedGpuMiB": 107.3,
+      "jsHeapMiB": 125.7,
+      "programs": 87,
+      "sceneSwitchMs": 9463,
+      "timeToPlayableMs": 6176,
+      "loadLongestTaskMs": 869,
+      "gameLongestTaskMs": 0,
+      "playStartLongestTaskMs": 869,
+      "travelledMetres": [
+        228.4,
+        228.1,
+        228
+      ]
+    },
+    "cpu · Mercado de Valemar": {
+      "runs": 3,
+      "frameMs": {
+        "median": 26.7,
+        "p95": 40,
+        "max": 93.5
+      },
+      "noiseMs": {
+        "median": 0.8,
+        "p95": 1.2
+      },
+      "fps": 37.5,
+      "cpuMs": {
+        "median": 9.2,
+        "p95": 19.8,
+        "max": 64.4
+      },
+      "gpuMs": {
+        "median": 19.38,
+        "p95": 25.72
+      },
+      "over50": [
+        29,
+        22,
+        23
+      ],
+      "over100": [
+        0,
+        0,
+        0
+      ],
+      "drawCalls": {
+        "median": 512,
+        "max": 911
+      },
+      "triangles": {
+        "median": 448842,
+        "max": 549616
+      },
+      "estimatedGpuMiB": 123.2,
+      "jsHeapMiB": 117.4,
+      "programs": 83,
+      "sceneSwitchMs": 11555,
+      "timeToPlayableMs": 481,
+      "loadLongestTaskMs": 2481,
+      "gameLongestTaskMs": 65,
+      "playStartLongestTaskMs": 450,
+      "travelledMetres": [
+        220.2,
+        219.4,
+        221.1
+      ]
+    },
+    "cpu · Floresta encantada": {
+      "runs": 3,
+      "frameMs": {
+        "median": 26.7,
+        "p95": 40.1,
+        "max": 146.7
+      },
+      "noiseMs": {
+        "median": 0.8,
+        "p95": 1.2
+      },
+      "fps": 37.5,
+      "cpuMs": {
+        "median": 4.3,
+        "p95": 12.4,
+        "max": 21
+      },
+      "gpuMs": {
+        "median": 19.81,
+        "p95": 29.1
+      },
+      "over50": [
+        16,
+        5,
+        10
+      ],
+      "over100": [
+        5,
+        0,
+        0
+      ],
+      "drawCalls": {
+        "median": 117,
+        "max": 283
+      },
+      "triangles": {
+        "median": 557635,
+        "max": 993885
+      },
+      "estimatedGpuMiB": 66.8,
+      "jsHeapMiB": 103.3,
+      "programs": 72,
+      "sceneSwitchMs": 4498,
+      "timeToPlayableMs": 3076,
+      "loadLongestTaskMs": 693,
+      "gameLongestTaskMs": 0,
+      "playStartLongestTaskMs": 693,
+      "travelledMetres": [
+        234.6,
+        235,
+        234.7
+      ]
+    },
+    "cpu · Ermo dos Saqueadores": {
+      "runs": 3,
+      "frameMs": {
+        "median": 13.4,
+        "p95": 26.7,
+        "max": 1813.6
+      },
+      "noiseMs": {
+        "median": 0.4,
+        "p95": 0.8
+      },
+      "fps": 74.6,
+      "cpuMs": {
+        "median": 5.1,
+        "p95": 11,
+        "max": 1821.1
+      },
+      "gpuMs": {
+        "median": 10.34,
+        "p95": 12.51
+      },
+      "over50": [
+        7,
+        7,
+        10
+      ],
+      "over100": [
+        7,
+        7,
+        8
+      ],
+      "drawCalls": {
+        "median": 230,
+        "max": 428
+      },
+      "triangles": {
+        "median": 75842,
+        "max": 185220
+      },
+      "estimatedGpuMiB": 69.3,
+      "jsHeapMiB": 116.6,
+      "programs": 120,
+      "sceneSwitchMs": 5520,
+      "timeToPlayableMs": 5111,
+      "loadLongestTaskMs": 5025,
+      "gameLongestTaskMs": 1821,
+      "playStartLongestTaskMs": 5025,
+      "travelledMetres": [
+        261.1,
+        264.9,
+        256.3
+      ]
+    },
+    "cpu · Ilha do Farol": {
+      "runs": 3,
+      "frameMs": {
+        "median": 26.7,
+        "p95": 40.1,
+        "max": 93.1
+      },
+      "noiseMs": {
+        "median": 0.8,
+        "p95": 1.2
+      },
+      "fps": 37.5,
+      "cpuMs": {
+        "median": 3.3,
+        "p95": 9.8,
+        "max": 17.4
+      },
+      "gpuMs": {
+        "median": 18.47,
+        "p95": 32.39
+      },
+      "over50": [
+        29,
+        28,
+        25
+      ],
+      "over100": [
+        0,
+        0,
+        0
+      ],
+      "drawCalls": {
+        "median": 85,
+        "max": 162
+      },
+      "triangles": {
+        "median": 362026,
+        "max": 645052
+      },
+      "estimatedGpuMiB": 89.9,
+      "jsHeapMiB": 87,
+      "programs": 62,
+      "sceneSwitchMs": 3503,
+      "timeToPlayableMs": 3254,
+      "loadLongestTaskMs": 767,
+      "gameLongestTaskMs": 0,
+      "playStartLongestTaskMs": 767,
+      "travelledMetres": [
+        177.1,
+        171.8,
+        175.2
+      ]
+    }
+  },
+  "gate": {
+    "comparedTo": null,
+    "findings": []
+  }
+}

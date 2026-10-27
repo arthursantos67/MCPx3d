@@ -10,8 +10,26 @@ import { createHeightSource } from '../../src/three/world/worldTerrain.ts'
 import { quarterGeometry } from '../../src/three/world/terrainRenderer.ts'
 import type { ThreeWorldDocument } from '../../src/three/world/worldDocument.ts'
 
-const world = (size = 1024, seed = 7): Pick<ThreeWorldDocument, 'seed' | 'terrain'> => ({ seed, terrain: { kind: 'synthetic', size: [size, size], heightRange: [-40, 600], seaLevel: 0, ruggedness: 0.8, erosion: 0 } })
+const world = (size = 1024, seed = 7): Pick<ThreeWorldDocument, 'seed' | 'terrain'> => ({ seed, terrain: { kind: 'synthetic', size: [size, size], heightRange: [-40, 600], seaLevel: 0, ruggedness: 0.8, erosion: 0, climate: { temperature: 16, humidity: 0.55, wind: 0 } } })
 const settings = { pixelHeight: 1080, fovY: THREE.MathUtils.degToRad(70), tolerancePx: 1, morphFraction: 0.3 }
+
+test('frustum culling tests each drawn quarter without changing terrain residency requests', () => {
+  const field = buildLodField([new Float32Array(1)], [1, 1], settings)
+  const input = { camera: [0, 100, 0] as [number, number, number], origin: [-32, -32] as [number, number], levels: 1, field, roots: [1, 1] as [number, number], bounds: () => ({ minY: 0, maxY: 2 }), resident: () => true }
+  const all = selectNodes(input)
+  const view = selectNodes({ ...input, visible: (_x0, _y0, _z0, x1, _y1, z1) => x1 > 0 && z1 > 0 })
+  assert.equal(all.draws.length, 4)
+  assert.deepEqual(view.draws, [{ level: 0, ix: 0, iz: 0, quarter: 3 }])
+  assert.deepEqual(view.wanted, all.wanted)
+  assert.equal(view.deficit, 0)
+  const finer = selectNodes({ ...input, camera: [0, 1, 0], origin: [-64, -64], levels: 2,
+    field: buildLodField([new Float32Array(4), new Float32Array(4)], [2, 2], settings),
+    resident: (level, ix, iz) => level === 1 || (ix === 1 && iz === 1),
+    visible: (_x0, _y0, _z0, x1, _y1, z1) => x1 > 0 && z1 > 0 })
+  assert.equal(finer.deficit, 0, 'missing quarters outside the view are prefetched without reporting a visible shortfall')
+  assert.equal(finer.wanted.length, 3)
+  assert.ok(finer.draws.every((draw) => draw.level === 0 && draw.ix === 1 && draw.iz === 1))
+})
 
 function measured(size: number, seed = 7) {
   const source = createHeightSource(world(size, seed)), levels = levelCount(size), origin: [number, number] = [-size / 2, -size / 2], blocks = errorBlocks([size, size], origin, levels)

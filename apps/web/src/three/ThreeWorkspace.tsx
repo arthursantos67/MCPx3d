@@ -28,8 +28,16 @@ import { ambiencePresets, attackStyles, DEFAULT_MOTION, emitterPresets, faunaDen
   parseScene, redoScene, removeSubtree, SCENE_STORAGE_KEY, skyLabels, skyPresets, subtreeIds, textureKinds, textureLabels, undoScene, validateAnimation,validateScene,
   type NodeKind, type SceneAnimation, type SceneBehavior, type SceneHistory, type SceneInteraction, type SceneKeyframe, type SceneNode, type ScenePlayer, type SceneEmitter, type SceneRoutineStep, type SceneSound, type ThreeSceneDocument, type Vector3Tuple } from './sceneDocument.ts'
 import './ThreeWorkspace.css'
+
+/** Name of the world open in the workspace, to restore it from IndexedDB after a reload. */
+const WORLD_FLAG = 'modeler:three-world'
 import type { ThreeWorldDocument } from './world/worldDocument.ts'
-import { createSyntheticWorld, worldBaseScene } from './world/worldExamples.ts'
+import { createClimateWorld, createSyntheticWorld } from './world/worldExamples.ts'
+import { composeWorldScene } from './world/worldScene.ts'
+import { parseProject } from './world/worldDocument.ts'
+import { continueWorld, editWorld, generateWorld, type WorldGenerationDeps, type WorldGenerationEvent } from './world/worldGeneration.ts'
+import { createWorldWorkers } from './world/workerPool.ts'
+import { loadWorld, saveWorld } from './world/worldStore.ts'
 
 function RoutineEditor({ steps, places, onChange }: { steps: SceneRoutineStep[]; places: SceneNode[]; onChange: (steps: SceneRoutineStep[]) => void }) {
   const set = (index: number, patch: Partial<SceneRoutineStep>) => onChange(steps.map((step, i) => i === index ? { ...step, ...patch } : step))
@@ -132,7 +140,7 @@ export default function ThreeWorkspace({ active, provider, ready, onBusyChange, 
   const [inspecting, setInspecting] = useState(false)
   const inspection = useRef<AbortController | null>(null)
   const [spatial, setSpatial] = useState<{ document: ThreeSceneDocument; report: SceneInspection; audit?: SceneAudit } | null>(null)
-  const [action, setAction] = useState<'auto' | 'create' | 'edit' | 'repair'>('auto')
+  const [action, setAction] = useState<'auto' | 'create' | 'edit' | 'repair' | 'world' | 'world-edit' | 'world-continue'>('auto')
   const [filter, setFilter] = useState('')
   const [addKind, setAddKind] = useState<NodeKind | `prefab:${PrefabType}`>('box')
   const [playing, setPlaying] = useState(false)
@@ -150,6 +158,7 @@ export default function ThreeWorkspace({ active, provider, ready, onBusyChange, 
   const [hasCreated, setHasCreated] = useState(!!initial.restored)
   const [prompt, setPrompt] = useState('')
   const effectiveAction = action === 'auto' ? inferSceneAction(prompt, hasCreated) : action
+  const worldAction = effectiveAction === 'world' || effectiveAction === 'world-edit' || effectiveAction === 'world-continue'
   const [generating, setGenerating] = useState(false)
   const [generationStatus, setGenerationStatus] = useState('')
   const [timeoutSeconds, setTimeoutSeconds] = useState(300)
@@ -259,19 +268,77 @@ export default function ThreeWorkspace({ active, provider, ready, onBusyChange, 
   const replace = (document: ThreeSceneDocument) => {
     if (commit(document)) { setSelectedId(null); setFilter(''); setProjectMenu(false); setPlaying(false); seek(0); setFitRequest((value) => value + 1); setAuditRequest((value) => value + 1) }
     setWorld(null)
+    try { localStorage.removeItem(WORLD_FLAG) } catch { /* storage blocked */ }
   }
-  const openWorld = (next: ThreeWorldDocument) => { replace(worldBaseScene(next)); setWorld(next) }
+  /** Shows a world: its locations composed into the played scene, the world kept for the viewport and saved for reloads. */
+  const openWorld = (next: ThreeWorldDocument) => {
+    replace(composeWorldScene(next).scene)
+    setWorld(next)
+    try { localStorage.setItem(WORLD_FLAG, next.name) } catch { /* storage blocked */ }
+    void saveWorld(next).catch((cause) => setStorageError(`Mundo não salvo neste navegador: ${cause instanceof Error ? cause.message : String(cause)}`))
+  }
+  // A world open before a reload comes back from IndexedDB (localStorage only keeps its composed scene).
+  useEffect(() => {
+    let flag: string | null = null
+    try { flag = localStorage.getItem(WORLD_FLAG) } catch { flag = null }
+    if (!flag) return
+    let live = true
+    void loadWorld().then((saved) => { if (live && saved && saved.world.name === flag) setWorld(saved.world) }).catch(() => {})
+    return () => { live = false }
+  }, [])
+  /** AI world actions: no overall deadline; timed-out requests are re-sent and every finished step is saved. */
+  const runWorld = async (kind: 'world' | 'world-edit' | 'world-continue') => {
+    if (generation.current || !ready || (kind !== 'world-continue' && !prompt.trim()) || (kind !== 'world' && !world)) return
+    const controller = new AbortController(), pool = createWorldWorkers()
+    generation.current = controller
+    setGenerating(true); onBusyChange(true); setError(null); setGenerationNotes([]); setPlayMode(false)
+    // oxlint-disable-next-line react/purity
+    setGenerationRun({ startedAt: Date.now(), budgetSeconds: 0, events: [], outcome: 'running' })
+    const stage = { atlas: 'planning', terrain: 'expansion', detail: 'waiting', retry: 'validation', done: 'application' } as const
+    const notes: string[] = []
+    const event = (item: WorldGenerationEvent) => {
+      setGenerationStatus(item.detail)
+      if (item.step === 'retry' || item.step === 'terrain') notes.push(item.detail)
+      setGenerationRun((run) => run ? { ...run, events: [...run.events, { stage: stage[item.step], attempt: 1, detail: item.detail, at: Date.now() }] } : run)
+    }
+    let shown = false
+    const deps: WorldGenerationDeps = {
+      provider, onEvent: event,
+      place: (target, intents, only) => pool.run({ type: 'place', world: target, intents, ...(only ? { only } : {}) }),
+      detail: (request, signal) => generateThreeScene(provider, request, signal, setGenerationStatus),
+      // The world appears as soon as its terrain is placed; detailed locations join it as they finish.
+      checkpoint: (next) => { openWorld(next); shown = true },
+    }
+    try {
+      const finished = kind === 'world' ? await generateWorld(prompt, Math.floor(Math.random() * 2 ** 31), deps, controller.signal)
+        : kind === 'world-edit' ? (await editWorld(world!, prompt, deps, controller.signal)).world : await continueWorld(world!, deps, controller.signal)
+      openWorld(finished)
+      setHasCreated(true); setAction('auto'); setPrompt('')
+      setGenerationNotes(notes)
+      setGenerationRun((run) => run ? { ...run, outcome: 'success', finishedAt: Date.now() } : run)
+    } catch (cause) {
+      setReportsOpen(true)
+      setGenerationRun((run) => run ? { ...run, outcome: controller.signal.aborted ? 'cancelled' : 'error', finishedAt: Date.now(), events: [...run.events, { stage: 'application', attempt: 1, at: Date.now(), detail: cause instanceof Error ? cause.message : String(cause) }] } : run)
+      setGenerationStatus(shown ? 'Geração interrompida; o progresso foi salvo e pode continuar.' : 'O mundo anterior foi preservado.')
+    } finally {
+      pool.dispose()
+      generation.current = null
+      setGenerating(false); onBusyChange(false)
+    }
+  }
   const importFile = async (file: File) => {
     try {
+      const project = parseProject(await file.text())
+      if (project.kind === 'world') { openWorld(project.document); setHasCreated(true); return }
       if (file.size > MAX_SCENE_BYTES) throw new Error('O projeto excede o limite de 32 MB.')
-      const document = validateScene(conformTerrainPaths(parseScene(await file.text())))
+      const document = validateScene(conformTerrainPaths(project.document))
       replace(document)
       setHasCreated(true)
       setAction('auto')
       setPrompt('')
     } catch (cause) { setError(`Importação recusada: ${cause instanceof Error ? cause.message : String(cause)}`) }
   }
-  const exportFile = () => { download(new Blob([JSON.stringify(doc, null, 2)], { type: 'application/json' }), `${normalizeProjectName(doc.name)}.three.json`); setProjectMenu(false) }
+  const exportFile = () => { download(new Blob([JSON.stringify(world ?? doc, null, 2)], { type: 'application/json' }), `${normalizeProjectName(world?.name ?? doc.name)}.${world ? 'world' : 'three'}.json`); setProjectMenu(false) }
   const exportGlb = async () => {
     if (assetBusy) return
     setAssetBusy(true)
@@ -288,6 +355,7 @@ export default function ThreeWorkspace({ active, provider, ready, onBusyChange, 
     catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
   }
   const generate = async () => {
+    if (worldAction) { await runWorld(effectiveAction); return }
     if (generation.current || inspecting || assetBusy || !ready || (effectiveAction !== 'repair' && !prompt.trim())) return
     const controller = new AbortController()
     generation.current = controller
@@ -478,11 +546,11 @@ export default function ThreeWorkspace({ active, provider, ready, onBusyChange, 
         {!hasCreated && !prompt && <div className="three-prompt__suggestions" aria-label="Ideias para começar">{[...creationIdeas.slice(0, 4), ...creativeIdeas.slice(0, 4)].map(([label, idea]) => <button key={label} type="button" disabled={busy} onClick={() => setPrompt(idea)}>{label} ↗</button>)}</div>}
         <div className="three-prompt__buttons"><details className="three-prompt__options"><summary>Opções de criação</summary><div><label className="three-generation-limit">Ação da IA
           <select aria-label="Ação da IA" value={action} disabled={busy} onChange={(event) => setAction(event.target.value as typeof action)}>
-            <option value="auto">Automática pelo pedido</option><option value="create">Criar nova cena</option><option value="edit">Editar cena atual</option><option value="repair">Corrigir cena</option></select></label><label className="three-generation-limit">Tempo máximo de geração
-          <select aria-label="Tempo máximo de geração" value={timeoutSeconds} disabled={busy} onChange={(event) => setTimeoutSeconds(Number(event.target.value))}>
+            <option value="auto">Automática pelo pedido</option><option value="create">Criar nova cena</option><option value="edit">Editar cena atual</option><option value="repair">Corrigir cena</option><option value="world">Criar mundo de 4 km</option>{world && <option value="world-edit">Editar mundo atual</option>}{world && (world.generation?.pending.length || world.generation?.failed.length) ? <option value="world-continue">Continuar geração do mundo</option> : null}</select></label><label className="three-generation-limit">Tempo máximo de geração
+          <select aria-label="Tempo máximo de geração" value={timeoutSeconds} disabled={busy || worldAction} title={worldAction ? 'Mundos não têm prazo: a geração continua até concluir e requisições que estouram o tempo são reenviadas.' : undefined} onChange={(event) => setTimeoutSeconds(Number(event.target.value))}>
             <option value={120}>2 minutos</option><option value={300}>5 minutos</option><option value={600}>10 minutos</option></select></label></div></details>
           {generating ? <button type="button" onClick={(event) => { event.preventDefault(); generation.current?.abort(new DOMException('Geração cancelada. A cena anterior foi preservada.', 'AbortError')) }}>Cancelar geração</button>
-          : ready ? <button type="submit" className="three-button--primary" disabled={inspecting || assetBusy || (effectiveAction !== 'repair' && !prompt.trim())}>{effectiveAction === 'create' ? 'Criar cena com IA' : effectiveAction === 'edit' ? 'Editar cena com IA' : 'Corrigir cena'}</button>
+          : ready ? <button type="submit" className="three-button--primary" disabled={inspecting || assetBusy || (effectiveAction !== 'repair' && effectiveAction !== 'world-continue' && !prompt.trim())}>{effectiveAction === 'create' ? 'Criar cena com IA' : effectiveAction === 'edit' ? 'Editar cena com IA' : effectiveAction === 'world' ? 'Criar mundo com IA' : effectiveAction === 'world-edit' ? 'Editar mundo com IA' : effectiveAction === 'world-continue' ? 'Continuar o mundo' : 'Corrigir cena'}</button>
             : <button type="button" onClick={onOpenProviderSettings}>Configurar IA para criar</button>}
           <span className="three-prompt__status" role="status">{generationStatus || (effectiveAction === 'edit' ? 'Alterando a cena atual · Desfazer disponível' : 'Composição, materiais e iluminação automáticos')}</span></div>
       </div>
@@ -524,6 +592,7 @@ export default function ThreeWorkspace({ active, provider, ready, onBusyChange, 
         <button type="button" onClick={() => replace(createValleyScene())}>Vale dos Ventos</button>
         <button type="button" onClick={() => replace(createArchitectureScene())}>Casa com dois pavimentos</button>
         <button type="button" onClick={() => openWorld(createSyntheticWorld())}>Relevo sintético 4 km</button>
+        <button type="button" onClick={() => openWorld(createClimateWorld())}>Terras de Aurora 4 km</button>
         <span className="three-toolbar__separator" />
         <button type="button" disabled={!history.past.length} onClick={() => { setHistory(undoScene(history)); setError(null) }}>Desfazer</button>
         <button type="button" disabled={!history.future.length} onClick={() => { setHistory(redoScene(history)); setError(null) }}>Refazer</button>

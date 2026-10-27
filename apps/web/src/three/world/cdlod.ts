@@ -145,6 +145,12 @@ export function selectNodes(input: SelectionInput, prefetch = 1.25): Selection {
     return [x0, bounds.minY, z0, x0 + size, bounds.maxY, z0 + size] as const
   }
   const distanceSq = (level: number, ix: number, iz: number) => { const b = box(level, ix, iz); return boxDistanceSq(cx, cy, cz, ...b) }
+  const quarterVisible = (level: number, ix: number, iz: number, quarter: number) => {
+    if (!input.visible) return true
+    const half = nodeSize(level) / 2, x0 = input.origin[0] + ix * half * 2 + (quarter & 1) * half, z0 = input.origin[1] + iz * half * 2 + (quarter >> 1) * half
+    const bounds = input.bounds(level, ix, iz)
+    return input.visible(x0, bounds.minY, z0, x0 + half, bounds.maxY, z0 + half)
+  }
   const want = (level: number, ix: number, iz: number) => { if (!input.resident(level, ix, iz)) wanted.push({ level, ix, iz, distance: Math.sqrt(distanceSq(level, ix, iz)) }) }
   // Returns false when the node lies beyond its own range (or is not loaded), so the parent keeps that quarter.
   // Nodes outside the frustum are still walked without drawing, so turning the camera finds them loaded.
@@ -158,13 +164,14 @@ export function selectNodes(input: SelectionInput, prefetch = 1.25): Selection {
     if (draw && input.visible && !input.visible(...box(level, ix, iz))) draw = false
     const finer = input.field.finer(level, ix, iz)
     if (level === 0 || distance > finer * finer) {
-      if (draw) for (let quarter = 0; quarter < 4; quarter++) draws.push({ level, ix, iz, quarter })
+      if (draw) for (let quarter = 0; quarter < 4; quarter++) if (quarterVisible(level, ix, iz, quarter)) draws.push({ level, ix, iz, quarter })
       if (level > 0 && distance <= finer * finer * prefetch * prefetch) for (let quarter = 0; quarter < 4; quarter++) visit(level - 1, ix * 2 + (quarter & 1), iz * 2 + (quarter >> 1), false)
       return true
     }
     for (let quarter = 0; quarter < 4; quarter++) {
       const childX = ix * 2 + (quarter & 1), childZ = iz * 2 + (quarter >> 1)
       if (visit(level - 1, childX, childZ, draw) || !draw) continue
+      if (!quarterVisible(level, ix, iz, quarter)) continue
       const childReach = input.field.reach(level - 1, childX, childZ)
       if (distanceSq(level - 1, childX, childZ) <= childReach * childReach) deficit++
       draws.push({ level, ix, iz, quarter })

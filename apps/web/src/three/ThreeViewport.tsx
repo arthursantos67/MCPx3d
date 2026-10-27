@@ -11,7 +11,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutlinePass } from 'three/addons/postprocessing/OutlinePass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
 import { sampleNodeTransform } from './sceneAnimation.ts'
-import { buildScene, createResources, HELPER_LAYER, pickNodeId, pickVisible, surfaceMatrix, type BuiltScene, type SceneResources } from './sceneBuild.ts'
+import { buildScene, buildSceneSteps, createResources, HELPER_LAYER, pickNodeId, pickVisible, surfaceMatrix, type BuiltScene, type SceneResources } from './sceneBuild.ts'
 import { DEFAULT_MOTION, hasSurface, INTERACTION_KEYS, subtreeIds, type avatarKinds, type PowerKind, type SceneNode, type ThreeSceneDocument, type Vector3Tuple } from './sceneDocument.ts'
 import { createEnvironmentRig, SKY_LAYER } from './sceneEnvironment.ts'
 import { createOcclusionPass } from './sceneOcclusion.ts'
@@ -52,6 +52,15 @@ import type { ThreeWorldDocument } from './world/worldDocument.ts'
 import { combineShapes } from './world/terrainCollider.ts'
 import { createWorldWorkers, type WorldPool } from './world/workerPool.ts'
 import { createWorldRuntime, type WorldRuntime } from './world/worldRuntime.ts'
+import { createLocationLod, type LocationLod } from './world/locationLod.ts'
+import { LOCATION_GROUP, locationOfNode } from './world/worldScene.ts'
+import { worldTerrainKey } from './world/worldDocument.ts'
+import { hasTextureData, primeTextureData } from './sceneTextures.ts'
+import { compileInSlices, compileShadowPrograms } from './sceneCompile.ts'
+import WorldMap, { type WorldMapProps } from './world/WorldMap.tsx'
+import { createFog, type Fog } from './world/worldMap.ts'
+import { createMount, MOUNT_EYE, MOUNT_SPEED, type Mount } from './world/worldMount.ts'
+import { loadProgress, saveProgress } from './world/worldStore.ts'
 
 /** The defines OutputPass derives from the renderer (three/addons OutputPass.render), so its program can be compiled ahead. */
 function outputDefines(renderer: THREE.WebGLRenderer): Record<string, string> {
@@ -114,6 +123,10 @@ export default function ThreeViewport({ document, world = null, selectedId, acti
     if (playMode) setHud(null)
   }
   const [toasts, setToasts] = useState<{ id: number; text: string }[]>([])
+  const [worldMap, setWorldMap] = useState<Omit<WorldMapProps, 'onTravel' | 'onClose'> | null>(null)
+  const [travelling, setTravelling] = useState<string | null>(null)
+  const mapRequest = useRef<(open: boolean) => void>(() => {})
+  const travelRequest = useRef<(id: string) => void>(() => {})
   const lockRequest = useRef<() => void>(() => {})
   const handle = useRef<ViewportController | null>(null)
   useImperativeHandle(controller, () => ({
@@ -129,6 +142,8 @@ export default function ThreeViewport({ document, world = null, selectedId, acti
     // The graphics context is an external resource; expose initialization failure.
     // oxlint-disable-next-line react/set-state-in-effect
     catch { setError('WebGL2 indisponível. Ative a aceleração gráfica ou use outro navegador. Você ainda pode editar e exportar o projeto.'); return }
+    // Checking each program's log on first use is a synchronous round trip to the GPU process per program; the shaders are fixed, so only development builds check.
+    renderer.debug.checkShaderErrors = import.meta.env.DEV
     const bench = sceneBench()
     const ratioFor = (preference: PlaySettings['quality']) => bench?.ratio ?? Math.min(window.devicePixelRatio || 1, preference === 'low' ? 1 : preference === 'high' ? 2 : 1.5)
     const pixelRatio = ratioFor(settingsRef.current.quality)
@@ -225,6 +240,7 @@ export default function ThreeViewport({ document, world = null, selectedId, acti
     const resources = createResources(Math.min(8, renderer.capabilities.getMaxAnisotropy()))
     let doc: ThreeSceneDocument | null = null, built: BuiltScene | null = null
     let worldDoc: ThreeWorldDocument | null = null, worldRuntime: WorldRuntime | null = null, worldPool: WorldPool | null = null, worldReady = false, worldFocus = new THREE.Vector3()
+    let locationLod: LocationLod | null = null
     let animatedNodes: SceneNode[] = [], byId = new Map<string, SceneNode>()
     let playback = false, time = 0, duration = 20
     let lastTimestamp: number | null = null, lastReport = 0, fpsFrames = 0, fpsStarted = 0, statsReported = 0
@@ -236,7 +252,8 @@ export default function ThreeViewport({ document, world = null, selectedId, acti
       view: 'first' | 'third'; spawn: THREE.Vector3; stride: number; sounds: SceneNode[]; projectiles: Projectile[]; attackCooldown: number; swing: number; hudAt: number; platforms: Map<string, THREE.Matrix4>
       modes: Map<string, string>; rigMotion: Map<string, CharacterMotion>; avatarRig: { built: BuiltScene; resources: SceneResources; binding: RigBinding; animator: Animator; feet: FootIKMemory; springs: SpringSystem; equipment: Equipment; climb: ClimbMemory; ladder: Ladder | null; seenHurt: number; seenSwing: number }; swings: number; heavy: boolean; meleeHits: Set<string>; blade: THREE.Line3 | null; dialogue: { id: string; name: string; line: string; index: number; total: number; until: number } | null; spawnNotice: number; enemies: Map<string, EnemyState>; enemyParts:Set<string>; parts: Map<string, SceneNode[]>; water: number | null; avatar: THREE.Group; hurt: number; goalCooldown: number; nav: NavigationMesh | null; router: Router; routines: Map<string, RoutinePlan>; guards: Set<string>
       paused: boolean; dismissed: boolean; interacted: boolean; device: 'keyboard' | 'gamepad'; pad: GamepadState; stamina: number; dodge: number; dodged: boolean; damageTaken: number; falls: number; lastHealth: number
-      subtitle: { speaker: string; text: string; until: number } | null; greeted: Map<string, number>; omitted: number; aimables: THREE.Object3D[]; ownedBvh: MeshBVH | null } | null = null
+      subtitle: { speaker: string; text: string; until: number } | null; greeted: Map<string, number>; omitted: number; aimables: THREE.Object3D[]; ownedBvh: MeshBVH | null; region: string; regionAt: number
+      fog: Fog | null; visited: Set<string>; frozen: boolean; savedAt: number; mount: Mount | null } | null = null
     /** The third-person avatar is compiled from the same procedural parts and rig as scene characters, with its own GPU resources. */
     const createAvatar = (kind: typeof avatarKinds[number], weapon: WeaponKind) => {
       const { built: avatarBuilt, resources: avatarResources, binding } = buildPlayerAvatar(kind, { quality, shadows: doc?.environment.shadows ?? true }, weapon)
@@ -278,6 +295,7 @@ export default function ThreeViewport({ document, world = null, selectedId, acti
       if (worldRuntime && worldReady) {
         worldRuntime.update(camera, renderer.domElement.height, game ? game.player.position : null)
         worldRuntime.object.updateMatrixWorld(true)
+        locationLod?.update(game ? game.player.position : camera.position)
         if (!game) rig.frame(controls.target, 60)
       }
       built?.updateShadows(game?game.player.position:controls.target)
@@ -292,6 +310,7 @@ export default function ThreeViewport({ document, world = null, selectedId, acti
       weather.update(camera, seconds, wind.vector(windVector))
       grading.setTime(seconds)
       if (waterMaterials.length) animateWater(waterMaterials, seconds)
+      if (worldRuntime && worldReady) animateWater(worldRuntime.materials, seconds)
       const delta = lifeClock ? Math.min(0.1, seconds - lifeClock) : 0, day = doc && game ? applyDay(doc.environment, game.runtime.elapsed) : null
       lifeClock = seconds
       if (doc) fauna?.update(camera, seconds, delta, game ? game.player.position : null, nightAmount(doc.environment, day))
@@ -503,7 +522,7 @@ export default function ThreeViewport({ document, world = null, selectedId, acti
         if (pad.pressed.has('fly')) toggleFly(state)
         if (pad.pressed.has('mute')) toggleMute(state)
       }
-      const delta = state.paused ? 0 : elapsed, input = state.paused ? emptyInput() : mergeInput(state.input, pad.input)
+      const halted = state.paused || state.frozen, delta = halted ? 0 : elapsed, input = halted ? emptyInput() : mergeInput(state.input, pad.input)
       if (bench && !state.paused) bench.drive(player, input, delta)
       const running = Math.hypot(player.velocity.x, player.velocity.z) > 0.5
       state.stamina = THREE.MathUtils.clamp(state.stamina + (input.sprint && running && !player.fly ? -22 : state.dodge > 0 ? 0 : 16) * delta, 0, 100)
@@ -541,6 +560,25 @@ export default function ThreeViewport({ document, world = null, selectedId, acti
         overlay.current?.damage(container.clientWidth * 0.2, container.clientHeight * 0.78, Math.round(amount), 'taken')
         if (away && away.lengthSq() > 1e-6) overlay.current?.hurtFrom(hurtAngle(player.position, player.position.clone().sub(away), headingFromYaw(player.yaw)))
         if (away && away.lengthSq() > 1e-6) { away.setY(0).normalize().multiplyScalar(6); player.velocity.set(away.x, 4, away.z) }
+      }
+      if (worldRuntime && worldReady && runtime.elapsed >= state.regionAt) {
+        // Crossing into another region (or biome, outside named regions) crossfades ambience and music.
+        state.regionAt = runtime.elapsed + 0.5
+        const place = worldRuntime.regionAt(player.position.x, player.position.z), key = `${place.region?.id ?? place.biome}:${place.ambience}:${place.music}`
+        if (key !== state.region) {
+          const first = !state.region
+          state.region = key
+          if (!first && doc!.environment.audio?.ambience === 'auto') audio?.setRegion(place.ambience, place.music)
+          if (place.region && !first) toast(place.region.name)
+          // Each region may bring its own weather; outside named regions the scene's weather returns.
+          weather.apply(place.region && place.region.weather !== 'none' ? place.region.weather : doc!.environment.weather ?? 'none', doc!.environment)
+        }
+        if (state.fog && state.fog.reveal(player.position.x, player.position.z) && mapOpen) refreshMap(state)
+        for (const location of worldDoc?.locations ?? []) if (!state.visited.has(location.id) && Math.hypot(player.position.x - location.position[0], player.position.z - location.position[1]) < location.footprint) {
+          state.visited.add(location.id)
+          toast(`Descoberto: ${location.name}`)
+        }
+        if (runtime.elapsed - state.savedAt > 10) { state.savedAt = runtime.elapsed; saveWorldProgress(state) }
       }
       const hour = routineHour(doc!.environment, runtime.elapsed)
       const live = [...state.enemies].filter(([id]) => !runtime.defeated.has(id) && runtimeVisible(runtime, byId.get(id)!))
@@ -584,7 +622,7 @@ export default function ThreeViewport({ document, world = null, selectedId, acti
       state.collider.boxes = surfaces(() => true).map((item) => item.box)
       const modifiers = playerModifiers(runtime)
       const fall = player.velocity.y, wasGrounded = player.onGround, wantsJump = input.jump
-      if (runtime.outcome !== 'lost' && (!worldRuntime || player.fly || worldRuntime.collisionReady(player.position))) stepPlayer(player, input, state.collider, { speed: (bench?.speed ?? settings.speed) * modifiers.speed, jumpHeight: settings.jumpHeight * modifiers.jump }, delta)
+      if (runtime.outcome !== 'lost' && (!worldRuntime || player.fly || worldRuntime.collisionReady(player.position))) stepPlayer(player, input, state.collider, { speed: (bench?.speed ?? (state.mount?.riding ? MOUNT_SPEED : settings.speed)) * modifiers.speed, jumpHeight: settings.jumpHeight * modifiers.jump }, delta)
       if (wasGrounded && wantsJump && !player.onGround && player.velocity.y > 0) sfx('jump', player.position)
       if (!wasGrounded && player.onGround && fall < -5) sfx('land', player.position)
       state.stride += player.onGround && !player.fly ? Math.hypot(player.velocity.x, player.velocity.z) * delta : 0
@@ -624,7 +662,8 @@ export default function ThreeViewport({ document, world = null, selectedId, acti
         toast(runtime.checkpoint ? 'Você foi derrotado. De volta ao último ponto de controle.' : 'Você foi derrotado. De volta ao início.')
       }
       checkOutcome(runtime)
-      const head = player.position.clone().add(new THREE.Vector3(0, state.view === 'third' ? 1.55 : PLAYER_EYE, 0)), orientation = new THREE.Euler(player.pitch, player.yaw, 0, 'YXZ')
+      state.mount?.update(player.position, player.yaw, Math.hypot(player.velocity.x, player.velocity.z), delta)
+      const head = player.position.clone().add(new THREE.Vector3(0, (state.view === 'third' ? 1.55 : PLAYER_EYE) + (state.mount?.riding ? MOUNT_EYE : 0), 0)), orientation = new THREE.Euler(player.pitch, player.yaw, 0, 'YXZ')
       camera.quaternion.setFromEuler(orientation)
       if (state.view === 'third') {
         const back = new THREE.Vector3(0, 0, 1).applyEuler(orientation)
@@ -774,7 +813,7 @@ export default function ThreeViewport({ document, world = null, selectedId, acti
       // The composer draws the scene into its buffer, whose tone mapping and color space are part of each program's key.
       const output = renderer.getRenderTarget()
       renderer.setRenderTarget(composer.readBuffer)
-      const compiled = Promise.all([renderer.compileAsync(scene, camera), renderer.compileAsync(rig.skyScene, camera), ...(worldRuntime && worldReady ? [worldRuntime.compileShadows(renderer, rig.sun, scene)] : [])])
+      const compiled = Promise.all([compileInSlices(renderer, scene, camera, composer.readBuffer, () => token !== warming || disposed), renderer.compileAsync(rig.skyScene, camera), compileShadowPrograms(renderer, scene)])
       // The output pass rebuilds its program when tone mapping changes (a scene switch); prepare that program too.
       renderer.setRenderTarget(composer.writeBuffer)
       outputMaterial.defines = outputDefines(renderer)
@@ -949,6 +988,15 @@ export default function ThreeViewport({ document, world = null, selectedId, acti
       if (event.code === 'KeyQ') { event.preventDefault(); dodge(game); return }
       if (event.code === 'KeyH') { game.help = !game.help; return }
       if (event.code === 'KeyM') { toggleMute(game); return }
+      if (event.code === 'Tab' && worldRuntime && worldReady) { event.preventDefault(); mapRequest.current(true); return }
+      if (event.code === 'KeyI' && worldRuntime && !game.mount) { toast('A montaria ainda está chegando…'); return }
+      if (event.code === 'KeyI' && game.mount) {
+        game.mount.riding = !game.mount.riding
+        // Riding is first person: the rider's eyes sit above the deer's head.
+        if (game.mount.riding && game.view === 'third') toggleView(game)
+        toast(game.mount.riding ? 'Montado · I desmonta' : 'Desmontado')
+        return
+      }
       if (event.code === 'KeyE') { event.preventDefault(); act(); return }
       if (INTERACTION_KEYS.test(event.key.toLowerCase())) for (const message of pressInteractionKey(game.runtime, event.key)) toast(message)
     }
@@ -1030,11 +1078,170 @@ export default function ThreeViewport({ document, world = null, selectedId, acti
       }
       return focus.isEmpty() ? selectionBox() : focus.expandByScalar(3)
     }
+    /** Everything `update` does once the render graph of `next` exists. */
+    const finishUpdate = (next: ThreeSceneDocument) => {
+      const scene_ = built!
+      attachWindShadows(scene_.root)
+      for (const [key, geometry] of worldGeometries) if (!usedGeometries.has(key)) { geometry.dispose(); worldGeometries.delete(key) }
+      content.add(scene_.root)
+      animatedNodes = next.nodes.filter((node) => node.animation.kind !== 'none')
+      rigs = bindRigs(next)
+      duration = next.timeline.duration
+      time = Math.min(time, duration)
+      const env = next.environment
+      const exposure = rig.apply(env)
+      bloom.enabled = (env.bloom ?? 0) > 0
+      bloom.strength = env.bloom ?? 0
+      bloom.threshold = Math.max(1, 1 / exposure)
+      occlusion.enabled = !!env.ambientOcclusion
+      weather.apply(env.weather ?? 'none', env)
+      grading.apply(env.grade ?? 'none')
+      waterMaterials = collectWaterMaterials(scene_.root)
+      // Worlds bring their own ground field (around the player) and grass.
+      field?.dispose(); field = worldDoc && worldDoc.terrain.kind !== 'none' ? null : buildGroundField(next)
+      wind.setGround(field); wind.setStrength(env.motion?.wind ?? DEFAULT_MOTION.wind)
+      for (const material of waterMaterials) if (material instanceof THREE.MeshPhysicalMaterial) prepareWater(material, wind, field)
+      grass?.object.removeFromParent(); grass?.dispose(); grass = null
+      const density = env.motion?.grass ?? 'auto'
+      if (field && density !== 'none' && env.sky !== 'space') { grass = createGrass(field, wind, { density, quality }); if (grass) scene.add(grass.object) }
+      particles.setEmitters(emitterSources(sceneEmitters(next), scene_.holders))
+      fauna?.object.removeFromParent(); fauna?.dispose()
+      fauna = createFauna(planFauna(next), null, quality)
+      scene.add(fauna.object)
+      practical = []; glowing = []
+      if (next.environment.dayCycle?.enabled) for (const node of next.nodes) {
+        const owner = node.parentId ? byId.get(node.parentId) : undefined
+        if (!owner?.asset?.lit) continue
+        const holder = scene_.holders.get(node.id)
+        if (node.kind === 'light') holder?.traverse((object) => { if (object instanceof THREE.PointLight || object instanceof THREE.SpotLight) practical.push({ light: object, base: object.intensity }) })
+        const material = scene_.meshes.get(node.id)?.material
+        if (material instanceof THREE.MeshPhysicalMaterial && material.emissiveIntensity > 0.5 && !glowing.some((item) => item.material === material)) glowing.push({ material, base: material.emissiveIntensity })
+      }
+      applyDay(env, 0)
+      ambientMotion = (env.weather ?? 'none') !== 'none' || fauna.object.children.length > 0 || (env.motion?.wind ?? DEFAULT_MOTION.wind) > 0 || !!grass
+      renderer.shadowMap.enabled = env.shadows ?? true
+      renderer.shadowMap.needsUpdate = true
+      grid.visible = env.grid && !game && !presenting
+      scene.updateMatrixWorld(true)
+      const bounds = sceneBounds()
+      ground.visible = !!env.shadows && !bounds.isEmpty()
+      if (!bounds.isEmpty()) {
+        const center = bounds.getCenter(new THREE.Vector3()), radius = Math.min(2000, Math.max(3, bounds.getSize(new THREE.Vector3()).length() / 2))
+        rig.frame(center, radius)
+        ground.position.set(center.x, bounds.min.y - 0.01, center.z)
+        ground.scale.set(radius * 4, radius * 4, 1)
+      }
+      applySelection()
+      warmUp()
+      invalidate()
+    }
+    let buildJob = 0
+    /**
+     * Once both the world (its flattened footprints) and its scene exist: each location group moves to the level its
+     * footprint was flattened to, instances follow, and the distant LOD meshes are built one location per slice.
+     */
+    const alignLocations = () => {
+      const scene_ = built
+      if (!scene_ || !worldRuntime || !worldReady || locationLod || !worldDoc) return
+      let moved = false
+      for (const [id, holder] of scene_.holders) {
+        if (!id.startsWith(LOCATION_GROUP)) continue
+        const level = worldRuntime.siteLevel(locationOfNode(id)!)
+        if (level === null || Math.abs(holder.position.y - level) < 1e-3) continue
+        holder.position.y = level
+        holder.updateMatrix()
+        // Static subtrees skip world-matrix updates; refresh this one once.
+        const frozen: THREE.Object3D[] = []
+        holder.traverse((object) => { if (!object.matrixWorldAutoUpdate) { frozen.push(object); object.matrixWorldAutoUpdate = true } })
+        holder.updateMatrixWorld(true)
+        for (const object of frozen) object.matrixWorldAutoUpdate = false
+        moved = true
+      }
+      if (moved) scene_.sync()
+      const lod = locationLod = createLocationLod(scene_)
+      content.add(lod.object)
+      // The merged meshes share one material; its program links in parallel before any location turns distant.
+      const proxies = () => { if (locationLod === lod && !disposed && lod.buildNext()) setTimeout(proxies, 0); else if (locationLod === lod) void renderer.compileAsync(lod.object, camera, scene).catch(() => {}).then(invalidate) }
+      setTimeout(proxies, 0)
+    }
+    /**
+     * World scenes (detailed locations) are built in slices of ~12 ms after their textures are made in the workers, so
+     * opening or changing a world never blocks the page; their distant LOD meshes follow, one location per slice.
+     */
+    const buildWorldScene = (next: ThreeSceneDocument, options: Parameters<typeof buildScene>[2]) => {
+      const job = ++buildJob
+      ready = false
+      const kinds = [...new Set(next.nodes.flatMap((node) => node.material.texture && node.material.texture !== 'none' && !node.material.textureImage ? [node.material.texture] : []))].filter((kind) => !hasTextureData(kind))
+      void Promise.all(kinds.map((kind) => worldPool!.run({ type: 'texture', kind }).then(({ color, normal, rough }) => primeTextureData(kind, { color, normal, rough })))).catch(() => {}).then(() => {
+        const steps = buildSceneSteps(next, resources, options)
+        const slice = () => {
+          if (job !== buildJob || disposed) return
+          const started = performance.now()
+          let step = steps.next()
+          while (!step.done && performance.now() - started < 12) step = steps.next()
+          if (!step.done) { setTimeout(slice, 0); return }
+          built = step.value
+          finishUpdate(next)
+          alignLocations()
+        }
+        slice()
+      })
+    }
     const frameWorld = () => {
       controls.target.copy(worldFocus)
       camera.position.copy(worldFocus).add(new THREE.Vector3(90, 60, 90))
       controls.update()
       invalidate()
+    }
+    const saveWorldProgress = (state: NonNullable<typeof game>) => {
+      if (!worldDoc || !state.fog) return
+      const at = state.player.position
+      void saveProgress(worldDoc.name, { position: [at.x, at.y, at.z], discovered: [], visited: [...state.visited], fog: state.fog.serialize(), savedAt: Date.now() }).catch(() => {})
+    }
+    let mapImage: ImageData | null = null, mapOpen = false
+    const refreshMap = (state: NonNullable<typeof game>) => {
+      if (!worldDoc || !state.fog) return
+      const fog = state.fog
+      setWorldMap({ image: mapImage, size: worldDoc.terrain.size[0], fog: { cells: fog.cells.slice(), nx: fog.nx, nz: fog.nz },
+        player: { x: state.player.position.x, z: state.player.position.z, heading: state.player.yaw },
+        markers: worldDoc.locations.filter((location) => fog.seen(...location.position)).map((location) => ({ id: location.id, name: location.name, x: location.position[0], z: location.position[1], visited: state.visited.has(location.id) })) })
+    }
+    mapRequest.current = (open) => {
+      const state = game
+      if (!state || !worldRuntime) return
+      state.frozen = open
+      mapOpen = open
+      if (!open) { setWorldMap(null); return }
+      if (window.document.pointerLockElement === renderer.domElement) window.document.exitPointerLock()
+      refreshMap(state)
+      if (!mapImage) void worldRuntime.map(512).then((image) => { mapImage = image; if (game === state && state.frozen) refreshMap(state) })
+    }
+    /** Fast travel: the screen covers while the destination's terrain, collision and vegetation load, then the player arrives. */
+    const travelTo = async (target: THREE.Vector3, label: string) => {
+      const state = game, runtime = worldRuntime
+      if (!state || !runtime) return
+      state.frozen = true
+      mapOpen = false
+      setWorldMap(null)
+      setTravelling(label)
+      bench?.mark('travelStart')
+      try { await runtime.preload(target) } catch { /* the stream keeps loading in play */ }
+      if (game !== state) return
+      state.player.position.copy(target)
+      state.player.velocity.set(0, 0, 0)
+      state.frozen = false
+      state.regionAt = 0
+      bench?.mark('travelEnd')
+      setTravelling(null)
+      invalidate()
+    }
+    travelRequest.current = (id) => {
+      const location = worldDoc?.locations.find((item) => item.id === id)
+      if (!location || !worldRuntime) return
+      // Arrive at the edge of the location's cleared ground, facing its centre.
+      const x = location.position[0], z = location.position[1] + location.footprint * 0.8, target = new THREE.Vector3(x, worldRuntime.heightAt(x, z) + 0.05, z)
+      if (game) game.player.yaw = 0
+      void travelTo(target, `Viajando para ${location.name}…`)
     }
     const startGame = () => {
       if (!built || !doc || game) return
@@ -1044,6 +1251,8 @@ export default function ThreeViewport({ document, world = null, selectedId, acti
       camera.layers.disable(HELPER_LAYER)
       grid.visible = false
       playback = false
+      // The play collider is built from visible surfaces: show distant locations in full meanwhile.
+      locationLod?.showAll()
       scene.updateMatrixWorld(true)
       const climbable = (node: SceneNode) => nodeChain(node.id).some((item) => item.behavior?.type === 'climbable')
       const entries = doc.nodes.filter((node) => hasSurface(node.kind) && node.collidable !== false && !built!.dynamic.has(node.id) && !climbable(node) && visible(built!.holders.get(node.id)!))
@@ -1059,8 +1268,8 @@ export default function ThreeViewport({ document, world = null, selectedId, acti
       const bounds = sceneBounds(), settings = doc.environment.player!
       const floor = terrain && worldDoc ? worldDoc.terrain.heightRange[0] - 50 : bounds.isEmpty() ? 0 : bounds.min.y
       const center = bounds.isEmpty() ? new THREE.Vector3() : bounds.getCenter(new THREE.Vector3())
-      const spawn = settings.spawn ? new THREE.Vector3(...settings.spawn) : new THREE.Vector3(center.x, floor, bounds.isEmpty() ? 6 : bounds.max.z + 4)
-      if (!(settings.mode === 'fly' && settings.allowFly !== false)) spawn.copy(findWalkableSpawn({ bvh, boxes: [], floor },spawn,bounds,water,!!settings.spawn))
+      const spawn = settings.spawn ? new THREE.Vector3(...settings.spawn) : terrain?.spawn?.clone() ?? new THREE.Vector3(center.x, floor, bounds.isEmpty() ? 6 : bounds.max.z + 4)
+      if (!(settings.mode === 'fly' && settings.allowFly !== false)) spawn.copy(findWalkableSpawn({ bvh, boxes: [], floor },spawn,bounds,water,!!settings.spawn || !!terrain?.spawn))
       const enemies = new Map<string, EnemyState>()
       const probe = new THREE.Ray()
       for (const node of doc.nodes) if ((node.behavior?.type === 'enemy' || node.behavior?.type === 'npc')&&visible(built.holders.get(node.id)!)) {
@@ -1103,8 +1312,28 @@ export default function ThreeViewport({ document, world = null, selectedId, acti
         saved: { position: camera.position.clone(), target: controls.target.clone(), fov: camera.fov, near: camera.near, far: camera.far }, last: null, aim: null, strike: null, hud: '', locked: false, help: false,
         view: settings.camera ?? 'first', spawn: spawn.clone(), stride: 0, sounds: doc.nodes.filter((node) => node.sound), projectiles: [], attackCooldown: 0, swing: 0, hudAt: 0, platforms: new Map(), modes: new Map(), rigMotion: new Map(), avatarRig, swings: 0, heavy: false, meleeHits: new Set(), blade: null, dialogue: null, spawnNotice: -10, enemies, enemyParts:new Set([...enemies.keys()].flatMap(id=>[...subtreeIds(doc!.nodes,id)])),parts, water, avatar, hurt: 0, goalCooldown: 0,
         nav: null, router: createRouter(null), routines, paused: false, dismissed: false, interacted: false, device: 'keyboard', pad: createGamepadState(), stamina: 100, dodge: 0, dodged: false,
-        damageTaken: 0, falls: 0, lastHealth: settings.health ?? 100, subtitle: null, greeted: new Map(), omitted, aimables, ownedBvh, guards: new Set([...enemies.keys()].filter((id) => isGuardPlan(routines.get(id)))) }
+        damageTaken: 0, falls: 0, lastHealth: settings.health ?? 100, subtitle: null, greeted: new Map(), omitted, aimables, ownedBvh, region: '', regionAt: 0, fog: terrain && worldDoc ? createFog(worldDoc.terrain.size) : null, visited: new Set(), frozen: false, savedAt: 0, mount: null, guards: new Set([...enemies.keys()].filter((id) => isGuardPlan(routines.get(id)))) }
       const session = game
+      if (terrain && worldDoc) {
+        // Worlds have a mount (I), built in slices after play starts; its programs link before it can be summoned.
+        void createMount({ quality, shadows: doc.environment.shadows ?? true }, () => game !== session || disposed).then(async (mount) => {
+          if (!mount) return
+          if (game !== session || disposed) { mount.dispose(); return }
+          scene.add(mount.object)
+          await renderer.compileAsync(mount.object, camera, scene).catch(() => {})
+          if (game === session && !disposed) session.mount = mount; else mount.dispose()
+        })
+      }
+      if (terrain && worldDoc) {
+        // Progress (position, discovered map, visited places) continues from the last session in this world.
+        const world = worldDoc
+        void loadProgress(world.name).then((saved) => {
+          if (!saved || game !== session) return
+          session.fog = createFog(world.terrain.size, saved.fog)
+          session.visited = new Set(saved.visited)
+          void travelTo(new THREE.Vector3(...saved.position), 'Retomando a jornada…')
+        }).catch(() => {})
+      }
       if (bench?.driving) { if (bench.fixedRoute?.altitude !== undefined) game.player.fly = true; bench.route = bench.fixedRoute ?? planBenchRoute(doc, spawn, (id) => built!.holders.get(id)?.getWorldPosition(new THREE.Vector3()) ?? null) }
       bench?.mark('gameStart')
       if (enemies.size) void buildNavigation(entries, focus, { radius: 0.35, height: 1.7, climb: 0.27 }, { floor }).then((nav) => {
@@ -1121,6 +1350,8 @@ export default function ThreeViewport({ document, world = null, selectedId, acti
     }
     const stopGame = (rebuild = true) => {
       if (!game) return
+      saveWorldProgress(game)
+      setWorldMap(null)
       const saved = game.saved
       game.ownedBvh?.geometry.dispose()
       game.nav?.dispose()
@@ -1128,6 +1359,7 @@ export default function ThreeViewport({ document, world = null, selectedId, acti
       game.avatarRig.equipment.dispose()
       for (const enemy of game.enemies.values()) enemy.equipment?.dispose()
       game.avatarRig.built.dispose(); game.avatarRig.resources.dispose()
+      game.mount?.dispose()
       syncProjectiles([])
       game = null
       audio?.stop()
@@ -1150,64 +1382,24 @@ export default function ThreeViewport({ document, world = null, selectedId, acti
         transform.detach()
         built?.root.removeFromParent()
         built?.dispose()
+        built = null
+        locationLod?.object.removeFromParent(); locationLod?.dispose(); locationLod = null
         windSpecs = windKinds(next); usedGeometries = new Set()
         const isWater = (node: SceneNode) => node.material.texture === 'water' && !node.material.textureImage
-        built = buildScene(next, resources, { instancing: true, helpers: true,
-          variant: (node) => { const spec = windSpecs.get(node.id); return spec ? { key: `wind:${windKey(spec)}`, prepare: (material) => applyWind(material, wind, spec.kind, spec.stiffness) } : null },
+        const worldMode = !!worldDoc && worldDoc.terrain.kind !== 'none' && !!worldPool
+        const options: Parameters<typeof buildScene>[2] = { instancing: true, helpers: true,
+          variant: (node) => {
+            const spec = windSpecs.get(node.id), place = worldMode ? locationOfNode(node.id) : null
+            // In a world each location gets its own materials, so instanced batches never span two locations and its LOD can hide them.
+            if (!spec && !place) return null
+            return { key: `${place ? `local:${place}|` : ''}${spec ? `wind:${windKey(spec)}` : ''}`, prepare: (material) => { if (spec) applyWind(material, wind, spec.kind, spec.stiffness) } }
+          },
           geometry: (node) => windSpecs.get(node.id)?.kind === 'flag' || isWater(node) ? worldGeometry(node) : null,
-          skins: (document, holders) => buildCharacterSkins(document, holders, { quality, shadows: document.environment.shadows ?? true }) })
-        attachWindShadows(built.root)
-        for (const [key, geometry] of worldGeometries) if (!usedGeometries.has(key)) { geometry.dispose(); worldGeometries.delete(key) }
-        content.add(built.root)
-        animatedNodes = next.nodes.filter((node) => node.animation.kind !== 'none')
-        rigs = bindRigs(next)
-        duration = next.timeline.duration
-        time = Math.min(time, duration)
-        const env = next.environment
-        const exposure = rig.apply(env)
-        bloom.enabled = (env.bloom ?? 0) > 0
-        bloom.strength = env.bloom ?? 0
-        bloom.threshold = Math.max(1, 1 / exposure)
-        occlusion.enabled = !!env.ambientOcclusion
-        weather.apply(env.weather ?? 'none', env)
-        grading.apply(env.grade ?? 'none')
-        waterMaterials = collectWaterMaterials(built.root)
-        field?.dispose(); field = buildGroundField(next)
-        wind.setGround(field); wind.setStrength(env.motion?.wind ?? DEFAULT_MOTION.wind)
-        for (const material of waterMaterials) if (material instanceof THREE.MeshPhysicalMaterial) prepareWater(material, wind, field)
-        grass?.object.removeFromParent(); grass?.dispose(); grass = null
-        const density = env.motion?.grass ?? 'auto'
-        if (field && density !== 'none' && env.sky !== 'space') { grass = createGrass(field, wind, { density, quality }); if (grass) scene.add(grass.object) }
-        particles.setEmitters(emitterSources(sceneEmitters(next), built.holders))
-        fauna?.object.removeFromParent(); fauna?.dispose()
-        fauna = createFauna(planFauna(next), null, quality)
-        scene.add(fauna.object)
-        practical = []; glowing = []
-        if (next.environment.dayCycle?.enabled) for (const node of next.nodes) {
-          const owner = node.parentId ? byId.get(node.parentId) : undefined
-          if (!owner?.asset?.lit) continue
-          const holder = built.holders.get(node.id)
-          if (node.kind === 'light') holder?.traverse((object) => { if (object instanceof THREE.PointLight || object instanceof THREE.SpotLight) practical.push({ light: object, base: object.intensity }) })
-          const material = built.meshes.get(node.id)?.material
-          if (material instanceof THREE.MeshPhysicalMaterial && material.emissiveIntensity > 0.5 && !glowing.some((item) => item.material === material)) glowing.push({ material, base: material.emissiveIntensity })
-        }
-        applyDay(env, 0)
-        ambientMotion = (env.weather ?? 'none') !== 'none' || fauna.object.children.length > 0 || (env.motion?.wind ?? DEFAULT_MOTION.wind) > 0 || !!grass
-        renderer.shadowMap.enabled = env.shadows ?? true
-        renderer.shadowMap.needsUpdate = true
-        grid.visible = env.grid && !game && !presenting
-        scene.updateMatrixWorld(true)
-        const bounds = sceneBounds()
-        ground.visible = !!env.shadows && !bounds.isEmpty()
-        if (!bounds.isEmpty()) {
-          const center = bounds.getCenter(new THREE.Vector3()), radius = Math.min(2000, Math.max(3, bounds.getSize(new THREE.Vector3()).length() / 2))
-          rig.frame(center, radius)
-          ground.position.set(center.x, bounds.min.y - 0.01, center.z)
-          ground.scale.set(radius * 4, radius * 4, 1)
-        }
-        applySelection()
-        warmUp()
-        invalidate()
+          skins: (document, holders) => buildCharacterSkins(document, holders, { quality, shadows: document.environment.shadows ?? true }) }
+        if (worldMode && next.nodes.length) { buildWorldScene(next, options); return }
+        buildJob++
+        built = buildScene(next, resources, options)
+        finishUpdate(next)
       },
       select(id) { selected = id; applySelection(); invalidate() },
       fit() {
@@ -1236,25 +1428,29 @@ export default function ThreeViewport({ document, world = null, selectedId, acti
       },
       game(value) { if (value) startGame(); else stopGame() },
       world(next) {
-        if (next === worldDoc) return
+        // A world whose terrain, layout and locations did not move keeps its runtime (e.g. a location was just detailed).
+        if (next === worldDoc || (next && worldDoc && worldTerrainKey(next) === worldTerrainKey(worldDoc))) { worldDoc = next; return }
         if (game) { stopGame(false); callbacks.current.onExitPlay() }
         worldRuntime?.object.removeFromParent(); worldRuntime?.dispose()
         worldRuntime = null; worldReady = false; worldDoc = next
         if (!next || next.terrain.kind === 'none') { camera.near = 0.01; camera.far = 10000; camera.updateProjectionMatrix(); invalidate(); return }
         worldPool ??= createWorldWorkers()
         const gl = renderer.getContext() as WebGL2RenderingContext
-        const runtime = createWorldRuntime(next, worldPool, { anisotropy: Math.min(8, renderer.capabilities.getMaxAnisotropy()), maxLayers: gl.getParameter(gl.MAX_ARRAY_TEXTURE_LAYERS) as number, onTile: invalidate })
+        const runtime = createWorldRuntime(next, worldPool, { anisotropy: Math.min(8, renderer.capabilities.getMaxAnisotropy()), maxLayers: gl.getParameter(gl.MAX_ARRAY_TEXTURE_LAYERS) as number, onTile: invalidate,
+          vegetation: { renderer, wind, shadows: next.environment.shadows ?? true, quality } })
         worldRuntime = runtime
-        if (bench) bench.ground = runtime.source.heightAt
+        if (bench) bench.ground = runtime.heightAt
         content.add(runtime.object)
-        const spawn = next.environment.player?.spawn, focus = spawn ? new THREE.Vector3(...spawn) : new THREE.Vector3(0, runtime.source.heightAt(0, 0), 0)
+        const spawn = next.environment.player?.spawn, focus = spawn ? new THREE.Vector3(...spawn) : null
         camera.near = 0.5; camera.far = Math.hypot(...next.terrain.size) * 1.2; camera.updateProjectionMatrix()
-        worldFocus = focus.clone()
+        worldFocus = focus?.clone() ?? new THREE.Vector3(0, runtime.heightAt(0, 0), 0)
         frameWorld()
         bench?.mark('worldStart')
         void runtime.prepare(focus, camera, renderer.domElement.height || 1080).then(() => {
           if (worldRuntime !== runtime || disposed) return
           worldReady = true
+          if (runtime.spawn && !focus) { worldFocus = runtime.spawn.clone(); frameWorld() }
+          alignLocations()
           bench?.mark('worldPrepared')
           warmUp()
           invalidate()
@@ -1339,8 +1535,9 @@ export default function ThreeViewport({ document, world = null, selectedId, acti
       renderer.domElement.remove()
     }
   }, [])
-  useEffect(() => { engine.current?.update(document) }, [document])
+  // The world goes first: a document that arrives with its world is then built as a world scene.
   useEffect(() => { engine.current?.world(world) }, [world])
+  useEffect(() => { engine.current?.update(document) }, [document])
   useEffect(() => { engine.current?.select(selectedId) }, [selectedId, document])
   useEffect(() => { engine.current?.activate(active) }, [active])
   useEffect(() => { engine.current?.fit() }, [fitRequest])
@@ -1354,6 +1551,8 @@ export default function ThreeViewport({ document, world = null, selectedId, acti
     <div className="three-viewport__canvas" ref={host} />
     {!playMode && <div className="three-viewport__label"><span className="three-dot" /> PERSPECTIVA <span>Y ↑ · metros</span></div>}
     {error && <p className="three-viewport__error" role="alert">{error}</p>}
+    {playMode && worldMap && <WorldMap {...worldMap} onTravel={(id) => travelRequest.current(id)} onClose={() => mapRequest.current(false)} />}
+    {playMode && travelling && <div className="three-world-travel" role="status">{travelling}</div>}
     {playMode && hud && <ThreeHud model={{ ...hud, fps: settings.showFps && !presentation ? stats.fps || null : null }} toasts={toasts} overlay={overlay} settings={settings} presentation={presentation}
       onResume={() => pauseRequest.current(false)} onRestart={() => restartRequest.current()} onExit={() => callbacks.current.onExitPlay()}
       onDismissOutcome={() => dismissRequest.current()} onCaptureMouse={() => lockRequest.current()} onPause={() => pauseRequest.current(true)} onSettings={setSettings} />}

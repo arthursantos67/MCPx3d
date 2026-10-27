@@ -1,4 +1,5 @@
 import { noised, smoothstep, type NoiseSample } from './worldNoise.ts'
+import { sampleMacro, type WorldMacro } from './worldMacro.ts'
 import type { ThreeWorldDocument } from './worldDocument.ts'
 
 /**
@@ -17,21 +18,25 @@ export interface HeightSource {
  * Smallest geometric wavelength in metres. Finer relief comes from ground textures and normal maps: geometry this
  * fine would force full-resolution patches hundreds of metres away to stay within 1 px.
  */
-export const MIN_WAVELENGTH = 32
-export const TERRAIN_GENERATOR = 'synthetic-v4'
+export const MIN_WAVELENGTH = 64
+export const TERRAIN_GENERATOR = 'synthetic-v5'
 /** Smooth |x|: ridges keep a rounded crest instead of a crease of unbounded curvature. */
 const softAbs = (value: number, round: number) => Math.sqrt(value * value + round * round) - round
 const softPlus = (value: number, width: number) => value > 20 * width ? value : width * Math.log1p(Math.exp(value / width))
 /** Keeps the elevation fraction inside (0, 1) without the crease a hard clamp leaves on summits and sea floors. */
 const softClamp = (value: number, width = 0.04) => value - softPlus(value - 1, width) + softPlus(-value, width)
 
-export function createHeightSource(world: Pick<ThreeWorldDocument, 'seed' | 'terrain'>): HeightSource {
+/** The part of a WorldMacro needed for heights; workers receive only this. */
+export type MacroRelief = Pick<WorldMacro, 'delta' | 'cell' | 'points' | 'origin'>
+
+/** Relief before erosion and rivers (also the input of the macro pass). With `macro`, its smooth delta is added. */
+export function createHeightSource(world: Pick<ThreeWorldDocument, 'seed' | 'terrain'>, macro?: MacroRelief | null): HeightSource {
   const { seed, terrain } = world, [low, high] = terrain.heightRange, span = high - low, rugged = terrain.ruggedness
   const halfX = terrain.size[0] / 2, halfZ = terrain.size[1] / 2, coast = terrain.seaLevel !== null
   const seaFraction = terrain.seaLevel === null ? 0 : (terrain.seaLevel - low) / span
   const scale = 1400, octaves = Math.max(1, Math.floor(Math.log2(scale / MIN_WAVELENGTH)))
   const sample: NoiseSample = { value: 0, dx: 0, dz: 0 }
-  const heightAt = (x: number, z: number) => {
+  const baseAt = (x: number, z: number) => {
     // Derivative-damped fBm: slopes accumulated from coarser octaves soften finer ones, as erosion would.
     let px = x / scale, pz = z / scale, sum = 0, amplitude = 0.5, dx = 0, dz = 0
     for (let octave = 0; octave < octaves; octave++) {
@@ -55,7 +60,7 @@ export function createHeightSource(world: Pick<ThreeWorldDocument, 'seed' | 'ter
     if (mask > 0) {
       let ridge = 0, weight = 0.5, rx = x / 900, rz = z / 900
       for (let octave = 0; octave < 4; octave++) {
-        const value = 1 - softAbs(noised(rx, rz, seed + 4001 + octave * 31, sample).value, 0.08 * 2 ** octave)
+        const value = 1 - softAbs(noised(rx, rz, seed + 4001 + octave * 31, sample).value * 0.7, 0.08 * 2 ** octave)
         ridge += weight * value * value
         weight *= 0.5; rx *= 2.07; rz *= 2.07
       }
@@ -70,5 +75,6 @@ export function createHeightSource(world: Pick<ThreeWorldDocument, 'seed' | 'ter
     }
     return low + softClamp(fraction) * span
   }
-  return { key: `${TERRAIN_GENERATOR}:${seed}:${terrain.size.join('x')}:${terrain.heightRange.join(':')}:${terrain.seaLevel}:${rugged}`, size: terrain.size, range: terrain.heightRange, seaLevel: terrain.seaLevel, heightAt }
+  const heightAt = macro ? (x: number, z: number) => baseAt(x, z) + sampleMacro(macro.delta, macro, x, z) : baseAt
+  return { key: `${TERRAIN_GENERATOR}:${seed}:${terrain.size.join('x')}:${terrain.heightRange.join(':')}:${terrain.seaLevel}:${rugged}${macro ? ':macro' : ''}`, size: terrain.size, range: terrain.heightRange, seaLevel: terrain.seaLevel, heightAt }
 }

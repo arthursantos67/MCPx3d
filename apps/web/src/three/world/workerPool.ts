@@ -3,6 +3,8 @@ import type { WorldJob, WorldJobResults, WorldRequest, WorldResponse } from './w
 export interface WorldPool {
   readonly size: number
   run<T extends WorldJob>(job: T, priority?: number): Promise<WorldJobResults[T['type']]>
+  /** Runs the job once on every worker (ahead of queued work), e.g. to install shared world data. */
+  broadcast<T extends WorldJob>(job: T): Promise<WorldJobResults[T['type']][]>
   /** Jobs waiting for a worker. */
   readonly queued: number
   /** Drops queued (not yet started) jobs rejected by `keep`; their promises reject with an AbortError. */
@@ -15,11 +17,13 @@ interface Pending { id: number; job: WorldJob; priority: number; resolve: (value
 /** Workers each run one job at a time; the queue is ordered by priority (lower first), then submission order. */
 export function createWorldPool(factory: () => Worker, size: number): WorldPool {
   const workers = Array.from({ length: Math.max(1, size) }, factory), busy = new Map<Worker, Pending>(), queue: Pending[] = []
+  const targeted = new Map<Worker, Pending[]>(workers.map((worker) => [worker, []]))
   let next = 1, disposed = false
   const pump = () => {
     for (const worker of workers) {
-      if (busy.has(worker) || !queue.length) continue
-      const item = queue.shift()!
+      const own = targeted.get(worker)!
+      if (busy.has(worker) || (!queue.length && !own.length)) continue
+      const item = own.shift() ?? queue.shift()!
       busy.set(worker, item)
       worker.postMessage({ ...item.job, id: item.id } satisfies WorldRequest)
     }
@@ -54,12 +58,20 @@ export function createWorldPool(factory: () => Worker, size: number): WorldPool 
         pump()
       })
     },
+    broadcast(job) {
+      if (disposed) return Promise.reject(new Error('Pool de workers encerrado.'))
+      const all = Promise.all(workers.map((worker) => new Promise((resolve, reject) => {
+        targeted.get(worker)!.push({ id: next++, job, priority: -1, resolve: resolve as (value: never) => void, reject })
+      })))
+      pump()
+      return all as never
+    },
     prune(keep) {
       for (let index = queue.length - 1; index >= 0; index--) if (!keep(queue[index].job)) queue.splice(index, 1)[0].reject(new DOMException('Trabalho descartado.', 'AbortError'))
     },
     dispose() {
       disposed = true
-      for (const item of queue.splice(0)) item.reject(new DOMException('Pool encerrado.', 'AbortError'))
+      for (const item of [...queue.splice(0), ...[...targeted.values()].flatMap((own) => own.splice(0))]) item.reject(new DOMException('Pool encerrado.', 'AbortError'))
       for (const item of busy.values()) item.reject(new DOMException('Pool encerrado.', 'AbortError'))
       busy.clear()
       for (const worker of workers) worker.terminate()

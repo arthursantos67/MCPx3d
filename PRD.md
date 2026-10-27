@@ -115,6 +115,19 @@ Objetivo: cenas com padrão de jogo de mercado — personagens animados, combate
 
 ## Operação e limites
 
+### Mundos vastos Three.js — 0.7 (em andamento desde 2026-10-23)
+
+Objetivo e fases no [roteiro](ROADMAP.md#07--mundos-vastos); estado e medições em [docs/threejs-worlds.md](docs/threejs-worlds.md). Fases 2–6 implementadas; validação interrompida a pedido do usuário em 27/10/2026 para enviar o estado atual. O gate completo permanece pendente, e a última medição preliminar ainda excedeu os limites de triângulos e de bloqueio na carga.
+
+- Desempenho é requisito de cada fase: `scripts/benchmark-three-fps.mjs` mede o modo jogo em GPU real (rota fixa, tempo de quadro/CPU/GPU, draw calls, triângulos, memória, bloqueios) e compara com a linha de base gravada em `docs/benchmarks`. Cenas 1.x não podem piorar além do ruído; mundos seguem o orçamento absoluto do roteiro. Classes de GPU sem máquina disponível ficam "não medidas".
+- Contrato `ThreeWorldDocument` 2.0: semente, terreno (`none`/`synthetic`/`climate`, até 16 km), regiões, locais com cena 1.x opcional, rotas e orçamentos. Uma cena 1.x migra sem perda e volta idêntica; projetos 1.x continuam abrindo como cenas.
+- Terreno em blocos (fase 2): relevo determinístico, LOD CDLOD com erro geométrico medido e limite de 1 pixel, saias nas bordas, geração em workers, streaming com até 2 ms por quadro na thread principal, um draw call para o terreno, colisão idêntica à malha desenhada e origem de render flutuante.
+- Biomas e água (fase 3): passe macro em worker com erosão, drenagem até o mar, lagos e rios escavados, clima e 8 camadas de chão; terreno com um único material de splat, água em um draw call e ambiência/música/clima por região.
+- Vegetação e regras de terreno (fase 4): plantas por bioma e orçamento, selecionadas por planta nos níveis de 70/130/1400 m (pré-fabricado completo, simplificado e impostores), com transição por dithering e texturas geradas em workers; grama e vento 1.x numa janela de chão em torno do jogador; locais aplainados e estradas traçadas pelo relevo. O gerador `synthetic-v5` usa ruído de gradiente para evitar planaltos retangulares.
+- Geração em duas escalas (fase 5): atlas da IA saneado de forma determinística, locais posicionados por regras, detalhe sob demanda pelo pipeline de cenas, edição local que preserva o que não foi citado e geração sem prazo, com etapas salvas e requisições reenviadas até concluir. Locais detalhados entram na cena jogada, construída em fatias, com HLOD a distância.
+- Exploração (fase 6): mapa com névoa de guerra, viagem rápida com pré-carga, montaria construída em fatias após entrar no jogo e persistência do mundo e do progresso no IndexedDB. O HLOD dos locais mantém as luzes e oculta superfícies por camada; `sceneCompile.ts` prepara programas em fatias e os passes de sombra também para cenas 1.x.
+- Limites: provedor de IA real e outras classes de GPU não medidos; estradas usam vaus, sem pontes; a cena jogada conserva o limite de 2000 nós. O bloqueio na entrada do jogo, herdado do avatar/skin das cenas 1.x, permanece pendente.
+
 Skins da 0.6: pele procedural contínua nos personagens orgânicos e no avatar, dedos articulados, expressões, roupas/cabelo com movimento secundário, três LODs e cache com recursos compartilhados. GLB exporta pele, esqueleto, cores/PBR e clipes de ociosidade/caminhada; a aparência dos shaders é aproximada. Importar e redirecionar esqueletos externos permanece pendente. [Implementação, testes e limites](docs/threejs-characters-hud.md).
 
 Correções de jogabilidade da 0.6: orientação corporal pela velocidade, escalada articulada com saída validada, combos encadeados, equipamento visível e dano durante contato animado no runtime compartilhado. Caixas orientadas e cápsulas continuam aproximações; a redução medida no custo da IK não é uma garantia de FPS. [Escopo e medições](docs/threejs-motion-fixes.md).

@@ -18,6 +18,8 @@ Ampliação temática e auditoria (2026-10-15): tópico de espaço sideral, supe
 
 Mundos vivos (2026-10-22, versão 0.5): contrato 1.3, personagens com rig e animação procedural, armas e projéteis, inimigos com estilos de ataque/voo/resistência, NPCs com diálogo, inventário/chaves/bloqueios, curas e poderes, plataformas móveis e lançadores, sobrevivência por ondas, áudio sintetizado, clima, gradação, água animada, 25 objetos de mundo, direção criativa para a IA e quatro exemplos novos. Detalhes em [docs/threejs-living-worlds.md](docs/threejs-living-worlds.md); marcos até a 1.0 em [ROADMAP.md](ROADMAP.md).
 
+Mundos vastos (0.7, em andamento): benchmark de FPS com GPU real e linha de base das cenas 1.x (GT 710; classes integrada, média e dedicada não medidas); contrato `ThreeWorldDocument` 2.0 com migração de 1.x; terreno de 4 km em blocos com LOD de 1 px, saias, workers, streaming fatiado, colisão e origem flutuante; biomas, erosão, rios e splat; vegetação em três níveis com impostores, grama e estradas; atlas da IA com geração sem prazo e retomada por etapas, edição local e locais com HLOD; mapa, viagem rápida, montaria e persistência. Validação interrompida a pedido do usuário em 27/10/2026 para enviar o estado atual: gate completo e suíte de navegador pendentes; última medição preliminar de Aurora em voo excedeu triângulos e bloqueio na carga. Pendentes da 0.7: medição em GPU integrada/média/dedicada e com provedor real, pontes nas estradas, carregamento de locais além do limite de 2000 nós da cena jogada e travessia completa do mundo como critério de saída. Problemas medidos que já existiam: o Ermo bloqueia ~2 s em jogo e até 6,7 s na carga; troca de cena e entrada no jogo bloqueiam 0,5–2,3 s (texturas procedurais e pele do avatar geradas na thread principal, áudio, captura de reflexos). [Detalhes](docs/threejs-worlds.md).
+
 Próximos incrementos desta frente (detalhados no roteiro):
 
 0. Medir com o provedor real a fidelidade dos temas novos (espaço, floresta, praia, neve, subaquático, cidade) e a taxa de sobreposição (Codex/Claude) num conjunto fixo de pedidos, comparando pré-fabricados/layout automático com a receita peça a peça.
@@ -25,7 +27,7 @@ Próximos incrementos desta frente (detalhados no roteiro):
 2. Física de corpos rígidos opcional, navmesh para inimigos/NPCs, eventos encadeados e missões de NPC; colisão exata de objetos móveis. Áudio espacial, variedade de ataques e plataformas móveis foram entregues na 0.5.
 2a. Importação de GLB com esqueleto/clipes mapeados ao rig do Forma; mover a geração inicial de skins para worker se o perfil de cenas maiores justificar; clima que respeita interiores; ouvir/ver áudio, clima e gradação em hardware real e ajustar. A pele procedural nativa está implementada.
 3. Pipeline de assets: mapas físicos/compressão/clipes de GLB importado, persistência IndexedDB/servidor e exportação HTML jogável autocontida.
-4. LOD e streaming com benchmark reproduzível por hardware; metas de escala dependem dessas medições.
+4. LOD e streaming: benchmark reproduzível e terreno com LOD/streaming entregues na 0.7 (fase 2); fases 3–6 implementadas, com gate completo e validação de navegador ainda pendentes; faltam medições em GPU integrada, média e dedicada.
 5. Planejamento incremental por etapas para cenas maiores e medição de conclusão/latência/fidelidade com IA real. Preservar aplicação atômica e proibição de JavaScript gerado.
 
 ## Concluído nesta reorganização

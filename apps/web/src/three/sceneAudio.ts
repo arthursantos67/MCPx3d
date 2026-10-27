@@ -20,6 +20,8 @@ export interface AudioEngine {
   setIntensity(level: 'calm' | 'danger'): void
   /** Day cycle, 0 day → 1 night: day birds fall silent, outdoor places gain crickets and owls, music softens. */
   setTimeOfDay(night: number): void
+  /** Crossfades ambience and music while playing, e.g. when the player crosses into another world region. */
+  setRegion(ambience: ResolvedAmbience, music: ResolvedMusic, fade?: number): void
   setMuted(muted: boolean): void
   dispose(): void
 }
@@ -597,6 +599,18 @@ function audioEngine(ctx: AudioContext): AudioEngine {
       playing = true
       timer = setInterval(tick, 100)
       tick()
+    }),
+    setRegion: safe((kind: ResolvedAmbience, music: ResolvedMusic, fade = 3) => {
+      if (!playing) return
+      if (kind !== outdoor) {
+        if (ambience) release(ambience, fade)
+        ambience = null
+        ambienceSend.gain.setTargetAtTime(reverbSend[kind] ?? 0.15, now(), fade / 3)
+        if (kind !== 'none') { ambience = patch(ambienceBus, 1, fade, true); ambiences[kind](ambience) }
+        outdoor = kind
+      }
+      const next = music === 'none' ? null : music
+      if (next !== mood) { mood = next; queue = []; barIndex = 0; barStart = now() + 0.2; newLayer(fade, fade) }
     }),
     stop: safe(() => {
       halt(1)
