@@ -151,6 +151,11 @@ export default function ThreeWorkspace({ active, provider, ready, onBusyChange, 
   const [snap, setSnap] = useState(false)
   const [playMode, setPlayMode] = useState(false)
   const [world, setWorld] = useState<ThreeWorldDocument | null>(null)
+  const [sceneLoading, setSceneLoading] = useState(true)
+  const [restoringWorld, setRestoringWorld] = useState(() => { try { return !!localStorage.getItem(WORLD_FLAG) } catch { return false } })
+  const [worldRecoveryError, setWorldRecoveryError] = useState(false)
+  const worldRestoreVersion = useRef(0)
+  const playBlocked = sceneLoading || restoringWorld || worldRecoveryError
   const [helpOpen, setHelpOpen] = useState(false)
   const [studioOpen, setStudioOpen] = useState(false)
   const [projectMenu, setProjectMenu] = useState(false)
@@ -266,6 +271,9 @@ export default function ThreeWorkspace({ active, provider, ready, onBusyChange, 
     if (commit(removeSubtree(doc, selected.id))) setSelectedId(null)
   }
   const replace = (document: ThreeSceneDocument) => {
+    worldRestoreVersion.current++
+    setRestoringWorld(false)
+    setWorldRecoveryError(false)
     if (commit(document)) { setSelectedId(null); setFilter(''); setProjectMenu(false); setPlaying(false); seek(0); setFitRequest((value) => value + 1); setAuditRequest((value) => value + 1) }
     setWorld(null)
     try { localStorage.removeItem(WORLD_FLAG) } catch { /* storage blocked */ }
@@ -283,9 +291,22 @@ export default function ThreeWorkspace({ active, provider, ready, onBusyChange, 
     try { flag = localStorage.getItem(WORLD_FLAG) } catch { flag = null }
     if (!flag) return
     let live = true
-    void loadWorld().then((saved) => { if (live && saved && saved.world.name === flag) setWorld(saved.world) }).catch(() => {})
+    const version = worldRestoreVersion.current
+    void loadWorld().then((saved) => {
+      if (!live || version !== worldRestoreVersion.current) return
+      if (!saved || saved.world.name !== flag) throw new Error('O terreno salvo não foi encontrado. Abra o mundo pelo menu Projeto ou importe seu arquivo.')
+      const restored = { past: [], present: initial.restored && initial.document.name === saved.world.name ? structuredClone(initial.document) : composeWorldScene(saved.world).scene, future: [] }
+      historyRef.current = restored
+      lastCommitted.current = restored.present
+      setWorld(saved.world)
+      setHistory(restored)
+    }).catch((cause: unknown) => {
+      if (!live || version !== worldRestoreVersion.current) return
+      setWorldRecoveryError(true)
+      setStorageError(`Mundo não recuperado: ${cause instanceof Error ? cause.message : String(cause)}`)
+    }).finally(() => { if (live) setRestoringWorld(false) })
     return () => { live = false }
-  }, [])
+  }, [initial])
   /** AI world actions: no overall deadline; timed-out requests are re-sent and every finished step is saved. */
   const runWorld = async (kind: 'world' | 'world-edit' | 'world-continue') => {
     if (generation.current || !ready || (kind !== 'world-continue' && !prompt.trim()) || (kind !== 'world' && !world)) return
@@ -464,7 +485,7 @@ export default function ThreeWorkspace({ active, provider, ready, onBusyChange, 
     finally { setAssetBusy(false); onBusyChange(false) }
   }
   const busy = generating || inspecting || assetBusy
-  const enterPlay = () => { if (!busy && (doc.nodes.length || world)) { setPlaying(false); setHelpOpen(false); setPlayMode(true) } }
+  const enterPlay = () => { if (!busy && !playBlocked && (doc.nodes.length || world)) { setPlaying(false); setHelpOpen(false); setPlayMode(true) } }
   const runShortcut = (shortcut: EditorCommand) => {
     switch (shortcut.command) {
       case 'translate': case 'rotate': case 'scale': setGizmo(shortcut.command); break
@@ -535,7 +556,7 @@ export default function ThreeWorkspace({ active, provider, ready, onBusyChange, 
         <button type="button" aria-pressed={studioOpen} onClick={() => { setStudioOpen(!studioOpen); setSelectedId(null); setProjectMenu(false) }}>Editor avançado</button>
         <button type="button" aria-expanded={projectMenu} onClick={() => setProjectMenu(!projectMenu)}>Projeto ▾</button>
         <button type="button" aria-label="Atividade" aria-expanded={reportsOpen || generating || inspecting} onClick={() => setReportsOpen(!reportsOpen)}>Atividade{generating ? ' ◌' : generationNotes.length ? <span className="three-activity-count" aria-hidden="true">{generationNotes.length}</span> : ''}</button>
-        <button type="button" className="three-button--primary" disabled={busy || (!doc.nodes.length && !world)} onClick={enterPlay}>▶ Jogar</button>
+        <button type="button" className="three-button--primary" disabled={busy || playBlocked || (!doc.nodes.length && !world)} onClick={enterPlay}>▶ Jogar</button>
       </div>
     </header>
     <form className="three-prompt" onSubmit={(event) => { event.preventDefault(); void generate() }}>
@@ -625,7 +646,7 @@ export default function ThreeWorkspace({ active, provider, ready, onBusyChange, 
       </aside>
       <ThreeStage showPlayback={studioOpen && !playMode} playing={playing} time={time} duration={doc.timeline.duration} onPlay={() => setPlaying(!playing)} onSeek={(seconds) => { setPlaying(false); seek(seconds) }}>
         <ThreeViewport document={doc} world={world} selectedId={selected?.id ?? null} active={active} fitRequest={fitRequest} playing={playing} seekTime={seekTime} seekRequest={seekRequest}
-          gizmo={studioOpen ? gizmo : null} snap={snap} playMode={playMode} presentation={!studioOpen} controller={viewport} onTimeChange={setTime} onSelect={studioOpen ? setSelectedId : () => {}} onTransform={transformNode} onExitPlay={() => setPlayMode(false)} />
+          gizmo={studioOpen ? gizmo : null} snap={snap} playMode={playMode} presentation={!studioOpen} controller={viewport} onTimeChange={setTime} onSelect={studioOpen ? setSelectedId : () => {}} onTransform={transformNode} onExitPlay={() => setPlayMode(false)} onLoadingChange={setSceneLoading} />
         {!playMode && !studioOpen && <div className="three-scene-caption"><span className="workspace-eyebrow">{hasCreated ? 'SUA CRIAÇÃO' : 'EXPLORE UMA CENA'}</span><strong>{doc.name}</strong><span>Arraste para olhar ao redor · Role para aproximar</span>
           <div><button type="button" disabled={busy} onClick={() => { replace(createCombatArenaScene()); setProjectMenu(false) }}>Jogar arena ↗</button><button type="button" disabled={busy} onClick={() => { replace(createPlatformCourseScene()); setProjectMenu(false) }}>Jogar plataformas ↗</button><button type="button" disabled={busy} onClick={() => { replace(createLabPuzzleScene()); setProjectMenu(false) }}>Resolver puzzle ↗</button><button type="button" disabled={busy} onClick={() => { replace(createCryptScene()); setProjectMenu(false) }}>Explorar cripta ↗</button><button type="button" disabled={busy} onClick={() => { replace(createMarketTownScene()); setProjectMenu(false) }}>Visitar mercado ↗</button></div></div>}
         {!playMode && studioOpen && <div className="three-stage__tools">
@@ -640,7 +661,7 @@ export default function ThreeWorkspace({ active, provider, ready, onBusyChange, 
             <option value="">Vista…</option><option value="front">Frente (1)</option><option value="right">Lateral (3)</option><option value="top">Topo (7)</option><option value="perspective">Perspectiva (0)</option></select>
           <button type="button" onClick={() => setHelpOpen(true)}>Atalhos</button>
         </div>}
-        {!playMode && <button type="button" className="three-stage__play three-button--primary" disabled={busy || !doc.nodes.length} onClick={enterPlay}>Explorar em primeira pessoa</button>}
+        {!playMode && <button type="button" className="three-stage__play three-button--primary" disabled={busy || playBlocked || !doc.nodes.length} onClick={enterPlay}>Explorar em primeira pessoa</button>}
         {helpOpen && <div className="three-help" role="dialog" aria-modal="true" aria-label="Atalhos de teclado">
           <div className="three-help__heading"><strong>Atalhos do editor</strong><button type="button" onClick={() => setHelpOpen(false)}>Fechar</button></div>
           <dl>{editorShortcutList.map(([keys, label]) => <div key={keys}><dt>{keys}</dt><dd>{label}</dd></div>)}</dl>

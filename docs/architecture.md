@@ -4,6 +4,10 @@ Baseline de 2026-10-02. Contratos em [PRD.md](../PRD.md); próximos trabalhos em
 
 ## Dois agentes e um estúdio visual
 
+No estúdio Three.js, `ThreeWorkspace` aguarda a recuperação do mundo salvo e reconstrói a cena com o terreno, preservando o rascunho local correspondente, antes de habilitar Jogar/P. `ThreeViewport` comunica o carregamento e só inicia uma sessão após construir a cena, preparar terreno/colisões e compilar os materiais; uma solicitação antecipada fica pendente até esse ponto. Falhas de preparação/recuperação são visíveis. A recuperação assíncrona não substitui um projeto aberto posteriormente pelo usuário.
+
+O animador recebe a intenção `armed` para excluir gestos ociosos incompatíveis com armas nas mãos. O reinício solicita a sessão depois da compilação e pula a apresentação inicial.
+
 Revisão de [fidelidade e estabilidade em 2026-10-08](audit-2026-10-08.md): `cad_holes.py` confere término e fundo no sólido final, aplicando as mesmas transformações/padrões do construtor. `cad_gears.py` constrói prismas/dentes pelo catálogo tipado; engrenamento não é verificado. Fixação `threaded` comprova passagem/rosca métrica e engate útil; pares de fixadores são associados por eixo, sem depender da ordem do padrão.
 
 `createCadFeature` coloca furos novos na entrada externa do stock primitivo alinhado. O rebaixo M5 inicial exige pelo menos 1 mm de assento e parede radial; stock insuficiente/desconhecido inicia furo simples com o mesmo diâmetro de passagem. Presets explícitos conservam as medidas selecionadas e seguem sujeitos à validação, sem trocar o parafuso ou ampliar o stock manualmente.

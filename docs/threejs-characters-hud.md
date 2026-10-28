@@ -24,6 +24,8 @@ Microtexturas e transições calculadas pelo shader do Forma são aproximadas ne
 
 ## Verificação e limites
 
+Correção de 28/10/2026: a intenção `armed` impede os gestos ociosos de coçar a cabeça, alongar e conferir equipamentos durante a locomoção, preservando o olhar e a mudança de apoio. O avatar e os NPCs com armas informam essa intenção; ataques continuam executando seus gestos próprios. A regressão exercita um minuto de ociosidade armada e um golpe, além das verificações existentes de pele e rig.
+
 `sceneSkin.test.ts` cobre as famílias, topologia, pesos, deformação, rosto, arquétipos, LOD, cache e tempo de geração. `sceneSkinIntegration.test.ts` cobre a construção real do avatar, seleção por proxies, dedos, troca de qualidade, vida útil dos recursos, conversão de materiais e clipes exportados. `three-skins.spec.ts` verifica a galeria no navegador, reabre o GLB com `GLTFLoader` e exercita diálogo, câmeras, qualidade e reinício do jogo.
 
 O HUD, a animação e o mundo vivo já estão integrados ao viewport; [threejs-motion-fixes.md](threejs-motion-fixes.md) registra as correções de movimento e combate. Testes de navegador usam Chrome/SwiftShader. Não comprovam FPS em GPU física nem o critério artístico de comparação cega com jogos comerciais do roadmap. A geração inicial das malhas ainda é síncrona; o cache evita repetir modelos idênticos. Colisão e seleção continuam usando proxies, sem interseção por triângulo da pele deformada.

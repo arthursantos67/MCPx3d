@@ -222,6 +222,15 @@ test('blinks and idles are natural, seeded and not synchronised across a crowd',
   assert.ok(Math.min(...arms) < -40, 'idles include arm fidgets')
 })
 
+test('an armed idle keeps its weapon away from the head while retaining head motion and attacks', () => {
+  const poses = run(createAnimator('biped', 0, 3), 60 * 60, () => ({ armed: true }))
+  assert.ok(poses.every(pose => Math.abs(pose.joints.get('j_shoulderR')![0]) < 25 && Math.abs(pose.joints.get('j_elbowR')![0]) < 30), 'holding a weapon excludes scratching, stretching and checking equipment')
+  const head = poses.map(pose => pose.joints.get('j_head')![1])
+  assert.ok(Math.max(...head) - Math.min(...head) > 10, 'armed characters still look around')
+  const attacks = run(createAnimator('biped', 0, 3), 120, i => ({ armed: true, attack: i === 10 ? 'light' : null }))
+  assert.ok(attacks.some(pose => pose.state === 'attack' && Math.hypot(...pose.joints.get('j_shoulderR')!) > 45), 'intentional swings still move the weapon arm')
+})
+
 test('applyAnimatorPose writes rest + delta, root bob, seat and collapse on real characters', () => {
   const single = { mode: 'linear', count: 1, offset: [0, 0, 0], radius: 0, axis: 'y', columns: 1, jitter: 0, seed: 1, onto: null }
   const box = createNode('box')

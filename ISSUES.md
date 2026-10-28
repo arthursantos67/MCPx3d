@@ -4,6 +4,10 @@ Baseline de 2026-10-02, alinhada ao [PRD](PRD.md). O planejamento antigo permane
 
 ## Three.js — frente iniciada em 2026-10-13
 
+Correção da entrada em mundos (2026-10-28): reproduzida a sessão sem chão ao recarregar e jogar antes do terreno ficar pronto. Jogar/P agora aguardam terreno, colisão, personagens e compilação; a recuperação reconstrói a cena com o mundo, preserva edições locais e apresenta falhas de armazenamento. Corrigidos os gestos ociosos que atravessavam a arma pelo próprio corpo e a apresentação repetida no reinício. O polimento visual dos modelos permanece pendente. Verificados 896 testes e caminhada com W/A/S/D na GT 710.
+
+CI do commit `f230f7c`: TypeScript e domínio Python passaram; a API recebeu um sinal de desligamento do runner durante pytest. O navegador teve oito falhas: seis estouros de prazo e duas de estado (entrada sem HUD e reinício permanecendo na apresentação). A sincronização de entrada/reinício foi corrigida e verificada localmente; os prazos de exportação/renderização no runner Linux ainda precisam de confirmação em nova execução. Não há aprovação do CI completo nesta medição local.
+
 Jogabilidade (2026-10-28): campanha de Aurora com objetivos executáveis, extração de árvores/rochas/arbustos, mochila/fabricação/cura, inimigos e farol; natação, mergulho e fôlego conectados à água local; progresso salvo com recursos removidos e mecanismos. As receitas/missões entram nos schemas e na validação do agente, com proteção dos alvos ao ajustar locais aos orçamentos. Corrigidos grandes planaltos artificiais do passe hidrológico e o apoio das construções. Pendentes: escavação/construção livre, avaliação com modelo real e certificação do gate completo da 0.7. [Detalhes](docs/threejs-gameplay.md).
 
 Skins procedurais nativas (2026-10-22): integração do avatar, seleção/interação pelos proxies ocultos, falanges articuladas, troca de qualidade em jogo e descarte seguro do cache. Exportação GLB inclui pele/esqueleto, materiais convertidos e clipes procedurais. A documentação de continuidade antiga está superada nesta frente. [Estado atual](docs/threejs-characters-hud.md).

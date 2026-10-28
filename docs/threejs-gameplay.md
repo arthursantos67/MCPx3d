@@ -28,6 +28,10 @@ Na composição de mundos, IDs de missões/receitas e referências locais recebe
 
 ## Água, terreno e persistência
 
+A entrada no jogo aguarda a construção da cena, o terreno, os blocos de colisão e a compilação inicial. O botão Jogar e o atalho P ficam indisponíveis durante a preparação. Na reabertura, o mundo é recuperado do IndexedDB e a cena é reconstruída com o terreno, preservando o rascunho local correspondente; uma recuperação com falha é mostrada e impede jogar somente os objetos sem terreno. Abrir outro projeto cancela a recuperação pendente. Isso corrige a entrada precoce que criava o jogador perto de y=0 antes de instalar o terreno de Aurora, a cerca de y=384, deixando objetos flutuando e movimento sem apoio.
+
+O avatar armado evita gestos ociosos de coçar a cabeça e alongar os braços, que levavam a arma através do próprio corpo. O olhar ao redor, a caminhada e os golpes continuam ativos. Reiniciar uma partida pula a apresentação inicial e mostra o jogo assim que a preparação termina.
+
 `worldMacro` preserva o relevo de grandes depressões que não se tornam lagos; antes, elas eram preenchidas até a cota de drenagem, produzindo planaltos artificiais. Os rios usam a cota local do terreno. A expansão da superfície nas margens usa a menor cota vizinha. A consulta física interpola os mesmos triângulos da malha de água, evitando uma superfície global de rio sobre regiões secas.
 
 As áreas dos assentamentos têm suporte plano analítico, compartilhado com os workers e a colisão, além da regularização da grade. A geração mantém estradas com perfil caminhável. A campanha de exemplo tem verificação de apoio, água e inclinação ao longo das estradas geradas.
@@ -38,8 +42,11 @@ O mundo sintético escolhe o nascimento depois dos lagos, em terreno seco com in
 
 ## Verificação em 28/10/2026
 
-- Typecheck, lint, build de produção e os **895 testes** passaram.
-- **45 casos de navegador** verificados: a execução inicial passou 43 e encontrou dois problemas nos mundos; os dois casos foram corrigidos e repetidos com sucesso. A repetição final também confirma conversar com Mara e aceitar a missão imediatamente após começar.
+- Typecheck, lint, build de produção e os **896 testes** passaram, incluindo a regressão da ociosidade armada.
+- Antes da correção de entrada, **45 casos de navegador** foram verificados: a execução inicial passou 43 e encontrou dois problemas nos mundos; os dois casos foram corrigidos e repetidos com sucesso. Essa cobertura não incluía tentar jogar durante a recuperação do mundo salvo.
+- Na correção de entrada, os cinco casos de mundo/jogabilidade passaram: preparo bloqueando Jogar/P, recuperação com falha e abertura de outro projeto, terreno/caminhada, Aurora recuperada com edição local preservada, coleta/fabricação/reinício e natação/mergulho. Há verificações sequenciais dentro de cada caso.
+- A verificação final repetiu coleta/fabricação/reinício e natação, confirmou o fluxo de criação/entrada do Vale dos Ventos e reabriu Aurora entrando por P. Os seis casos distintos foram verificados ao longo dessas execuções; a última repetição de Aurora passou em 28/10/2026.
+- Nova inspeção funcional em produção na **GT 710, ANGLE/D3D11, 1500×850**: reabertura de Aurora, entrada por P depois do preparo, deslocamentos reais com W/A/S/D e câmera em terceira pessoa. O nascimento ficou em y=383,83, sobre o terreno; a arma permaneceu ao lado do corpo após a correção dos gestos ociosos. Isso não substitui o gate de desempenho.
 - Testes de lógica completam as quatro missões de Aurora, fabricam/consomem materiais, derrotam inimigos, ativam o farol e retomam o save sem duplicar recompensas ou recursos. Também verificam a escolha do nascimento, água/mergulho, suporte dos assentamentos, caminhos, identidade dos workers e ausência dos recursos nos substitutos distantes.
 - Inspeção de produção **headless, GT 710, ANGLE/D3D11, 1600×900**: aceitar missão, caminhar, extrair árvore e abrir o inventário com madeira/receitas; nenhum erro WebGL. [Amostra registrada](benchmarks/0.7-gameplay-smoke-2026-10-28.json).
 - Nessa amostra curta de 137 quadros: máximo de **1.422.205 triângulos**, **373 draw calls**, nenhum déficit de LOD, mediana de **66,7 ms/quadro** (cerca de 15 FPS). Houve tarefa de **473 ms antes de `sceneReady`**. É uma inspeção funcional com capturas, não o gate de três execuções de 60 s nem uma comparação de desempenho com as cenas 1.x. O requisito de ausência de tarefas acima de 100 ms continua pendente; CPU isolada, outras GPUs e provedor real não foram medidos.

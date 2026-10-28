@@ -89,6 +89,7 @@ interface Props {
   /** A 2.0 world with terrain streams around the camera; `document` then holds the scene played on top of it. */
   world?: ThreeWorldDocument | null
   onTimeChange: (time: number) => void; onSelect: (id: string | null) => void; onTransform: (id: string, patch: TransformPatch) => void; onExitPlay: () => void
+  onLoadingChange?: (loading: boolean) => void
 }
 interface ViewportEngine {
   update: (document: ThreeSceneDocument) => void
@@ -104,12 +105,13 @@ interface ViewportEngine {
 }
 const round = (value: number, digits = 4) => Math.round(value * 10 ** digits) / 10 ** digits
 
-export default function ThreeViewport({ document, world = null, selectedId, active, fitRequest, playing, seekTime, seekRequest, gizmo, snap, playMode, presentation = false, controller, onTimeChange, onSelect, onTransform, onExitPlay }: Props) {
+export default function ThreeViewport({ document, world = null, selectedId, active, fitRequest, playing, seekTime, seekRequest, gizmo, snap, playMode, presentation = false, controller, onTimeChange, onSelect, onTransform, onExitPlay, onLoadingChange }: Props) {
   const host = useRef<HTMLDivElement>(null)
   const engine = useRef<ViewportEngine | null>(null)
-  const callbacks = useRef({ onTimeChange, onSelect, onTransform, onExitPlay })
-  useEffect(() => { callbacks.current = { onTimeChange, onSelect, onTransform, onExitPlay } }, [onTimeChange, onSelect, onTransform, onExitPlay])
+  const callbacks = useRef({ onTimeChange, onSelect, onTransform, onExitPlay, onLoadingChange })
+  useEffect(() => { callbacks.current = { onTimeChange, onSelect, onTransform, onExitPlay, onLoadingChange } }, [onTimeChange, onSelect, onTransform, onExitPlay, onLoadingChange])
   const [error, setError] = useState<string | null>(null)
+  const [preparing, setPreparing] = useState(true)
   const [stats, setStats] = useState({ calls: 0, triangles: 0, fps: 0 })
   const [hud, setHud] = useState<HudModel | null>(null)
   const restartRequest = useRef<() => void>(() => {})
@@ -254,6 +256,8 @@ export default function ThreeViewport({ document, world = null, selectedId, acti
     let selected: string | null = null, gizmoMode: GizmoMode = 'translate', snapping = false
     let proxies: THREE.Mesh[] = [], suppressed = new Set<string>()
     let enabled = false, lost = false, disposed = false, frame = 0, ready = true, warming = 0, restartPending = false
+    let playRequested = false, worldFailed = false
+    const loading = (value: boolean) => { setPreparing(value); callbacks.current.onLoadingChange?.(value) }
     interface EnemyState extends EnemyMotion { radius:number; height:number; eyeHeight:number; moved: boolean; attackTime: number; step: EnemyStep | null; shown: THREE.Vector3 | null; equipment?: Equipment; shotPending?: boolean; strikeHit?: boolean }
     interface ResourceTarget { id: string; name: string; resource: SceneResource; position: THREE.Vector3; distance: number; procedural: boolean }
     let game: { runtime: SceneRuntime; player: PlayerState; input: PlayerInput; collider: PlayerCollider; saved: { position: THREE.Vector3; target: THREE.Vector3; fov: number; near: number; far: number }; last: number | null; aim: string | null; strike: string | null; hud: string; locked: boolean; help: boolean
@@ -272,7 +276,7 @@ export default function ThreeViewport({ document, world = null, selectedId, acti
       return { built: avatarBuilt, resources: avatarResources, binding, animator: animatorForBinding(binding), feet: createFootIKMemory(), springs: createSprings([...(avatarBuilt.skins.get('avatar')?.springs ?? [])]), equipment, climb: createClimbMemory(), ladder: null as Ladder | null, seenHurt: 0, seenSwing: 0 }
     }
     let rigs: RigBinding[] = []
-    interface CharacterMotion { animator: Animator; feet: FootIKMemory; look: LookMemory; springs: SpringSystem; last: THREE.Vector3; lastY: number; speed: number; action: string; hit: boolean; collapse: number }
+    interface CharacterMotion { animator: Animator; feet: FootIKMemory; look: LookMemory; springs: SpringSystem; last: THREE.Vector3; lastY: number; speed: number; action: string; hit: boolean; collapse: number; armed: boolean }
     const groundRay = new THREE.Ray()
     const groundFor = (collider: PlayerCollider): GroundSampler => (x, z, fromY) => {
       if (!collider.bvh) return collider.floor
@@ -350,13 +354,14 @@ export default function ThreeViewport({ document, world = null, selectedId, acti
         if (!holder || !visible(holder)) continue
         const enemy = state.enemies.get(id), step = enemy?.step, world = holder.getWorldPosition(new THREE.Vector3())
         const motion = state.rigMotion.get(id) ?? { animator: animatorForBinding(binding), feet: createFootIKMemory(), look: createLookMemory(),
-          springs: createSprings([...rigSpringChains(binding, built!.holders), ...(built!.skins.get(id)?.springs ?? [])]), last: world.clone(), lastY: world.y, speed: 0, action: 'idle', hit: false, collapse: 0 }
+          springs: createSprings([...rigSpringChains(binding, built!.holders), ...(built!.skins.get(id)?.springs ?? [])]), last: world.clone(), lastY: world.y, speed: 0, action: 'idle', hit: false, collapse: 0,
+          armed: (state.parts.get(id) ?? []).some(node => /^(sword|weapon|staff|bow)/i.test(node.assetPart ?? '')) }
         const measured = delta > 0 ? Math.min(12, Math.hypot(world.x - motion.last.x, world.z - motion.last.z) / delta) : 0
         motion.speed += (measured - motion.speed) * Math.min(1, delta * 10)
         const verticalSpeed = delta > 0 ? (world.y - motion.lastY) / delta : 0
         motion.last.copy(world); motion.lastY = world.y
         const activity = step?.activity, heavy = binding.kind === 'flyer' || ['orc', 'golem'].includes(byId.get(id)?.asset?.type ?? '')
-        const input: AnimatorInput = { dt: delta, time: seconds, speed: motion.speed, grounded: !flyingRig(binding), verticalSpeed, dead: runtime.defeated.has(id), talk: false, ranged: !!enemy?.equipment }
+        const input: AnimatorInput = { dt: delta, time: seconds, speed: motion.speed, grounded: !flyingRig(binding), verticalSpeed, dead: runtime.defeated.has(id), talk: false, ranged: !!enemy?.equipment, armed: motion.armed || !!enemy?.equipment }
         if (enemy) Object.assign(input, {
           attack: enemy.action === 'windup' && motion.action !== 'windup' ? heavy ? 'heavy' : 'light' : step?.attack === 'shoot' ? 'light' : null,
           talk: enemy.action === 'talk' || activity === 'greet' || state.dialogue?.id === id, wave: activity === 'greet' && motion.action !== 'talk',
@@ -402,7 +407,7 @@ export default function ThreeViewport({ document, world = null, selectedId, acti
       avatar.seenHurt = state.hurt; avatar.seenSwing = state.swings
       const equipment = avatar.equipment, stats = weaponStats[equipment.kind]
       const pose = updateAnimator(avatar.animator, { dt: delta, time: seconds, speed, grounded: player.onGround || !!player.climbing || player.fly, verticalSpeed: player.velocity.y,
-        dead: false, talk: !!state.dialogue, attack: swing ? state.heavy ? 'heavy' : 'light' : null, hurt, dodge: state.dodged, climbing: player.climbing, swimming: player.swimming, ranged: stats.kind === 'projectile' })
+        dead: false, talk: !!state.dialogue, attack: swing ? state.heavy ? 'heavy' : 'light' : null, hurt, dodge: state.dodged, climbing: player.climbing, swimming: player.swimming, ranged: stats.kind === 'projectile', armed: equipment.kind !== 'none' })
       state.dodged = false
       avatar.built.root.visible = state.avatar.visible
       if (state.avatar.visible) {
@@ -848,6 +853,7 @@ export default function ThreeViewport({ document, world = null, selectedId, acti
     const invalidate = () => { if (enabled && !lost && !disposed && !frame) frame = requestAnimationFrame(draw) }
     /** Links new shader programs in parallel before the first frame that needs them; otherwise each first use blocks the page until the driver finishes. */
     const warmUp = () => {
+      loading(true)
       const token = ++warming
       ready = false
       // Programs depend on which lights cast shadows, so the scheduler picks them before compiling.
@@ -863,7 +869,17 @@ export default function ThreeViewport({ document, world = null, selectedId, acti
       outputMaterial.needsUpdate = true
       const outputCompiled = renderer.compileAsync(outputScene, camera)
       renderer.setRenderTarget(output)
-      void Promise.all([compiled, outputCompiled]).catch(() => {}).then(() => { if (token === warming && !disposed) { ready = true; bench?.mark(game ? 'gameReady' : 'sceneReady'); if (restartPending) { restartPending = false; startGame(false) } invalidate() } })
+      void Promise.all([compiled, outputCompiled]).catch(() => {}).then(() => {
+        if (token !== warming || disposed) return
+        ready = true
+        bench?.mark(game ? 'gameReady' : 'sceneReady')
+        if (built && (!worldRuntime || worldReady)) {
+          loading(false)
+          if (restartPending) { restartPending = false; startGame(false) }
+          else if (playRequested && !game) startGame()
+        }
+        invalidate()
+      })
     }
     const resize = () => {
       const width = container.clientWidth, height = container.clientHeight
@@ -1241,6 +1257,7 @@ export default function ThreeViewport({ document, world = null, selectedId, acti
     const buildWorldScene = (next: ThreeSceneDocument, options: Parameters<typeof buildScene>[2]) => {
       const job = ++buildJob
       ready = false
+      loading(true)
       const kinds = [...new Set(next.nodes.flatMap((node) => node.material.texture && node.material.texture !== 'none' && !node.material.textureImage ? [node.material.texture] : []))].filter((kind) => !hasTextureData(kind))
       void Promise.all(kinds.map((kind) => worldPool!.run({ type: 'texture', kind }).then(({ color, normal, rough }) => primeTextureData(kind, { color, normal, rough })))).catch(() => {}).then(() => {
         const steps = buildSceneSteps(next, resources, options)
@@ -1316,7 +1333,7 @@ export default function ThreeViewport({ document, world = null, selectedId, acti
       void travelTo(target, `Viajando para ${location.name}…`)
     }
     const startGame = (resume = true) => {
-      if (!built || !doc || game) return
+      if (!built || !doc || game || !ready || (worldRuntime && !worldReady)) return
       clearSelection()
       transform.detach()
       controls.enabled = false
@@ -1395,6 +1412,7 @@ export default function ThreeViewport({ document, world = null, selectedId, acti
         nav: null, router: createRouter(null), routines, paused: false, dismissed: false, interacted: false, device: 'keyboard', pad: createGamepadState(), stamina: 100, dodge: 0, dodged: false,
         damageTaken: 0, falls: 0, lastHealth: settings.health ?? 100, subtitle: null, greeted: new Map(), omitted, aimables, ownedBvh, region: '', regionAt: 0, fog: terrain && worldDoc ? createFog(worldDoc.terrain.size) : null, visited: new Set(), frozen: false, savedAt: 0, mount: null, guards: new Set([...enemies.keys()].filter((id) => isGuardPlan(routines.get(id)))) }
       const session = game
+      if (!resume) session.interacted = true
       if (terrain && worldDoc) {
         // Worlds have a mount (I), built in slices after play starts; its programs link before it can be summoned.
         void createMount({ quality, shadows: doc.environment.shadows ?? true }, () => game !== session || disposed).then(async (mount) => {
@@ -1513,19 +1531,22 @@ export default function ThreeViewport({ document, world = null, selectedId, acti
         applySelection()
         invalidate()
       },
-      game(value) { if (value) startGame(); else stopGame() },
+      game(value) { playRequested = value; if (value) startGame(); else stopGame() },
       world(next) {
         // A world whose terrain, layout and locations did not move keeps its runtime (e.g. a location was just detailed).
-        if (next === worldDoc || (next && worldDoc && worldTerrainKey(next) === worldTerrainKey(worldDoc))) { worldDoc = next; return }
+        if (!worldFailed && (next === worldDoc || (next && worldDoc && worldTerrainKey(next) === worldTerrainKey(worldDoc)))) { worldDoc = next; return }
         if (game) { stopGame(false); callbacks.current.onExitPlay() }
         worldRuntime?.object.removeFromParent(); worldRuntime?.dispose()
         worldRuntime = null; worldReady = false; worldDoc = next
+        worldFailed = false
+        setError(null)
         if (!next || next.terrain.kind === 'none') { camera.near = 0.01; camera.far = 10000; camera.updateProjectionMatrix(); invalidate(); return }
         worldPool ??= createWorldWorkers()
         const gl = renderer.getContext() as WebGL2RenderingContext
         const runtime = createWorldRuntime(next, worldPool, { anisotropy: Math.min(8, renderer.capabilities.getMaxAnisotropy()), maxLayers: gl.getParameter(gl.MAX_ARRAY_TEXTURE_LAYERS) as number, onTile: invalidate,
           vegetation: { renderer, wind, shadows: next.environment.shadows ?? true, quality } })
         worldRuntime = runtime
+        loading(true)
         if (bench) bench.ground = runtime.heightAt
         content.add(runtime.object)
         const spawn = next.environment.player?.spawn, focus = spawn ? new THREE.Vector3(...spawn) : null
@@ -1541,6 +1562,12 @@ export default function ThreeViewport({ document, world = null, selectedId, acti
           bench?.mark('worldPrepared')
           warmUp()
           invalidate()
+        }).catch((cause: unknown) => {
+          if (worldRuntime !== runtime || disposed) return
+          worldFailed = true
+          setError(`Não foi possível preparar o mundo: ${cause instanceof Error ? cause.message : String(cause)}. Abra o projeto novamente para tentar outra vez.`)
+          playRequested = false
+          callbacks.current.onExitPlay()
         })
       },
       present(value) {
@@ -1638,6 +1665,7 @@ export default function ThreeViewport({ document, world = null, selectedId, acti
     <div className="three-viewport__canvas" ref={host} />
     {!playMode && <div className="three-viewport__label"><span className="three-dot" /> PERSPECTIVA <span>Y ↑ · metros</span></div>}
     {error && <p className="three-viewport__error" role="alert">{error}</p>}
+    {preparing && !error && <div className="three-world-travel" role="status">{world ? 'Preparando terreno, personagens e colisões…' : 'Preparando cena…'}</div>}
     {playMode && worldMap && <WorldMap {...worldMap} onTravel={(id) => travelRequest.current(id)} onClose={() => mapRequest.current(false)} />}
     {playMode && travelling && <div className="three-world-travel" role="status">{travelling}</div>}
     {playMode && hud?.submerged && <div className="three-underwater" aria-hidden="true" />}

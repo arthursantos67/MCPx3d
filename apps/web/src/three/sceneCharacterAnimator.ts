@@ -18,7 +18,7 @@ export interface AnimatorInput {
   dt: number; time: number; speed: number; grounded: boolean; verticalSpeed: number; dead: boolean; talk: boolean
   attack?: 'light' | 'heavy' | null; dodge?: boolean; hurt?: boolean; interact?: boolean; wave?: boolean; crouch?: boolean
   activity?: AnimActivity | null; mood?: AnimMood
-  climbing?: boolean; swimming?: boolean; ranged?: boolean
+  climbing?: boolean; swimming?: boolean; ranged?: boolean; armed?: boolean
 }
 /**
  * `joints`: delta Euler degrees added to each joint's rest rotation. `bob` metres (per rig unit) on the root joint; `collapse` 0..1 lowers the root as in a fall
@@ -170,7 +170,8 @@ function locomotion(a: Animator, input: AnimatorInput): Frame {
   }
   let bob = f <= 0 ? rigBob(kind, state, a.phase) : f >= 1 ? rigBob(kind, aloft, a.phase) : mix(rigBob(kind, state, a.phase), rigBob(kind, aloft, a.phase), f)
   const idle = (1 - smooth(0.05, 0.8, a.speed)) * (flying && kind !== 'hover' ? 0.5 : 1), fid = fidget(a)
-  if (fid.w > 0 && idle > 0) bob += fidgetPose(a, joints, fid.kind, fid.u, fid.w * idle)
+  const freeGesture = kind !== 'biped' || !(input.armed || input.ranged) || fid.kind === 0 || fid.kind === 3
+  if (fid.w > 0 && idle > 0 && freeGesture) bob += fidgetPose(a, joints, fid.kind, fid.u, fid.w * idle)
   const c = a.crouch
   if (input.ranged && kind === 'biped' && !input.climbing) {
     blendTo(joints, 'j_shoulderR', [-85, 0, -3], 1)

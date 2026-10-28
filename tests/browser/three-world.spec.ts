@@ -16,6 +16,22 @@ async function open(page: Page) {
   return errors
 }
 
+test('a missing saved world cannot start as floating locations and another project recovers play', async ({ page }) => {
+  const errors = await open(page)
+  await projectAction(page, 'Exemplo jogável')
+  const play = page.getByRole('button', { name: '▶ Jogar', exact: true })
+  await expect(play).toBeEnabled()
+  await page.evaluate(() => localStorage.setItem('modeler:three-world', 'Mundo ausente'))
+  await page.reload()
+  await expect(page.getByText(/Mundo não recuperado:/)).toBeVisible()
+  await expect(play).toBeDisabled()
+  await page.keyboard.press('p')
+  await expect(page.getByRole('region', { name: 'Modo jogo' })).toBeHidden()
+  await projectAction(page, 'Exemplo jogável')
+  await expect(play).toBeEnabled()
+  expect(errors).toEqual([])
+})
+
 test('a 4 km world streams its terrain, plays on the relief and keeps 1.x scenes working afterwards', async ({ page }) => {
   test.setTimeout(240_000)
   const errors = await open(page)
@@ -51,14 +67,36 @@ test('a climate world with vegetation, regions, map and mount plays without erro
   test.setTimeout(300_000)
   const errors = await open(page)
   await projectAction(page, 'Terras de Aurora 4 km')
+  const play = page.getByRole('button', { name: '▶ Jogar', exact: true })
+  await expect(play).toBeDisabled()
+  await page.keyboard.press('p')
+  await expect(page.getByRole('region', { name: 'Modo jogo' })).toBeHidden()
   await page.waitForFunction(() => (window.__formaBench?.marks.worldPrepared ?? 0) > 0, null, { timeout: 200_000 })
+  await expect(play).toBeEnabled({ timeout: 60_000 })
+  // Persisted locations must come back together with their terrain, before play can start.
+  await page.evaluate(() => {
+    const key = 'modeler:three-scene:v1', draft = JSON.parse(localStorage.getItem(key)!) as { nodes: { id: string; name: string }[] }
+    draft.nodes.find(node => node.id === 'lirio/mara')!.name = 'Mara · edição preservada'
+    localStorage.setItem(key, JSON.stringify(draft))
+  })
+  await page.reload()
+  await expect(play).toBeDisabled()
+  await expect(play).toBeEnabled({ timeout: 200_000 })
+  await page.waitForFunction(() => (window.__formaBench?.marks.worldPrepared ?? 0) > 0)
   await expect(page.getByLabel('Estatísticas do renderer')).toContainText(/[1-9][\d.]* triângulos/, { timeout: 60_000 })
-  await page.getByRole('button', { name: '▶ Jogar', exact: true }).click()
+  await page.keyboard.press('p')
   const hud = page.getByRole('region', { name: 'Modo jogo' })
   await expect(hud).toBeVisible()
+  await expect(hud).toContainText('Mara · edição preservada')
   await expect(page.locator('.forma-prompt')).toContainText('Conversar · Mara')
   await page.keyboard.press('e')
   await expect(hud).toContainText('Extraia madeira')
+  const start = await page.evaluate(() => window.__formaBench!.position()!)
+  const floor = await page.evaluate(at => window.__formaBench!.ground!(at[0], at[2]), start)
+  expect(Math.abs(start[1] - floor)).toBeLessThan(0.35)
+  await page.keyboard.down('a')
+  await page.waitForFunction(from => { const at = window.__formaBench!.position()!; return Math.hypot(at[0] - from[0], at[2] - from[2]) > 1 }, start, { timeout: 60_000 })
+  await page.keyboard.up('a')
   await page.keyboard.press('Tab')
   const map = page.getByRole('dialog', { name: 'Mapa do mundo' })
   await expect(map).toBeVisible()
