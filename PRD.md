@@ -117,6 +117,8 @@ Objetivo: cenas com padrão de jogo de mercado — personagens animados, combate
 
 ### Mundos vastos Three.js — 0.7 (em andamento desde 2026-10-23)
 
+Jogabilidade ampliada em 28/10/2026: Aurora tem campanha de quatro missões, NPC, extração de recursos com remoção/colisão, inventário e fabricação com consumo de ingredientes, suprimentos de cura, combate e conclusão no farol. Água funda oferece natação, mergulho e fôlego; a retomada inclui inventário, missões e alterações do cenário. Os contratos declarativos e os agentes de cena/mundo passam a representar essas mecânicas. Corrigidos o preenchimento indevido de grandes depressões e o suporte irregular dos assentamentos. [Escopo, controles e limites](docs/threejs-gameplay.md). Escavação do terreno e construção livre não fazem parte desta entrega.
+
 Objetivo e fases no [roteiro](ROADMAP.md#07--mundos-vastos); estado e medições em [docs/threejs-worlds.md](docs/threejs-worlds.md). Fases 2–6 implementadas; validação interrompida a pedido do usuário em 27/10/2026 para enviar o estado atual. O gate completo permanece pendente, e a última medição preliminar ainda excedeu os limites de triângulos e de bloqueio na carga.
 
 - Desempenho é requisito de cada fase: `scripts/benchmark-three-fps.mjs` mede o modo jogo em GPU real (rota fixa, tempo de quadro/CPU/GPU, draw calls, triângulos, memória, bloqueios) e compara com a linha de base gravada em `docs/benchmarks`. Cenas 1.x não podem piorar além do ruído; mundos seguem o orçamento absoluto do roteiro. Classes de GPU sem máquina disponível ficam "não medidas".

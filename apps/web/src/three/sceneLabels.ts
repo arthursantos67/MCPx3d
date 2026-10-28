@@ -6,7 +6,7 @@ export const actionOptionLabels: Record<typeof interactionActions[number], strin
 export const behaviorLabels: Record<typeof behaviorTypes[number], string> = { enemy: 'Inimigo', hazard: 'Perigo (fere ao tocar)', checkpoint: 'Ponto de controle', goal: 'Chegada da fase',
   climbable: 'Escalável (escada)', npc: 'Personagem amigável (NPC)', launcher: 'Plataforma de salto' }
 export const attackLabels: Record<typeof attackStyles[number], string> = { touch: 'Contato', melee: 'Corpo a corpo', ranged: 'À distância (projéteis)', charge: 'Investida' }
-export const objectiveLabels: Record<typeof objectiveTypes[number], string> = { explore: 'Explorar', collectAll: 'Coletar todos os itens', reachGoal: 'Chegar ao destino', defeatEnemies: 'Derrotar os inimigos', survive: 'Sobreviver pelo tempo limite' }
+export const objectiveLabels: Record<typeof objectiveTypes[number], string> = { quests: 'Concluir missões', explore: 'Explorar', collectAll: 'Coletar todos os itens', reachGoal: 'Chegar ao destino', defeatEnemies: 'Derrotar os inimigos', survive: 'Sobreviver pelo tempo limite' }
 export const soundLabels: Record<SoundPreset, string> = { fire: 'Fogo crepitando', water: 'Água corrente', waves: 'Ondas', wind: 'Vento', machine: 'Máquina', magic: 'Energia mágica', birds: 'Pássaros',
   insects: 'Insetos', drip: 'Gotejamento', engine: 'Motor', chimes: 'Sinos de vento', alarm: 'Alarme', portal: 'Portal', crowd: 'Multidão' }
 export const ambienceLabels: Record<typeof ambiencePresets[number], string> = { auto: 'Automática pelo cenário', none: 'Sem ambiência', forest: 'Floresta', meadow: 'Campo', beach: 'Praia', desert: 'Deserto',

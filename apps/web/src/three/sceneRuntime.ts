@@ -1,5 +1,6 @@
 import { cycleProgress, isTriggered, playsOnce, samplePose, type ScenePose } from './sceneAnimation.ts'
 import { subtreeIds, type PowerKind, type SceneBehavior, type SceneInteraction, type SceneNode, type SceneObjective, type ThreeSceneDocument, type Vector3Tuple } from './sceneDocument.ts'
+import { activeQuest, createGameplayProgress, gameplayStatus, gatherItem, talkToQuestGiver, updateQuests, type GameplayProgress, type SceneGameplay } from './sceneGameplay.ts'
 
 interface NodeState { clock: number; active: boolean; progress: number; direction: 1 | -1 }
 export type RuntimeEventKind = 'collect' | 'unlock' | 'locked' | 'heal' | 'powerup' | 'powerdown' | 'hit' | 'defeat' | 'spawn' | 'checkpoint' | 'dialogue' | 'message' | 'toggle'
@@ -22,6 +23,8 @@ export interface SceneRuntime {
   collectibles: number
   /** Inventory: item name → count, filled by collect interactions with `item`. Required items are never consumed. */
   items: Map<string, number>
+  gameplay: GameplayProgress
+  rules: SceneGameplay | undefined
   /** Interactions whose last attempt was refused for a missing `requires` item. */
   blocked: Set<string>
   /** Interactions with `requires` that already succeeded once (the 'unlock' event fires only then). */
@@ -67,9 +70,13 @@ export function createRuntime(doc: ThreeSceneDocument, startTime = 0): SceneRunt
   const objective: SceneObjective = doc.environment.objective ?? { type: goals.length ? 'reachGoal' : collectibles ? 'collectAll' : enemies.length ? 'defeatEnemies' : 'explore', title: '', timeLimit: 0 }
   const pending = new Map(foes.filter((node) => (node.behavior!.delay ?? 0) > 0).map((node) => [node.id, node.behavior!.delay!]))
   for (const id of pending.keys()) hidden.add(id)
-  return { byId, nodes: doc.nodes, states, hidden, toggles, collected: new Set(), consumed: new Set(), inside: new Set(), collectibles, items: new Map(), blocked: new Set(), unlocked: new Set(), effects: new Map(), dialogue: new Map(),
+  const runtime: SceneRuntime = { byId, nodes: doc.nodes, states, hidden, toggles, collected: new Set(), consumed: new Set(), inside: new Set(), collectibles, items: new Map(), gameplay: createGameplayProgress(), rules: doc.environment.gameplay, blocked: new Set(), unlocked: new Set(), effects: new Map(), dialogue: new Map(),
     health, maxHealth: health, invulnerable: 0, checkpoint: null, checkpoints: new Set(), defeated: new Set(), enemies, enemyHealth: new Map(foes.map((node) => [node.id, node.behavior!.health ?? 1])), pending,
     goals, objective, elapsed: 0, outcome: 'playing', score: 0, events: [] }
+  for (const stack of runtime.rules?.startingItems ?? []) gatherItem(runtime.gameplay, runtime.items, stack)
+  const quest = activeQuest(runtime.rules, runtime.gameplay)
+  if (quest && !quest.giverId) runtime.gameplay.accepted.add(quest.id)
+  return runtime
 }
 
 function emit(runtime: SceneRuntime, kind: RuntimeEventKind, id?: string) {
@@ -91,6 +98,7 @@ export function objectiveStatus(runtime: SceneRuntime): { done: boolean; text: s
   const items = `${runtime.collected.size}/${runtime.collectibles} itens`, foes = `${runtime.defeated.size}/${runtime.enemies.length} inimigos`
   const title = runtime.objective.title
   switch (runtime.objective.type) {
+    case 'quests': return gameplayStatus(runtime.rules, runtime.gameplay, runtime.defeated)
     case 'collectAll': return { done: runtime.collected.size >= runtime.collectibles, text: title || `Colete todos os itens · ${items}` }
     case 'defeatEnemies': return { done: runtime.defeated.size >= runtime.enemies.length, text: title || `Derrote os inimigos · ${foes}` }
     case 'reachGoal': return { done: true, text: title || `Chegue ao portal${runtime.collectibles ? ` · ${items}` : ''}` }
@@ -184,8 +192,10 @@ export function reachGoal(runtime: SceneRuntime): string | null {
 /** Automatic victory for collect/defeat objectives without a goal and for survive, and defeat when other time limits end. */
 export function checkOutcome(runtime: SceneRuntime): void {
   if (runtime.outcome !== 'playing') return
+  updateQuests(runtime.rules, runtime.gameplay, runtime.items, runtime.defeated)
   if (runtime.objective.type === 'survive') { if (runtime.health > 0 && objectiveStatus(runtime).done) win(runtime); return }
   if (runtime.objective.timeLimit > 0 && runtime.elapsed >= runtime.objective.timeLimit) { runtime.outcome = 'lost'; emit(runtime, 'timeout'); return }
+  if (runtime.objective.type === 'quests') { if (!runtime.goals.length && objectiveStatus(runtime).done) win(runtime); return }
   const required = runtime.objective.type === 'collectAll' ? runtime.collectibles : runtime.objective.type === 'defeatEnemies' ? runtime.enemies.length : 0
   if (!runtime.goals.length && required > 0 && objectiveStatus(runtime).done) win(runtime)
 }
@@ -240,6 +250,7 @@ export function triggerInteraction(runtime: SceneRuntime, sourceId: string): str
   const blocked = interactionBlocked(runtime, node)
   if (blocked) { runtime.blocked.add(node.id); emit(runtime, 'locked', node.id); return blocked }
   runtime.blocked.delete(node.id)
+  if (interaction.action !== 'heal' || runtime.health < runtime.maxHealth) runtime.gameplay.interacted.add(node.id)
   if (interaction.requires && !runtime.unlocked.has(node.id)) { runtime.unlocked.add(node.id); emit(runtime, 'unlock', node.id) }
   const target = interaction.targetId ?? node.id
   switch (interaction.action) {
@@ -260,7 +271,7 @@ export function triggerInteraction(runtime: SceneRuntime, sourceId: string): str
       runtime.collected.add(node.id)
       runtime.hidden.add(node.id)
       runtime.score += SCORE.collect
-      if (interaction.item) runtime.items.set(interaction.item, (runtime.items.get(interaction.item) ?? 0) + 1)
+      if (interaction.item) gatherItem(runtime.gameplay, runtime.items, { item: interaction.item, amount: interaction.amount || 1 })
       emit(runtime, 'collect', node.id)
       return interaction.message || `${interaction.item ? `${interaction.item} obtido` : `${node.name} coletado`} · ${runtime.collected.size}/${runtime.collectibles}`
     }
@@ -284,6 +295,7 @@ export function triggerInteraction(runtime: SceneRuntime, sourceId: string): str
       return interaction.message || `${powerLabels[power]} por ${Math.round(seconds)} s`
     }
     case 'dialogue': {
+      talkToQuestGiver(runtime.rules, runtime.gameplay, node.id)
       const lines = dialogueLines(interaction.message)
       if (!lines.length) return null
       const next = runtime.dialogue.get(node.id) ?? 0

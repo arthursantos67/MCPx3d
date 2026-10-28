@@ -3,6 +3,7 @@ import { ambiencePresets, musicPresets, validateScene, weatherKinds, type ThreeS
 import { DEFAULT_CLIMATE, DEFAULT_WORLD_BUDGETS, locationKinds, routeKinds, validateWorld, worldBiomes, worldEnvironment, type ThreeWorldDocument, type WorldLocation, type WorldRegion, type WorldRoute } from './worldDocument.ts'
 import { hash2 } from './worldNoise.ts'
 import { BIOMES, type WorldMacro } from './worldMacro.ts'
+import { GAMEPLAY_PROMPT } from '../sceneGameplaySchema.ts'
 
 /**
  * AI world generation in two scales. The model writes a compact atlas (regions by map area, locations by terrain
@@ -38,6 +39,7 @@ export const atlasSchema: JsonSchema = {
 }
 
 export const ATLAS_PROMPT = `Você é a diretora de mundo do Forma. Devolva SOMENTE o JSON do atlas de um mundo de 4×4 km para exploração em primeira pessoa.
+Defina nas descrições dos locais uma aventura jogável: ponto inicial seguro com NPC útil, recursos/itens alcançáveis, tarefas ligadas à premissa, progressão e um desfecho. A primeira região deve ter atividades perto da chegada; não entregue apenas quilômetros de terreno. Descreva recursos extraíveis e receitas necessárias quando o gênero pedir fabricação; NPCs precisam de ações e missões reais, não só falas.
 Regiões (até ${MAX_ATLAS_REGIONS}): cada uma ocupa uma área do mapa (north, south, east, west, center e diagonais), com bioma (o clima local segue o bioma), perigo 0–5, ambiência, música, clima e premissa curta.
 Locais (até ${MAX_ATLAS_LOCATIONS}): vilas, cidades, castelos, portos, acampamentos, masmorras, ruínas e marcos; diga a região, a regra de terreno onde devem ficar (coast, river, lake, hill, valley, plain, forest, mountain, any), o tamanho (small/medium/large) e uma descrição concreta do que contêm. Marque detail=true nos até ${MAX_DETAILED} locais mais importantes, que serão construídos em detalhe.
 Rotas: estradas (road) entre locais que fazem sentido ligar; trilhas (path) para lugares remotos.
@@ -183,7 +185,9 @@ export function detailRequest(world: ThreeWorldDocument, location: WorldLocation
   const limit = Math.min(nodes, NODES_BY_SIZE[sizeClass]), concise = attempt ? ` Esta é a tentativa ${attempt + 1}: a anterior não terminou; entregue uma versão mais enxuta e completa.` : ''
   return `${location.brief ?? location.name}. ${location.name} é um local do tipo ${location.kind} no mundo “${world.name}”${region ? `, região ${region.name} (perigo ${region.danger}${region.premise ? `; ${region.premise}` : ''})` : ''}.
 O chão já existe e está aplainado num círculo de raio ${Math.round(location.footprint)} m centrado na origem: não crie terreno, mar nem lagos; construa tudo dentro desse círculo, sobre y = 0.
-Orçamento: no máximo ${Math.round(limit * Math.pow(0.75, attempt))} objetos e ${lights} luzes com sombra.${concise}`
+Orçamento: no máximo ${Math.round(limit * Math.pow(0.75, attempt))} objetos e ${lights} luzes com sombra.${concise}
+${GAMEPLAY_PROMPT}
+Este local precisa de ao menos uma missão executável coerente com sua função, com referências apenas a nós deste local. Faça um pequeno ciclo completo (ação, progresso e recompensa), com recursos suficientes. A primeira tarefa deve ser acessível ao chegar ao local.`
 }
 
 /**
@@ -198,11 +202,25 @@ export function fitLocationScene(scene: ThreeSceneDocument, budgets: ThreeWorldD
   for (const node of doc.nodes) if (!node.parentId && (node.kind === 'terrain' || (node.material.texture === 'water' && (node.kind === 'plane' || node.kind === 'box')) || (node.kind === 'plane' && Math.max(node.dimensions[0] * node.scale[0], node.dimensions[2] * node.scale[2]) > footprint * 1.6))) for (const id of subtree(node.id)) removed.add(id)
   if (removed.size) notes.push(`${removed.size} objetos de terreno ou água próprios do local foram removidos: o mundo já tem chão e água.`)
   let nodes = doc.nodes.filter((node) => !removed.has(node.id))
+  const essential = new Set<string>()
+  for (const node of doc.nodes) if (node.resource || node.interaction || node.behavior) essential.add(node.id)
+  for (const quest of doc.environment.gameplay?.quests ?? []) {
+    if (quest.giverId) essential.add(quest.giverId)
+    for (const step of quest.steps) if (['talk', 'visit', 'interact', 'defeat'].includes(step.kind)) essential.add(step.target)
+  }
+  for (const id of [...essential]) {
+    let node = byId.get(id)
+    while (node?.parentId) { essential.add(node.parentId); node = byId.get(node.parentId) }
+  }
   if (nodes.length > budgets.nodesPerLocation) {
     const rank = (id: string) => { const role = byId.get(id)?.role; return role === 'vegetation' ? 0 : role === 'prop' ? 1 : role === 'path' ? 2 : 3 }
     const roots = nodes.filter((node) => !node.parentId || !nodes.some((other) => other.id === node.parentId)).map((node) => node.id).sort((a, b) => rank(a) - rank(b) || (a < b ? -1 : 1))
     const dropped = new Set<string>()
-    for (const root of roots) { if (nodes.length - dropped.size <= budgets.nodesPerLocation) break; for (const id of subtree(root)) dropped.add(id) }
+    for (const root of roots) {
+      if (nodes.length - dropped.size <= budgets.nodesPerLocation) break
+      if (!essential.has(root)) for (const id of subtree(root)) dropped.add(id)
+    }
+    if (nodes.length - dropped.size > budgets.nodesPerLocation) throw new Error('Os objetos necessários à jogabilidade excedem o orçamento do local. Gere uma cena mais simples preservando as missões.')
     notes.push(`O local passou de ${budgets.nodesPerLocation} objetos; ${dropped.size} objetos menos importantes foram removidos.`)
     nodes = nodes.filter((node) => !dropped.has(node.id))
   }
@@ -277,8 +295,7 @@ export async function continueWorld(world: ThreeWorldDocument, deps: WorldGenera
     if (!location || location.scene) continue
     deps.onEvent?.({ step: 'detail', location: id, detail: `Construindo “${location.name}”…` })
     const notes: string[] = []
-    const scene = await persist((attempt) => deps.detail(detailRequest(current, location, current.budgets.nodesPerLocation, attempt), signal), location.name, deps, signal)
-    const fitted = fitLocationScene(scene, current.budgets, location.footprint, notes)
+    const fitted = await persist(async (attempt) => fitLocationScene(await deps.detail(detailRequest(current, location, current.budgets.nodesPerLocation, attempt), signal), current.budgets, location.footprint, notes), location.name, deps, signal)
     const generation = current.generation ? { ...current.generation, pending: current.generation.pending.filter((item) => item !== id), failed: current.generation.failed.filter((item) => item.id !== id) } : undefined
     current = validateWorld({ ...current, locations: current.locations.map((item) => item.id === id ? { ...item, scene: fitted } : item), ...(generation ? { generation } : {}) })
     deps.checkpoint(current)

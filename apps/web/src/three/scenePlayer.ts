@@ -6,7 +6,7 @@ export const PLAYER_RADIUS = 0.32, PLAYER_HEIGHT = 1.75, PLAYER_EYE = 1.62, GRAV
 export const MAX_COLLIDER_TRIANGLES = 1_500_000
 export interface PlayerInput { forward: boolean; back: boolean; left: boolean; right: boolean; turnLeft: boolean; turnRight: boolean; up: boolean; down: boolean; sprint: boolean; jump: boolean }
 export const emptyInput = (): PlayerInput => ({ forward: false, back: false, left: false, right: false, turnLeft: false, turnRight: false, up: false, down: false, sprint: false, jump: false })
-export interface PlayerState { position: THREE.Vector3; velocity: THREE.Vector3; yaw: number; pitch: number; onGround: boolean; fly: boolean; climbing?: boolean }
+export interface PlayerState { position: THREE.Vector3; velocity: THREE.Vector3; yaw: number; pitch: number; onGround: boolean; fly: boolean; climbing?: boolean; swimming?: boolean; submerged?: boolean }
 export function movementHeading(heading: number, velocity: THREE.Vector3, dt: number): number {
   if (Math.hypot(velocity.x, velocity.z) < 0.15) return heading
   const target = Math.atan2(velocity.x, velocity.z), turn = Math.atan2(Math.sin(target - heading), Math.cos(target - heading))
@@ -15,7 +15,7 @@ export function movementHeading(heading: number, velocity: THREE.Vector3, dt: nu
 /** Oriented box used for moving or interactive objects. */
 export interface PlayerBox { center: THREE.Vector3; axes: [THREE.Vector3, THREE.Vector3, THREE.Vector3]; half: THREE.Vector3 }
 /** `bvh` is the static scene BVH, or in a world that BVH combined with streamed terrain (same query interface). */
-export interface PlayerCollider { bvh: CollisionShape | null; boxes: PlayerBox[]; floor: number; climb?: PlayerBox[] }
+export interface PlayerCollider { bvh: CollisionShape | null; boxes: PlayerBox[]; floor: number; climb?: PlayerBox[]; waterAt?: (x: number, z: number) => number | null }
 
 /** Bakes world-space triangles into one BVH; returns the number of omitted triangles beyond the budget. */
 export function buildStaticCollider(entries: { geometry: THREE.BufferGeometry; matrix: THREE.Matrix4 }[]): { bvh: MeshBVH | null; omitted: number } {
@@ -147,11 +147,33 @@ export function stepPlayer(state: PlayerState, input: PlayerInput, collider: Pla
   const wish = new THREE.Vector3().addScaledVector(forward, (input.forward ? 1 : 0) - (input.back ? 1 : 0)).addScaledVector(right, (input.right ? 1 : 0) - (input.left ? 1 : 0))
   if (wish.lengthSq()) wish.normalize().multiplyScalar(speed)
   if (state.fly) {
+    state.swimming = false; state.submerged = false
     state.climbing = false
     const vertical = ((input.up || input.jump ? 1 : 0) - (input.down ? 1 : 0)) * speed
     state.velocity.set(wish.x, vertical, wish.z)
     state.position.addScaledVector(state.velocity, dt)
     state.onGround = false
+    return
+  }
+  const water = collider.waterAt?.(state.position.x, state.position.z) ?? null
+  state.swimming = water !== null && state.position.y < water - (state.swimming ? 0.65 : 1)
+  state.submerged = water !== null && state.position.y + PLAYER_EYE < water - 0.1
+  if (state.swimming && water !== null) {
+    state.climbing = false; state.onGround = false
+    const swimmingSpeed = Math.min(settings.speed * 0.55, 3.5) * (input.sprint ? 1.35 : 1)
+    if (wish.lengthSq()) wish.normalize().multiplyScalar(swimmingSpeed)
+    state.velocity.x += (wish.x - state.velocity.x) * Math.min(1, dt * 5)
+    state.velocity.z += (wish.z - state.velocity.z) * Math.min(1, dt * 5)
+    for (let i = 0; i < steps; i++) {
+      const level = collider.waterAt?.(state.position.x, state.position.z) ?? water
+      const target = level - 1.2
+      state.velocity.y += ((target - state.position.y) * 12 - state.velocity.y * 5 + (input.down ? -10 : input.up || input.jump ? 7 : 0)) * h
+      state.velocity.y = THREE.MathUtils.clamp(state.velocity.y, -3, 3)
+      state.position.addScaledVector(state.velocity, h)
+      const push = collide(state, collider)
+      if (push.y > 0.001) { state.velocity.y = Math.max(0, state.velocity.y); state.onGround = true }
+      if (push.lengthSq() > 1e-10) { push.normalize(); state.velocity.addScaledVector(push, -Math.min(0, push.dot(state.velocity))) }
+    }
     return
   }
   // Ladders: pressing forward/back next to a climbable surface moves vertically without gravity.

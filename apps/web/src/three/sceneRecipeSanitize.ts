@@ -202,6 +202,7 @@ export function sanitizeEnvironment(log: SanitizeLog, value: unknown): Json {
     weather: choice(log, value.weather, weatherKinds, 'none', 'Clima'), grade: choice(log, value.grade, gradePresets, 'none', 'Gradação de cor'),
     ...(isRecord(value.objective) ? { objective: { type: choice(log, value.objective.type, objectiveTypes, 'explore', 'Objetivo'), title: typeof value.objective.title === 'string' ? value.objective.title.slice(0, 160) : '',
       timeLimit: number(log, value.objective.timeLimit, 0, 3600, 0, 'Tempo limite') } } : {}),
+    ...(value.gameplay == null ? {} : { gameplay: validateGameplay(value.gameplay) }),
     ...(isRecord(value.motion) ? { motion: { wind: number(log, value.motion.wind, 0, 2, 0.6, 'Vento'), grass: choice(log, value.motion.grass, grassDensities, 'auto', 'Grama'),
       fauna: choice(log, value.motion.fauna, faunaDensities, 'auto', 'Fauna') } } : {}),
     ...(isRecord(value.dayCycle) ? { dayCycle: { enabled: typeof value.dayCycle.enabled === 'boolean' ? value.dayCycle.enabled : true,
@@ -275,3 +276,4 @@ export function repairReferences(log: SanitizeLog, existing: SceneNode[], added:
   clearRoutineTargets(result.filter((node) => fresh.has(node.id)), (id) => kept.has(id), () => {})
   return result
 }
+import { validateGameplay } from './sceneGameplay.ts'

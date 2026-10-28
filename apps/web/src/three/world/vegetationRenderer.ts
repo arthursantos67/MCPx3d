@@ -7,6 +7,7 @@ import { buildVegetation } from '../sceneVegetation.ts'
 import { applyWind, windKey, windKinds, windShadowMaterials, type WindSystem } from '../sceneWind.ts'
 import { INSTANCE_STRIDE, SPECIES, VEGETATION_CELL, type CellVegetation, type Species } from './worldVegetation.ts'
 import { hash2 } from './worldNoise.ts'
+import { createPlantInteraction, filterPlants, type PlantTarget, type PlantObstacle } from './worldPlantInteraction.ts'
 
 /**
  * Vegetation of a streamed world in three tiers per species: the full prefab near the camera (with wind and shadows),
@@ -32,6 +33,10 @@ export interface VegetationRenderer {
   setCell(cx: number, cz: number, plants: CellVegetation | null): void
   update(camera: THREE.Vector3, renderOrigin: [number, number], frustum: THREE.Frustum): void
   readonly stats: { near: number; mid: number; far: number; rebuilds: number }
+  raycast(ray: THREE.Ray, range?: number): PlantTarget | null
+  obstacles(x: number, z: number): PlantObstacle[]
+  removePlant(id: string): void
+  resetHarvest(): void
   dispose(): void
 }
 
@@ -162,7 +167,7 @@ function impostorMesh(atlas: THREE.Texture, prototype: Prototype, fade: THREE.Ve
   geometry.setAttribute('position', new THREE.Float32BufferAttribute([-0.5, 0, 0, 0.5, 0, 0, 0.5, 1, 0, -0.5, 1, 0], 3))
   geometry.setAttribute('uv', new THREE.Float32BufferAttribute([0, 0, 1, 0, 1, 1, 0, 1], 2))
   geometry.setIndex([0, 1, 2, 0, 2, 3])
-  geometry.setAttribute('impostor', new THREE.InstancedBufferAttribute(new Float32Array(4 * INSTANCE_STRIDE), INSTANCE_STRIDE).setUsage(THREE.DynamicDrawUsage))
+  geometry.setAttribute('impostor', new THREE.InstancedBufferAttribute(new Float32Array(4 * 4), 4).setUsage(THREE.DynamicDrawUsage))
   geometry.instanceCount = 0
   geometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(), Infinity)
   const material = new THREE.MeshBasicMaterial({ map: atlas, alphaTest: 0.5, side: THREE.DoubleSide })
@@ -260,6 +265,7 @@ export async function createVegetationRenderer(setup: VegetationSetup): Promise<
   }
   type StreamedCell = { cx: number; cz: number; plants: CellVegetation; variants: Partial<Record<Species, Uint8Array>> }
   const cells = new Map<string, StreamedCell>()
+  const interactions = createPlantInteraction(setup.origin)
   const members = { far: '' }
   const stats = { near: 0, mid: 0, far: 0, rebuilds: 0 }
   let dirty = true, lastCamera = new THREE.Vector3(Infinity, Infinity, Infinity)
@@ -355,10 +361,11 @@ export async function createVegetationRenderer(setup: VegetationSetup): Promise<
     }
     stats.far = total
   }
-  return {
-    object, stats,
-    get materials() { return [...materials] },
-    setCell(cx, cz, plants) {
+  const rawPlants = new Map<string, CellVegetation>()
+  const setCell = (cx: number, cz: number, plants: CellVegetation | null) => {
+      if (plants) rawPlants.set(`${cx}:${cz}`, plants); else rawPlants.delete(`${cx}:${cz}`)
+      interactions.setCell(cx, cz, plants)
+      if (plants) plants = filterPlants(plants, interactions.removed)
       const key = `${cx}:${cz}`
       if (plants) {
         const variants: StreamedCell['variants'] = {}
@@ -366,7 +373,26 @@ export async function createVegetationRenderer(setup: VegetationSetup): Promise<
         cells.set(key, { cx, cz, plants, variants })
       } else cells.delete(key)
       dirty = true
+  }
+  return {
+    object, stats,
+    raycast: (ray, range) => interactions.raycast(ray, range),
+    obstacles: (x, z) => interactions.obstacles(x, z),
+    removePlant(id) {
+      interactions.removed.add(id)
+      const fields = id.split(':'), x = Number(fields[2]), z = Number(fields[3])
+      const cx = Math.floor((x - setup.origin[0]) / VEGETATION_CELL), cz = Math.floor((z - setup.origin[1]) / VEGETATION_CELL)
+      const cell = cells.get(`${cx}:${cz}`)
+      if (cell) setCell(cell.cx, cell.cz, rawPlants.get(`${cx}:${cz}`)!)
+      members.far = ''
     },
+    resetHarvest() {
+      interactions.removed.clear()
+      for (const [key, plants] of rawPlants) { const [cx, cz] = key.split(':').map(Number); setCell(cx, cz, plants) }
+      members.far = ''
+    },
+    get materials() { return [...materials] },
+    setCell,
     update(camera, renderOrigin, frustum) {
       // Instances are in world coordinates; the group cancels the render origin of its parent.
       object.position.set(-renderOrigin[0], 0, -renderOrigin[1])

@@ -25,6 +25,7 @@ export interface ThreeHudProps {
   onSettings(settings: PlaySettings): void
   /** Shows the pause button in the corner when provided. */
   onPause?(): void
+  onInventory?(): void
 }
 /** Overlay handle plus `skipTyping()`: true when it completed a line still being typed, so the caller can swallow that confirm press. */
 export interface ThreeHudHandle extends HudOverlayHandle { skipTyping(): boolean }
@@ -86,11 +87,12 @@ const arrowNavigation = (event: ReactKeyboardEvent<HTMLElement>) => {
   moveFocus(event.currentTarget, event.key === 'ArrowDown' ? 1 : -1)
 }
 
-const Tracker = memo(function Tracker({ objective, done, collected, total, defeated, enemyTotal, tracker, heading, omitted }: { objective: string; done: boolean; collected: number; total: number
-  defeated: number; enemyTotal: number; tracker: HudModel['tracker']; heading: number; omitted: number }) {
+const Tracker = memo(function Tracker({ objective, done, collected, total, defeated, enemyTotal, tracker, heading, omitted, steps }: { objective: string; done: boolean; collected: number; total: number
+  defeated: number; enemyTotal: number; tracker: HudModel['tracker']; heading: number; omitted: number; steps?: HudModel['questSteps'] }) {
   return <section className="forma-tracker" data-done={done || undefined} aria-label="Missão">
     <header className="forma-kicker"><HudIcon name={done ? 'check' : 'diamond'} />{done ? 'Objetivo concluído' : 'Objetivo'}</header>
     {objective && <p className="forma-tracker__text" aria-label="Objetivo">{objective}</p>}
+    {!!steps?.length && <ul className="forma-quest-steps">{steps.map((step, i) => <li key={i}>{step.value >= step.count ? '✓' : '○'} {step.label} · {step.value}/{step.count}</li>)}</ul>}
     {(total > 0 || enemyTotal > 0) && <div className="forma-tracker__chips">
       {total > 0 && <span className="forma-chip" data-complete={collected >= total || undefined} style={{ '--progress': percent(collected, total) } as CSSProperties} aria-label="Itens coletados">
         <HudIcon name="sparkle" />Itens {collected}/{total}</span>}
@@ -243,6 +245,8 @@ function HelpPanel({ device }: { device: InputDevice }) {
   return <dl className="forma-help" aria-label="Controles do jogo">
     {controlActions.map((action) => <div key={action}><dt><InputGlyph glyph={glyph(action, device)} /></dt><dd>{actionNames[action]}</dd></div>)}
     <div><dt><kbd className="forma-glyph forma-glyph--wide">0–9</kbd></dt><dd>Gatilhos definidos na cena</dd></div>
+    <div><dt><kbd className="forma-glyph">B</kbd></dt><dd>Inventário e fabricação</dd></div>
+    <div><dt><kbd className="forma-glyph forma-glyph--wide">C / Espaço</kbd></dt><dd>Mergulhar / subir na água</dd></div>
     <div><dt><HudIcon name="jump" /></dt><dd>Pular em cima derrota inimigos</dd></div>
   </dl>
 }
@@ -395,7 +399,7 @@ const removeAfter = (node: HTMLElement, ms: number) => {
 }
 
 /** Game-mode HUD. React renders the model; per-frame plates, damage numbers, hit markers, pickups and hurt arcs go through the `overlay` handle. */
-export default function ThreeHud({ model, toasts, overlay, settings, presentation = false, onResume, onRestart, onExit, onDismissOutcome, onCaptureMouse, onDialogueOption, onSettings, onPause }: ThreeHudProps) {
+export default function ThreeHud({ model, toasts, overlay, settings, presentation = false, onResume, onRestart, onExit, onDismissOutcome, onCaptureMouse, onDialogueOption, onSettings, onPause, onInventory }: ThreeHudProps) {
   const prefix = `forma-hud-${useId().replace(/[^a-zA-Z0-9]/g, '')}`
   const ui = useRef<HTMLDivElement>(null), plates = useRef<HTMLDivElement>(null), numbers = useRef<HTMLDivElement>(null), marker = useRef<HTMLDivElement>(null)
   const arcs = useRef<HTMLDivElement>(null), pickups = useRef<HTMLDivElement>(null)
@@ -520,7 +524,7 @@ export default function ThreeHud({ model, toasts, overlay, settings, presentatio
       <div className="forma-hud__row forma-hud__row--top">
         <div className="forma-hud__cell">
           <Tracker objective={model.objective} done={model.objectiveDone} collected={model.collected} total={model.total} defeated={model.defeated} enemyTotal={model.enemyTotal}
-            tracker={model.tracker} heading={model.compass.heading} omitted={model.omitted} />
+            tracker={model.tracker} heading={model.compass.heading} omitted={model.omitted} steps={model.questSteps} />
         </div>
         <div className="forma-hud__cell forma-hud__cell--center">
           <Compass heading={model.compass.heading} markers={model.compass.markers} />
@@ -536,6 +540,7 @@ export default function ThreeHud({ model, toasts, overlay, settings, presentatio
           <div className="forma-info forma-info--meta">
             <span className="forma-pill forma-pill--quiet">{model.muted && <HudIcon name="mute" />}<HudIcon name={model.fly ? 'wing' : 'eye'} />{view}</span>
             {showFps && <span className="forma-pill forma-pill--quiet" aria-label="Quadros por segundo">{model.fps} FPS</span>}
+            {playing && onInventory && <button type="button" className="forma-corner-button" onClick={onInventory}><HudIcon name="bag" />Inventário · B</button>}
             {playing && onPause && <button type="button" className="forma-corner-button" aria-label="Pausar" title="Pausar" onClick={onPause}><HudIcon name="pause" /></button>}
             {playing && <button type="button" className="forma-corner-button forma-corner-button--exit" onClick={onExit}><HudIcon name="exit" />Sair do jogo</button>}
           </div>
@@ -551,6 +556,7 @@ export default function ThreeHud({ model, toasts, overlay, settings, presentatio
       <div className="forma-hud__row forma-hud__row--bottom">
         <div className="forma-hud__cell">
           <Vitals health={model.health} maxHealth={model.maxHealth} stamina={model.stamina} maxStamina={model.maxStamina} effects={model.effects} />
+          {model.oxygen !== undefined && model.oxygen < 100 && <div className="forma-oxygen" role="meter" aria-label="Fôlego" aria-valuenow={model.oxygen} aria-valuemin={0} aria-valuemax={100}>Fôlego {model.oxygen}%<span style={{ width: `${model.oxygen}%` }} /></div>}
         </div>
         <div className="forma-hud__cell forma-hud__cell--center">
           {model.dialogue && <Dialogue dialogue={model.dialogue} device={model.device} onOption={onDialogueOption} register={register} />}

@@ -172,7 +172,7 @@ export default function ThreeWorkspace({ active, provider, ready, onBusyChange, 
     if (!auditRequest || !active) return
     const controller = new AbortController(), target = doc
     const timer = setTimeout(() => {
-      inspectSceneAsync(target, controller.signal).then((report) => { if (!controller.signal.aborted) setSpatial({ document: target, report, audit: auditScene(target, report) }) }).catch(() => {})
+      inspectSceneAsync(target, controller.signal).then((report) => { if (!controller.signal.aborted && lastCommitted.current === target) setSpatial({ document: target, report, audit: auditScene(target, report) }) }).catch(() => {})
     }, 800)
     return () => { clearTimeout(timer); controller.abort() }
   // The audit runs per opened scene, not per edit.

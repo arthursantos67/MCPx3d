@@ -167,7 +167,8 @@ export function createSceneBench(search: string): SceneBench | null {
       last = timestamp
       if (game && bench.marks.gameReady > (bench.marks.gameStart ?? 0) && !(bench.marks.firstGameFrame > bench.marks.gameReady)) bench.mark('firstGameFrame')
       if (!bench.recording || bench.frames.length >= MAX_FRAMES) return
-      bench.frames.push({ at: timestamp, interval, cpu, calls: info.calls, triangles: info.triangles, game, ...(world ? { streamMs: world.stream.applyMs, selectMs: world.selectMs, deficit: world.deficit, resident: world.stream.resident, pending: (world.stream.inFlight ?? 0) + (world.stream.ready ?? 0) } : {}) })
+      bench.frames.push({ at: timestamp, interval, cpu, calls: info.calls, triangles: info.triangles, game, ...(world ? { streamMs: world.stream.applyMs, selectMs: world.selectMs, deficit: world.deficit,
+        ...(world.stream.resident === undefined ? {} : { resident: world.stream.resident }), ...(world.stream.inFlight === undefined && world.stream.ready === undefined ? {} : { pending: (world.stream.inFlight ?? 0) + (world.stream.ready ?? 0) }) } : {}) })
     },
     drive(nextPlayer, input, elapsed) {
       if (player !== nextPlayer) { player = nextPlayer; Object.assign(steer, { index: 0, since: 0, best: Infinity, turned: 0 }) }

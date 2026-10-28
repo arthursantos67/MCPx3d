@@ -182,7 +182,7 @@ export function* buildSceneSteps(doc: ThreeSceneDocument, resources: SceneResour
   const pickables: THREE.Object3D[] = [], helperResources: { dispose: () => void }[] = [], byId = new Map(doc.nodes.map((node) => [node.id, node]))
   const dynamic = new Set<string>()
   for (const node of doc.nodes) {
-    if (node.animation.kind !== 'none' || ['collect', 'heal', 'powerup'].includes(node.interaction?.action ?? '') || node.behavior?.type === 'enemy' || node.behavior?.type === 'npc') for (const id of subtreeIds(doc.nodes, node.id)) dynamic.add(id)
+    if (node.resource || node.animation.kind !== 'none' || ['collect', 'heal', 'powerup'].includes(node.interaction?.action ?? '') || node.behavior?.type === 'enemy' || node.behavior?.type === 'npc') for (const id of subtreeIds(doc.nodes, node.id)) dynamic.add(id)
     if (node.interaction?.action === 'toggleVisibility') for (const id of subtreeIds(doc.nodes, node.interaction.targetId ?? node.id)) dynamic.add(id)
   }
   const characters = new Set(doc.nodes.filter((node) => node.asset && isCharacterType(node.asset.type)).flatMap((node) => [...subtreeIds(doc.nodes, node.id)]))

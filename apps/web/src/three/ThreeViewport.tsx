@@ -43,6 +43,9 @@ import { buildCharacterSkins, poseSkinHands } from './sceneSkin.ts'
 import { createClimbMemory, ladderNear, solveClimb, type ClimbMemory, type Ladder } from './sceneClimb.ts'
 import { dayState, formatHour, nightAmount, practicalLightFactor } from './sceneDayCycle.ts'
 import ThreeHud, { type ThreeHudHandle } from './ThreeHud.tsx'
+import ThreeInventory from './ThreeInventory.tsx'
+import { craftItem, gameplayStatus, itemCount, itemKey, recipeMissing, resourceHit, type SceneResource } from './sceneGameplay.ts'
+import { restoreRuntime, snapshotRuntime } from './sceneProgress.ts'
 import { compassMarker, headingFromYaw, hudPhase, hurtAngle, nearestTarget, portraitFor, screenFromNdc, selectBoss, type HudAnchor, type HudModel } from './sceneHud.ts'
 import { createGamepadState, lookDelta, mergeInput, pollGamepad, readGamepad, type GamepadState } from './sceneGamepad.ts'
 import { loadSettings, mouseScale, saveSettings, type PlaySettings } from './sceneSettings.ts'
@@ -125,6 +128,10 @@ export default function ThreeViewport({ document, world = null, selectedId, acti
   const [toasts, setToasts] = useState<{ id: number; text: string }[]>([])
   const [worldMap, setWorldMap] = useState<Omit<WorldMapProps, 'onTravel' | 'onClose'> | null>(null)
   const [travelling, setTravelling] = useState<string | null>(null)
+  const [inventoryOpen, setInventoryOpen] = useState(false)
+  const inventoryRequest = useRef<(open: boolean) => void>(() => {})
+  const craftRequest = useRef<(id: string) => void>(() => {})
+  const useItemRequest = useRef<(item: string) => void>(() => {})
   const mapRequest = useRef<(open: boolean) => void>(() => {})
   const travelRequest = useRef<(id: string) => void>(() => {})
   const lockRequest = useRef<() => void>(() => {})
@@ -246,9 +253,11 @@ export default function ThreeViewport({ document, world = null, selectedId, acti
     let lastTimestamp: number | null = null, lastReport = 0, fpsFrames = 0, fpsStarted = 0, statsReported = 0
     let selected: string | null = null, gizmoMode: GizmoMode = 'translate', snapping = false
     let proxies: THREE.Mesh[] = [], suppressed = new Set<string>()
-    let enabled = false, lost = false, disposed = false, frame = 0, ready = true, warming = 0
+    let enabled = false, lost = false, disposed = false, frame = 0, ready = true, warming = 0, restartPending = false
     interface EnemyState extends EnemyMotion { radius:number; height:number; eyeHeight:number; moved: boolean; attackTime: number; step: EnemyStep | null; shown: THREE.Vector3 | null; equipment?: Equipment; shotPending?: boolean; strikeHit?: boolean }
+    interface ResourceTarget { id: string; name: string; resource: SceneResource; position: THREE.Vector3; distance: number; procedural: boolean }
     let game: { runtime: SceneRuntime; player: PlayerState; input: PlayerInput; collider: PlayerCollider; saved: { position: THREE.Vector3; target: THREE.Vector3; fov: number; near: number; far: number }; last: number | null; aim: string | null; strike: string | null; hud: string; locked: boolean; help: boolean
+      inventory: boolean; oxygen: number; resourceAim: ResourceTarget | null
       view: 'first' | 'third'; spawn: THREE.Vector3; stride: number; sounds: SceneNode[]; projectiles: Projectile[]; attackCooldown: number; swing: number; hudAt: number; platforms: Map<string, THREE.Matrix4>
       modes: Map<string, string>; rigMotion: Map<string, CharacterMotion>; avatarRig: { built: BuiltScene; resources: SceneResources; binding: RigBinding; animator: Animator; feet: FootIKMemory; springs: SpringSystem; equipment: Equipment; climb: ClimbMemory; ladder: Ladder | null; seenHurt: number; seenSwing: number }; swings: number; heavy: boolean; meleeHits: Set<string>; blade: THREE.Line3 | null; dialogue: { id: string; name: string; line: string; index: number; total: number; until: number } | null; spawnNotice: number; enemies: Map<string, EnemyState>; enemyParts:Set<string>; parts: Map<string, SceneNode[]>; water: number | null; avatar: THREE.Group; hurt: number; goalCooldown: number; nav: NavigationMesh | null; router: Router; routines: Map<string, RoutinePlan>; guards: Set<string>
       paused: boolean; dismissed: boolean; interacted: boolean; device: 'keyboard' | 'gamepad'; pad: GamepadState; stamina: number; dodge: number; dodged: boolean; damageTaken: number; falls: number; lastHealth: number
@@ -393,12 +402,12 @@ export default function ThreeViewport({ document, world = null, selectedId, acti
       avatar.seenHurt = state.hurt; avatar.seenSwing = state.swings
       const equipment = avatar.equipment, stats = weaponStats[equipment.kind]
       const pose = updateAnimator(avatar.animator, { dt: delta, time: seconds, speed, grounded: player.onGround || !!player.climbing || player.fly, verticalSpeed: player.velocity.y,
-        dead: false, talk: !!state.dialogue, attack: swing ? state.heavy ? 'heavy' : 'light' : null, hurt, dodge: state.dodged, climbing: player.climbing, ranged: stats.kind === 'projectile' })
+        dead: false, talk: !!state.dialogue, attack: swing ? state.heavy ? 'heavy' : 'light' : null, hurt, dodge: state.dodged, climbing: player.climbing, swimming: player.swimming, ranged: stats.kind === 'projectile' })
       state.dodged = false
       avatar.built.root.visible = state.avatar.visible
       if (state.avatar.visible) {
         applyAnimatorPose(avatar.binding, avatar.built.holders, pose)
-        if (!player.fly && !player.climbing) solveFootIK(avatar.binding, avatar.built.holders, ground, pose.footIK, avatar.feet, delta)
+        if (!player.fly && !player.climbing && !player.swimming) solveFootIK(avatar.binding, avatar.built.holders, ground, pose.footIK, avatar.feet, delta)
         const skin = avatar.built.skins.get('avatar')
         if (avatar.ladder) solveClimb(avatar.binding, avatar.built.holders, avatar.ladder, player.position.y, { L: skin?.grips.L?.position.clone() ?? new THREE.Vector3(0, -0.33, 0.03), R: skin?.grips.R?.position.clone() ?? new THREE.Vector3(0, -0.33, 0.03) },
           avatar.climb, delta, !!player.climbing)
@@ -471,6 +480,7 @@ export default function ThreeViewport({ document, world = null, selectedId, acti
       const node = byId.get(id)!, message = triggerInteraction(state.runtime, id)
       if (node.interaction?.action === 'dialogue' && !state.runtime.blocked.has(id)) showDialogue(state, node, message)
       else if (message) toast(message)
+      saveWorldProgress(state)
     }
     const attack = (state: NonNullable<typeof game>, heavy = false) => {
       if (state.attackCooldown > 0 || state.runtime.outcome !== 'playing' || state.paused || state.player.climbing) return
@@ -479,6 +489,21 @@ export default function ThreeViewport({ document, world = null, selectedId, acti
       state.heavy = heavy
       state.swing = 1
       state.swings++
+      const resource = state.resourceAim
+      if (resource && resource.position.distanceTo(state.player.position) <= 5.5) {
+        const result = resourceHit(state.runtime.gameplay, state.runtime.items, resource.id, resource.resource, heavy ? 2 : weapon === 'sword' ? 2 : 1)
+        if (result) {
+          particles.burst('impact', resource.position)
+          sfx('enemyHit', resource.position)
+          if (result.broken) {
+            if (resource.procedural) worldRuntime?.removePlant(resource.id); else state.runtime.hidden.add(resource.id)
+            overlay.current?.pickup({ name: resource.resource.item, count: resource.resource.amount, icon: 'bag' })
+            toast(`+${resource.resource.amount} ${resource.resource.item}`)
+            state.resourceAim = null
+            saveWorldProgress(state)
+          } else toast(`${resource.name} · resistência ${result.left}/${resource.resource.health}`)
+        }
+      }
       const origin = state.player.position.clone().add(new THREE.Vector3(0, 1.35, 0))
       if (stats.kind === 'melee') sfx('swing', origin)
       fauna?.scare(state.player.position, 8)
@@ -508,7 +533,7 @@ export default function ThreeViewport({ document, world = null, selectedId, acti
       const pad = readGamepad(pollGamepad(), state.pad)
       if (pad.active) { if (state.device !== 'gamepad') state.hud = ''; state.device = 'gamepad'; state.interacted = true }
       if (pad.pressed.has('pause')) togglePause()
-      const menu = state.paused || (runtime.outcome !== 'playing' && !state.dismissed)
+      const menu = state.paused || state.inventory || (runtime.outcome !== 'playing' && !state.dismissed)
       if (menu) for (const [action, move] of [['menuUp', 'up'], ['menuDown', 'down'], ['confirm', 'confirm'], ['back', 'back']] as const) { if (pad.pressed.has(action)) overlay.current?.menu(move) }
       else {
         const look = lookDelta(pad.look, elapsed, settingsRef.current.sensitivity, settingsRef.current.invertY)
@@ -522,8 +547,8 @@ export default function ThreeViewport({ document, world = null, selectedId, acti
         if (pad.pressed.has('fly')) toggleFly(state)
         if (pad.pressed.has('mute')) toggleMute(state)
       }
-      const halted = state.paused || state.frozen, delta = halted ? 0 : elapsed, input = halted ? emptyInput() : mergeInput(state.input, pad.input)
-      if (bench && !state.paused) bench.drive(player, input, delta)
+      const halted = state.paused || state.frozen || state.inventory, delta = halted ? 0 : elapsed, input = halted ? emptyInput() : mergeInput(state.input, pad.input)
+      if (bench && !halted) bench.drive(player, input, delta)
       const running = Math.hypot(player.velocity.x, player.velocity.z) > 0.5
       state.stamina = THREE.MathUtils.clamp(state.stamina + (input.sprint && running && !player.fly ? -22 : state.dodge > 0 ? 0 : 16) * delta, 0, 100)
       if (state.stamina < 1) input.sprint = false
@@ -542,7 +567,7 @@ export default function ThreeViewport({ document, world = null, selectedId, acti
       scene.updateMatrixWorld()
       const surfaces = (include: (id: string) => boolean) => [...built!.dynamic].filter(include).flatMap((id) => {
         const node = byId.get(id)!, holder = built!.holders.get(id)!
-        if (!hasSurface(node.kind) || node.collidable === false || !visible(holder)) return []
+        if (!hasSurface(node.kind) || node.material.texture === 'water' || node.collidable === false || !visible(holder)) return []
         const matrix = surfaceMatrix(holder, node)
         return [{ id, matrix, box: boxFromMatrix(matrix) }]
       })
@@ -620,9 +645,13 @@ export default function ThreeViewport({ document, world = null, selectedId, acti
         holder.updateMatrixWorld()
       }
       state.collider.boxes = surfaces(() => true).map((item) => item.box)
+      for (const plant of worldRuntime?.obstacles(player.position.x, player.position.z) ?? []) state.collider.boxes.push(boxFromMatrix(new THREE.Matrix4().makeScale(plant.radius * 2, plant.height, plant.radius * 2).setPosition(plant.x, plant.y + plant.height / 2, plant.z)))
       const modifiers = playerModifiers(runtime)
       const fall = player.velocity.y, wasGrounded = player.onGround, wantsJump = input.jump
       if (runtime.outcome !== 'lost' && (!worldRuntime || player.fly || worldRuntime.collisionReady(player.position))) stepPlayer(player, input, state.collider, { speed: (bench?.speed ?? (state.mount?.riding ? MOUNT_SPEED : settings.speed)) * modifiers.speed, jumpHeight: settings.jumpHeight * modifiers.jump }, delta)
+      state.oxygen = THREE.MathUtils.clamp(state.oxygen + (player.submerged ? -8 : 24) * delta, 0, 100)
+      if (state.oxygen <= 0) hurt(10, null)
+      if (player.swimming && state.mount?.riding) { state.mount.riding = false; toast('Você desmontou para nadar.') }
       if (wasGrounded && wantsJump && !player.onGround && player.velocity.y > 0) sfx('jump', player.position)
       if (!wasGrounded && player.onGround && fall < -5) sfx('land', player.position)
       state.stride += player.onGround && !player.fly ? Math.hypot(player.velocity.x, player.velocity.z) * delta : 0
@@ -652,7 +681,6 @@ export default function ThreeViewport({ document, world = null, selectedId, acti
         if (behavior.type === 'checkpoint' && touching(0.4) && reachCheckpoint(runtime, id, player.position.toArray())) toast('Ponto de controle salvo.')
         if (behavior.type === 'goal' && touching(0.3) && !state.goalCooldown) { state.goalCooldown = 2; const message = reachGoal(runtime); if (message) toast(message) }
       }
-      if (state.water !== null && !player.fly && player.position.y < state.water - 0.7) { runtime.invulnerable = 0; hurt(25, null); sfx('splash', player.position); toast('Você caiu na água!'); state.falls++; particles.burst('splash', player.position); player.position.copy(runtime.checkpoint ? new THREE.Vector3(...runtime.checkpoint) : state.spawn); player.velocity.set(0, 0, 0) }
       if (runtime.health <= 0 && runtime.outcome === 'playing') {
         runtime.health = runtime.maxHealth
         state.projectiles = []
@@ -661,7 +689,13 @@ export default function ThreeViewport({ document, world = null, selectedId, acti
         state.falls++
         toast(runtime.checkpoint ? 'Você foi derrotado. De volta ao último ponto de controle.' : 'Você foi derrotado. De volta ao início.')
       }
+      const finishedQuests = runtime.gameplay.completed.size
       checkOutcome(runtime)
+      if (runtime.gameplay.completed.size > finishedQuests) {
+        toast(`Missão concluída: ${runtime.rules?.quests.find(quest => runtime.gameplay.completed.has(quest.id) && runtime.rules!.quests.indexOf(quest) >= finishedQuests)?.title ?? ''}`)
+        sfx('collect', player.position)
+        saveWorldProgress(state)
+      }
       state.mount?.update(player.position, player.yaw, Math.hypot(player.velocity.x, player.velocity.z), delta)
       const head = player.position.clone().add(new THREE.Vector3(0, (state.view === 'third' ? 1.55 : PLAYER_EYE) + (state.mount?.riding ? MOUNT_EYE : 0), 0)), orientation = new THREE.Euler(player.pitch, player.yaw, 0, 'YXZ')
       camera.quaternion.setFromEuler(orientation)
@@ -719,10 +753,15 @@ export default function ThreeViewport({ document, world = null, selectedId, acti
       const weapon = settings.weapon ?? 'none', reach = weaponStats[weapon].kind === 'melee' ? weaponStats[weapon].range : weaponStats[weapon].range
       const foe = hit && hit.distance <= reach ? chain.find((node) => node.behavior?.type === 'enemy' && activeEnemy(runtime, node.id)) : undefined
       const source = hit && !foe ? chain.find((node) => node.interaction && node.interaction.trigger === 'click' && interactionAvailable(runtime, node) && hit.distance <= node.interaction.radius) : undefined
+      const harvestable = hit && hit.distance <= 3.5 ? chain.find(node => node.resource && !runtime.gameplay.destroyed.has(node.id)) : undefined
+      const plant = runtime.rules?.naturalResources ? worldRuntime?.resourceAt(raycaster.ray, Math.min(3.5, wall)) : null
+      state.resourceAim = harvestable && hit ? { id: harvestable.id, name: harvestable.name, resource: harvestable.resource!, position: hit.point.clone(), distance: hit.distance, procedural: false }
+        : plant && (!hit || plant.distance < hit.distance) ? { ...plant, procedural: true } : null
       state.aim = source?.id ?? null
       state.strike = foe?.id ?? null
       if (state.dialogue && runtime.elapsed > state.dialogue.until) state.dialogue = null
-      const status = objectiveStatus(runtime), blocked = source ? interactionBlocked(runtime, source) : null, foeHealth = foe ? enemyHealth(runtime, foe.id) : null
+      for (const quest of runtime.rules?.quests ?? []) for (const step of quest.steps) if (step.kind === 'visit') { const target = worldOf(step.target); if (target && target.distanceTo(player.position) < 5) runtime.gameplay.visited.add(step.target) }
+      const status = objectiveStatus(runtime), mission = gameplayStatus(runtime.rules, runtime.gameplay, runtime.defeated), blocked = source ? interactionBlocked(runtime, source) : null, foeHealth = foe ? enemyHealth(runtime, foe.id) : null
       for (const [id, enemy] of state.enemies) if (enemy.step?.activity === 'greet' && runtime.elapsed - (state.greeted.get(id) ?? -99) > 25) {
         state.greeted.set(id, runtime.elapsed)
         state.subtitle = { speaker: byId.get(id)!.name, text: ['Olá, viajante!', 'Bom dia!', 'Seja bem-vindo!', 'Que bom ver você por aqui.'][state.greeted.size % 4], until: runtime.elapsed + 2.6 }
@@ -732,7 +771,8 @@ export default function ThreeViewport({ document, world = null, selectedId, acti
       state.lastHealth = runtime.health
       const flat = { x: player.position.x, z: player.position.z }, place = (id: string) => { const point = worldOf(id) ?? new THREE.Vector3(); return { x: point.x, z: point.z } }
       const objectiveType = doc!.environment.objective?.type
-      const pending = objectiveType === 'collectAll' ? runtime.nodes.filter((node) => node.interaction?.action === 'collect' && !runtime.collected.has(node.id) && !runtime.hidden.has(node.id)).map((node) => ({ label: node.name, ...place(node.id) }))
+      const pending = objectiveType === 'quests' ? (mission.target && byId.has(mission.target) ? [{ label: byId.get(mission.target)!.name, ...place(mission.target) }] : [])
+        : objectiveType === 'collectAll' ? runtime.nodes.filter((node) => node.interaction?.action === 'collect' && !runtime.collected.has(node.id) && !runtime.hidden.has(node.id)).map((node) => ({ label: node.name, ...place(node.id) }))
         : objectiveType === 'defeatEnemies' ? [...state.enemies.keys()].filter((id) => activeEnemy(runtime, id)).map((id) => ({ label: byId.get(id)!.name, ...place(id) }))
           : runtime.nodes.filter((node) => node.behavior?.type === 'goal').map((node) => ({ label: node.name, ...place(node.id) }))
       const tracker = status.done ? null : nearestTarget(flat, pending), whole = (value: number) => Math.round(value)
@@ -751,9 +791,12 @@ export default function ThreeViewport({ document, world = null, selectedId, acti
         score: runtime.score, collected: runtime.collected.size, total: runtime.collectibles, defeated: runtime.defeated.size, enemyTotal: runtime.enemies.length,
         time: Math.floor(runtime.elapsed), limit: objectiveLimit(runtime), clock: day ? formatHour(day.hour) : null,
         weapon, weaponLabel: weaponNames[weapon], items: [...runtime.items].map(([name, count]) => ({ name, count })),
+        questSteps: objectiveType === 'quests' ? mission.steps : [], swimming: player.swimming, oxygen: Math.round(state.oxygen), submerged: player.submerged,
+        recipes: runtime.rules?.recipes.map(recipe => ({ ...recipe, available: !recipeMissing(recipe, runtime.items).length, missing: recipeMissing(recipe, runtime.items).map(input => `${input.amount} ${input.item}`).join(', ') })),
         effects: [...runtime.effects].filter(([, seconds]) => seconds > 0).map(([power, seconds]) => ({ power, seconds: Math.ceil(seconds), total: POWER_SECONDS })),
         prompt: foe ? { verb: weaponStats[weapon].kind === 'melee' ? 'Atacar' : 'Mirar', target: foe.name, locked: null, enemy: true, health: foeHealth && foeHealth.max > 1 ? { value: foeHealth.health, max: foeHealth.max } : null }
-          : source ? { verb: actionLabels[source.interaction!.action], target: source.name, locked: blocked, enemy: false, health: null } : null,
+          : source ? { verb: actionLabels[source.interaction!.action], target: source.name, locked: blocked, enemy: false, health: null }
+            : state.resourceAim ? { verb: 'Extrair', target: state.resourceAim.name, locked: null, enemy: false, health: { value: runtime.gameplay.resourceHealth.get(state.resourceAim.id) ?? state.resourceAim.resource.health, max: state.resourceAim.resource.health } } : null,
         boss, dialogue: state.dialogue && { name: state.dialogue.name, line: state.dialogue.line, index: state.dialogue.index, total: state.dialogue.total,
           portrait: speaker?.asset ? portraitFor(speaker.asset.type, speaker.asset.seed, { ...(speaker.asset.character?.skin ? { skin: speaker.asset.character.skin } : {}), ...(speaker.asset.character?.hair ? { hair: speaker.asset.character.hair } : {}), ...(speaker.asset.primary ? { outfit: speaker.asset.primary } : {}) }) : null, options: [] },
         subtitle: settingsRef.current.subtitles && state.subtitle && runtime.elapsed < state.subtitle.until ? { speaker: state.subtitle.speaker, text: state.subtitle.text } : null,
@@ -820,7 +863,7 @@ export default function ThreeViewport({ document, world = null, selectedId, acti
       outputMaterial.needsUpdate = true
       const outputCompiled = renderer.compileAsync(outputScene, camera)
       renderer.setRenderTarget(output)
-      void Promise.all([compiled, outputCompiled]).catch(() => {}).then(() => { if (token === warming && !disposed) { ready = true; bench?.mark(game ? 'gameReady' : 'sceneReady'); invalidate() } })
+      void Promise.all([compiled, outputCompiled]).catch(() => {}).then(() => { if (token === warming && !disposed) { ready = true; bench?.mark(game ? 'gameReady' : 'sceneReady'); if (restartPending) { restartPending = false; startGame(false) } invalidate() } })
     }
     const resize = () => {
       const width = container.clientWidth, height = container.clientHeight
@@ -888,7 +931,7 @@ export default function ThreeViewport({ document, world = null, selectedId, acti
     let pointerStart: [number, number] | null = null, dragLook: [number, number] | null = null
     const down = (event: PointerEvent) => {
       if (game) {
-        if (game.paused) return
+        if (game.paused || game.inventory) return
         game.interacted = true
         if (game.locked) { if (event.button === 2) attack(game, true); else act() }
         else { dragLook = [event.clientX, event.clientY]; lockRequest.current() }
@@ -934,7 +977,7 @@ export default function ThreeViewport({ document, world = null, selectedId, acti
     const lockChanged = () => {
       if (!game) return
       const locked = window.document.pointerLockElement === renderer.domElement
-      if (game.locked && !locked && !game.paused && game.runtime.outcome === 'playing') togglePause(true)
+      if (game.locked && !locked && !game.paused && !game.inventory && game.runtime.outcome === 'playing') togglePause(true)
       game.locked = locked; game.hud = ''
     }
     const dodge = (state: NonNullable<typeof game>) => {
@@ -963,7 +1006,7 @@ export default function ThreeViewport({ document, world = null, selectedId, acti
       for (const skin of built?.skins.values() ?? []) skin.setQuality(quality)
       for (const skin of game?.avatarRig.built.skins.values() ?? []) skin.setQuality(quality)
     }
-    restartRequest.current = () => { if (game) { stopGame(true); startGame() } }
+    restartRequest.current = () => { if (game) { restartPending = true; worldRuntime?.resetHarvest(); stopGame(true) } }
     lockRequest.current = () => {
       renderer.domElement.focus()
       try { void Promise.resolve(renderer.domElement.requestPointerLock()).catch(() => {}) } catch { /* Pointer lock is optional; drag-to-look remains available. */ }
@@ -974,10 +1017,32 @@ export default function ThreeViewport({ document, world = null, selectedId, acti
       if (game.aim && !game.strike) interact(game, game.aim)
       else attack(game)
     }
+    inventoryRequest.current = (open) => {
+      if (!game) return
+      game.inventory = open; game.input = emptyInput(); game.hud = ''; setInventoryOpen(open)
+      if (open && window.document.pointerLockElement === renderer.domElement) window.document.exitPointerLock()
+      if (!open) renderer.domElement.focus()
+    }
+    craftRequest.current = (id) => {
+      if (!game || !game.inventory) return
+      const recipe = game.runtime.rules?.recipes.find(recipe => recipe.id === id)
+      if (!recipe || !craftItem(game.runtime.gameplay, game.runtime.items, recipe)) { toast('Recursos insuficientes.'); return }
+      toast(`Fabricado: ${recipe.output.amount} ${recipe.output.item}`); sfx('collect', game.player.position); saveWorldProgress(game); game.hud = ''
+    }
+    useItemRequest.current = (item) => {
+      if (!game || !game.inventory || game.runtime.health >= game.runtime.maxHealth || itemCount(game.runtime.items, item) < 1) return
+      const recipe = game.runtime.rules?.recipes.find(recipe => itemKey(recipe.output.item) === itemKey(item) && recipe.healing > 0)
+      if (!recipe) return
+      const key = [...game.runtime.items.keys()].find(key => itemKey(key) === itemKey(item))!, count = game.runtime.items.get(key)!
+      if (count === 1) game.runtime.items.delete(key); else game.runtime.items.set(key, count - 1)
+      game.runtime.health = Math.min(game.runtime.maxHealth, game.runtime.health + recipe.healing); toast(`+${recipe.healing} de vida`); saveWorldProgress(game); game.hud = ''
+    }
     const keyDown = (event: KeyboardEvent) => {
       if (!game || isTypingTarget(event.target) || event.ctrlKey || event.metaKey || event.altKey) return
       if (game.device !== 'keyboard') { game.device = 'keyboard'; game.hud = '' }
       game.interacted = true
+      if ((event.code === 'KeyB' && !doc?.nodes.some(node => node.interaction?.trigger === 'key' && node.interaction.key.toLowerCase() === 'b')) || (event.code === 'Escape' && game.inventory)) { event.preventDefault(); if (!event.repeat) inventoryRequest.current(!game.inventory); return }
+      if (game.inventory) return
       if (event.code === 'Escape') { event.preventDefault(); if (!event.repeat) togglePause(); return }
       if (game.paused) return
       const input = playerKey(event.code)
@@ -1157,7 +1222,12 @@ export default function ThreeViewport({ document, world = null, selectedId, acti
         for (const object of frozen) object.matrixWorldAutoUpdate = false
         moved = true
       }
-      if (moved) scene_.sync()
+      if (moved) {
+        scene_.sync()
+        fauna?.object.removeFromParent(); fauna?.dispose()
+        fauna = createFauna(planFauna({ ...doc!, nodes: doc!.nodes.map(node => node.id.startsWith(LOCATION_GROUP) ? { ...node, position: scene_.holders.get(node.id)!.position.toArray() } : node) }), null, quality)
+        scene.add(fauna.object)
+      }
       const lod = locationLod = createLocationLod(scene_)
       content.add(lod.object)
       // The merged meshes share one material; its program links in parallel before any location turns distant.
@@ -1196,7 +1266,7 @@ export default function ThreeViewport({ document, world = null, selectedId, acti
     const saveWorldProgress = (state: NonNullable<typeof game>) => {
       if (!worldDoc || !state.fog) return
       const at = state.player.position
-      void saveProgress(worldDoc.name, { position: [at.x, at.y, at.z], discovered: [], visited: [...state.visited], fog: state.fog.serialize(), savedAt: Date.now() }).catch(() => {})
+      void saveProgress(worldDoc.name, { position: [at.x, at.y, at.z], discovered: [], visited: [...state.visited], fog: state.fog.serialize(), savedAt: Date.now(), seed: worldDoc.seed, game: snapshotRuntime(state.runtime) }).catch(() => {})
     }
     let mapImage: ImageData | null = null, mapOpen = false
     const refreshMap = (state: NonNullable<typeof game>) => {
@@ -1227,6 +1297,8 @@ export default function ThreeViewport({ document, world = null, selectedId, acti
       bench?.mark('travelStart')
       try { await runtime.preload(target) } catch { /* the stream keeps loading in play */ }
       if (game !== state) return
+      const ground = runtime.heightAt(target.x, target.z), water = runtime.waterAt(target.x, target.z)
+      if (!state.player.fly) target.y = Math.max(ground + 0.05, water === null ? -Infinity : water - 1.2)
       state.player.position.copy(target)
       state.player.velocity.set(0, 0, 0)
       state.frozen = false
@@ -1243,7 +1315,7 @@ export default function ThreeViewport({ document, world = null, selectedId, acti
       if (game) game.player.yaw = 0
       void travelTo(target, `Viajando para ${location.name}…`)
     }
-    const startGame = () => {
+    const startGame = (resume = true) => {
       if (!built || !doc || game) return
       clearSelection()
       transform.detach()
@@ -1255,7 +1327,7 @@ export default function ThreeViewport({ document, world = null, selectedId, acti
       locationLod?.showAll()
       scene.updateMatrixWorld(true)
       const climbable = (node: SceneNode) => nodeChain(node.id).some((item) => item.behavior?.type === 'climbable')
-      const entries = doc.nodes.filter((node) => hasSurface(node.kind) && node.collidable !== false && !built!.dynamic.has(node.id) && !climbable(node) && visible(built!.holders.get(node.id)!))
+      const entries = doc.nodes.filter((node) => hasSurface(node.kind) && node.material.texture !== 'water' && node.collidable !== false && !built!.dynamic.has(node.id) && !climbable(node) && visible(built!.holders.get(node.id)!))
         .map((node) => ({ geometry: resources.geometry(node), matrix: surfaceMatrix(built!.holders.get(node.id)!, node) }))
       const climb = doc.nodes.filter((node) => hasSurface(node.kind) && climbable(node) && visible(built!.holders.get(node.id)!)).map((node) => boxFromMatrix(surfaceMatrix(built!.holders.get(node.id)!, node)))
       const parts = new Map<string, SceneNode[]>()
@@ -1264,17 +1336,25 @@ export default function ThreeViewport({ document, world = null, selectedId, acti
       for (const node of doc.nodes) if (node.kind === 'plane' && !node.parentId && node.material.texture === 'water') water = Math.max(water ?? -Infinity, node.position[1])
       const { bvh: ownedBvh, omitted } = buildStaticCollider(entries)
       const terrain = worldRuntime && worldReady && worldDoc ? worldRuntime : null
+      const waterBounds = doc.nodes.filter(node => hasSurface(node.kind) && node.material.texture === 'water' && visible(built!.holders.get(node.id)!)).map(node => new THREE.Box3().setFromObject(built!.holders.get(node.id)!))
+      const waterAt = terrain ? (x: number, z: number) => terrain.waterAt(x, z) : (x: number, z: number) => {
+        let level: number | null = null
+        for (const box of waterBounds) if (x >= box.min.x && x <= box.max.x && z >= box.min.z && z <= box.max.z) level = Math.max(level ?? -Infinity, box.max.y)
+        return level
+      }
       const bvh = terrain ? combineShapes([...(ownedBvh ? [ownedBvh] : []), terrain.collision]) : ownedBvh
       const bounds = sceneBounds(), settings = doc.environment.player!
       const floor = terrain && worldDoc ? worldDoc.terrain.heightRange[0] - 50 : bounds.isEmpty() ? 0 : bounds.min.y
       const center = bounds.isEmpty() ? new THREE.Vector3() : bounds.getCenter(new THREE.Vector3())
-      const spawn = settings.spawn ? new THREE.Vector3(...settings.spawn) : terrain?.spawn?.clone() ?? new THREE.Vector3(center.x, floor, bounds.isEmpty() ? 6 : bounds.max.z + 4)
+      const spawn = terrain?.spawn?.clone() ?? (settings.spawn ? new THREE.Vector3(...settings.spawn) : new THREE.Vector3(center.x, floor, bounds.isEmpty() ? 6 : bounds.max.z + 4))
+      // The editor selects no player collision tiles; install the preloaded spawn tiles before probing its floor.
+      terrain?.update(camera, renderer.domElement.height, spawn)
       if (!(settings.mode === 'fly' && settings.allowFly !== false)) spawn.copy(findWalkableSpawn({ bvh, boxes: [], floor },spawn,bounds,water,!!settings.spawn || !!terrain?.spawn))
       const enemies = new Map<string, EnemyState>()
       const probe = new THREE.Ray()
       for (const node of doc.nodes) if ((node.behavior?.type === 'enemy' || node.behavior?.type === 'npc')&&visible(built.holders.get(node.id)!)) {
         const base = built.holders.get(node.id)!.getWorldPosition(new THREE.Vector3())
-        let ground = floor
+        let ground = terrain?.heightAt(base.x, base.z) ?? floor
         if (bvh) { probe.origin.set(base.x, base.y + 0.27, base.z); probe.direction.set(0, -1, 0); const hit = bvh.raycastFirst(probe, THREE.DoubleSide); if (hit) ground = hit.point.y }
         const dimensions=new THREE.Box3().setFromObject(built.holders.get(node.id)!).getSize(new THREE.Vector3())
         const height=Math.max(0.5,dimensions.y),radius=Math.max(0.15,Math.min(0.8,Math.max(dimensions.x,dimensions.z)*0.4,height*0.45))
@@ -1307,7 +1387,8 @@ export default function ThreeViewport({ document, world = null, selectedId, acti
       audio ??= createAudioEngine()
       audio?.setMuted(audioMuted || settingsRef.current.volume === 0)
       audio?.start(doc)
-      game = { runtime: createRuntime(doc, time), input: emptyInput(), collider: { bvh, boxes: [], floor, climb },
+      setInventoryOpen(false)
+      game = { runtime: createRuntime(doc, time), input: emptyInput(), collider: { bvh, boxes: [], floor, climb, waterAt }, inventory: false, oxygen: 100, resourceAim: null,
         player: { position: spawn, velocity: new THREE.Vector3(), yaw: settings.spawn ? THREE.MathUtils.degToRad(settings.yaw) : 0, pitch: -0.05, onGround: false, fly: settings.mode === 'fly' && settings.allowFly !== false },
         saved: { position: camera.position.clone(), target: controls.target.clone(), fov: camera.fov, near: camera.near, far: camera.far }, last: null, aim: null, strike: null, hud: '', locked: false, help: false,
         view: settings.camera ?? 'first', spawn: spawn.clone(), stride: 0, sounds: doc.nodes.filter((node) => node.sound), projectiles: [], attackCooldown: 0, swing: 0, hudAt: 0, platforms: new Map(), modes: new Map(), rigMotion: new Map(), avatarRig, swings: 0, heavy: false, meleeHits: new Set(), blade: null, dialogue: null, spawnNotice: -10, enemies, enemyParts:new Set([...enemies.keys()].flatMap(id=>[...subtreeIds(doc!.nodes,id)])),parts, water, avatar, hurt: 0, goalCooldown: 0,
@@ -1324,11 +1405,16 @@ export default function ThreeViewport({ document, world = null, selectedId, acti
           if (game === session && !disposed) session.mount = mount; else mount.dispose()
         })
       }
-      if (terrain && worldDoc) {
+      if (terrain && worldDoc && resume) {
         // Progress (position, discovered map, visited places) continues from the last session in this world.
         const world = worldDoc
         void loadProgress(world.name).then((saved) => {
-          if (!saved || game !== session) return
+          if (!saved || game !== session || (saved.seed !== undefined && saved.seed !== world.seed)) return
+          if (world.environment.gameplay?.quests.length && !saved.game) return
+          if (saved.game) {
+            restoreRuntime(session.runtime, saved.game)
+            for (const id of session.runtime.gameplay.destroyed) if (id.startsWith('plant:')) terrain.removePlant(id)
+          }
           session.fog = createFog(world.terrain.size, saved.fog)
           session.visited = new Set(saved.visited)
           void travelTo(new THREE.Vector3(...saved.position), 'Retomando a jornada…')
@@ -1351,6 +1437,7 @@ export default function ThreeViewport({ document, world = null, selectedId, acti
     const stopGame = (rebuild = true) => {
       if (!game) return
       saveWorldProgress(game)
+      setInventoryOpen(false)
       setWorldMap(null)
       const saved = game.saved
       game.ownedBvh?.geometry.dispose()
@@ -1553,9 +1640,11 @@ export default function ThreeViewport({ document, world = null, selectedId, acti
     {error && <p className="three-viewport__error" role="alert">{error}</p>}
     {playMode && worldMap && <WorldMap {...worldMap} onTravel={(id) => travelRequest.current(id)} onClose={() => mapRequest.current(false)} />}
     {playMode && travelling && <div className="three-world-travel" role="status">{travelling}</div>}
+    {playMode && hud?.submerged && <div className="three-underwater" aria-hidden="true" />}
+    {playMode && hud && inventoryOpen && <ThreeInventory model={hud} onClose={() => inventoryRequest.current(false)} onCraft={id => craftRequest.current(id)} onUse={item => useItemRequest.current(item)} />}
     {playMode && hud && <ThreeHud model={{ ...hud, fps: settings.showFps && !presentation ? stats.fps || null : null }} toasts={toasts} overlay={overlay} settings={settings} presentation={presentation}
       onResume={() => pauseRequest.current(false)} onRestart={() => restartRequest.current()} onExit={() => callbacks.current.onExitPlay()}
-      onDismissOutcome={() => dismissRequest.current()} onCaptureMouse={() => lockRequest.current()} onPause={() => pauseRequest.current(true)} onSettings={setSettings} />}
+      onDismissOutcome={() => dismissRequest.current()} onCaptureMouse={() => lockRequest.current()} onPause={() => pauseRequest.current(true)} onInventory={() => inventoryRequest.current(true)} onSettings={setSettings} />}
     <div className="three-viewport__footer"><span>{playMode ? 'WASD anda · mouse olha · E interage/ataca · V câmera · H ajuda · Esc sai' : 'Arraste para orbitar · Scroll para zoom · Botão direito para mover · ? atalhos'}</span>
       <span aria-label="Estatísticas do renderer">{stats.triangles.toLocaleString('pt-BR')} triângulos · {stats.calls} draw calls{stats.fps ? ` · ${stats.fps} FPS` : ''}</span></div>
   </section>

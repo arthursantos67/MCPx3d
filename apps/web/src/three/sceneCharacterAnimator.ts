@@ -5,7 +5,7 @@ import { hashNoise } from './sceneGeometrySpec.ts'
 import type { FaceState } from './sceneRuntimeTypes.ts'
 import { rigBob, rigCollapse, rigJoints, rigPose, rigRootJoint, rigUnit, strideRate, type RigBinding } from './sceneCharacterRig.ts'
 
-export type AnimState = 'locomotion' | 'climb' | 'jump' | 'fall' | 'land' | 'attack' | 'dodge' | 'hurt' | 'death' | 'interact' | 'talk' | 'activity'
+export type AnimState = 'locomotion' | 'climb' | 'swim' | 'jump' | 'fall' | 'land' | 'attack' | 'dodge' | 'hurt' | 'death' | 'interact' | 'talk' | 'activity'
 export type AnimActivity = 'sit' | 'work' | 'sleep' | 'chat' | 'perform' | 'guard'
 export type AnimMood = 'calm' | 'happy' | 'angry' | 'afraid'
 /** Events fired on the frame they happen, for footstep sounds, dust and hit timing. */
@@ -18,7 +18,7 @@ export interface AnimatorInput {
   dt: number; time: number; speed: number; grounded: boolean; verticalSpeed: number; dead: boolean; talk: boolean
   attack?: 'light' | 'heavy' | null; dodge?: boolean; hurt?: boolean; interact?: boolean; wave?: boolean; crouch?: boolean
   activity?: AnimActivity | null; mood?: AnimMood
-  climbing?: boolean; ranged?: boolean
+  climbing?: boolean; swimming?: boolean; ranged?: boolean
 }
 /**
  * `joints`: delta Euler degrees added to each joint's rest rotation. `bob` metres (per rig unit) on the root joint; `collapse` 0..1 lowers the root as in a fall
@@ -67,7 +67,7 @@ export const animatorJoints: Record<RigKind, readonly string[]> = {
   hover: ['j_body', 'j_rotor0', 'j_rotor1', 'j_rotor2', 'j_rotor3'],
 }
 const aerial = (kind: RigKind) => kind === 'flyer' || kind === 'hover'
-const fadeTime: Record<AnimState, number> = { locomotion: 0.22, climb: 0.15, jump: 0.1, fall: 0.2, land: 0.1, attack: 0.1, dodge: 0.1, hurt: 0.15, death: 0.25, interact: 0.18, talk: 0.25, activity: 0.3 }
+const fadeTime: Record<AnimState, number> = { locomotion: 0.22, climb: 0.15, swim: 0.25, jump: 0.1, fall: 0.2, land: 0.1, attack: 0.1, dodge: 0.1, hurt: 0.15, death: 0.25, interact: 0.18, talk: 0.25, activity: 0.3 }
 
 export function createAnimator(kind: RigKind, phase: number, seed = Math.floor(fin(phase) * 2 ** 31)): Animator {
   const s = Math.abs(Math.floor(fin(seed))) % 2147483647, r = (k: number) => hashNoise(s, k, 9173), joints = animatorJoints[kind]
@@ -486,6 +486,20 @@ function waveLayer(a: Animator, p: Joints) {
 
 function baseFrame(a: Animator, input: AnimatorInput): Frame {
   switch (a.state) {
+    case 'swim': {
+      const joints: Joints = {}, cycle = a.clock * (a.speed > 0.3 ? 3.5 : 1.8)
+      add(joints, rigRootJoint[a.kind], a.speed > 0.3 ? 45 : 12)
+      if (a.kind === 'biped') {
+        add(joints, 'j_head', -20)
+        for (const [side, sign] of [['L', 1], ['R', -1]] as const) {
+          const stroke = Math.sin(cycle + (sign > 0 ? 0 : Math.PI))
+          add(joints, `j_shoulder${side}`, -35 + stroke * 55, 0, sign * 30)
+          add(joints, `j_elbow${side}`, -35 - stroke * 20)
+          add(joints, `j_hip${side}`, stroke * 20); add(joints, `j_knee${side}`, 15 + Math.max(0, -stroke) * 25)
+        }
+      }
+      return { joints, bob: 0.025 * Math.sin(cycle), collapse: 0, seat: 0 }
+    }
     case 'climb': {
       const joints = blank(a.joints), c = a.cycle * TAU
       if (a.kind === 'biped') {
@@ -523,7 +537,7 @@ function enter(a: Animator, state: AnimState, fade = fadeTime[state]) {
   a.time = 0
   a.span = fade
 }
-const restState = (a: Animator, input: AnimatorInput): AnimState => a.speed > 0.6 ? 'locomotion' : input.talk ? 'talk' : a.activity ? 'activity' : 'locomotion'
+const restState = (a: Animator, input: AnimatorInput): AnimState => input.swimming ? 'swim' : a.speed > 0.6 ? 'locomotion' : input.talk ? 'talk' : a.activity ? 'activity' : 'locomotion'
 const busy = (state: AnimState) => state === 'attack' || state === 'dodge' || state === 'interact' || state === 'death'
 const crossed = (from: number, to: number, mark: number) => Math.floor(from - mark) !== Math.floor(to - mark)
 
@@ -573,7 +587,8 @@ export function updateAnimator(a: Animator, input: AnimatorInput): AnimatorPose 
     if (a.state === 'interact' && a.time - dt < 0.35 && a.time >= 0.35) events.push('interact')
     if (a.state === 'activity' && a.activity === 'work' && variant(a, 2, 3) === 0 && crossed((a.clock - dt) * 1.1, a.clock * 1.1, 0.72)) events.push('impact')
     if (!busy(a.state)) {
-      if (input.climbing) { if (a.state !== 'climb') enter(a, 'climb'); a.airTime = 0; a.fallSpeed = 0 }
+      if (input.swimming) { if (a.state !== 'swim') enter(a, 'swim'); a.airTime = 0; a.fallSpeed = 0 }
+      else if (input.climbing) { if (a.state !== 'climb') enter(a, 'climb'); a.airTime = 0; a.fallSpeed = 0 }
       else if (!grounded) {
         if (a.state !== 'jump' && a.state !== 'fall') {
           if (vy > 0.8 && a.airTime < 0.2) { enter(a, 'jump'); events.push('jump') }
@@ -623,7 +638,7 @@ export function updateAnimator(a: Animator, input: AnimatorInput): AnimatorPose 
     const v = joints[joint]
     out.set(joint, [bound(joint, v[0]), bound(joint, v[1]), bound(joint, v[2])])
   }
-  const ikTarget = a.state === 'climb' || a.state === 'jump' || a.state === 'fall' || a.state === 'death' || (a.state === 'dodge' && a.roll) || frame.seat > 0.5 || frame.collapse > 0.5 ? 0 : a.state === 'dodge' ? 0.5 : 1
+  const ikTarget = a.state === 'swim' || a.state === 'climb' || a.state === 'jump' || a.state === 'fall' || a.state === 'death' || (a.state === 'dodge' && a.roll) || frame.seat > 0.5 || frame.collapse > 0.5 ? 0 : a.state === 'dodge' ? 0.5 : 1
   const lookTarget = a.state === 'death' || a.state === 'dodge' || (a.state === 'activity' && (a.activity === 'sleep' || a.activity === 'work')) ? 0 : a.state === 'attack' ? 0.3 : a.state === 'jump' || a.state === 'fall' ? 0.5 : 1
   a.footIK = approach(a.footIK, ikTarget, 10, dt); a.look = approach(a.look, lookTarget, 6, dt)
   const state: AnimState = a.state === 'locomotion' && a.clock - a.hurtAt < 0.35 ? 'hurt' : a.state

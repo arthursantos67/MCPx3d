@@ -1,0 +1,95 @@
+{
+  "kind": "gameplay-smoke",
+  "resolution": [
+    1600,
+    900
+  ],
+  "backend": "ANGLE D3D11",
+  "checks": [
+    "spawn by Mara and accept first quest",
+    "walk to a tree, break it and receive wood",
+    "inventory shows harvested materials and recipes"
+  ],
+  "errors": [],
+  "gpu": [
+    {
+      "vendorId": 4318,
+      "deviceId": 4747,
+      "subSysId": 294326494,
+      "revision": 161,
+      "vendorString": "",
+      "deviceString": "NVIDIA GeForce GT 710",
+      "driverVendor": "NVIDIA",
+      "driverVersion": "30.0.14.7514"
+    },
+    {
+      "vendorId": 5140,
+      "deviceId": 140,
+      "subSysId": 0,
+      "revision": 0,
+      "vendorString": "",
+      "deviceString": "Microsoft Basic Render Driver",
+      "driverVendor": "",
+      "driverVersion": "10.0.19041.5794"
+    }
+  ],
+  "renderer": "ANGLE (NVIDIA, NVIDIA GeForce GT 710 (0x0000128B) Direct3D11 vs_5_0 ps_5_0, D3D11-30.0.14.7514)",
+  "position": [
+    -154.14929175389398,
+    383.82757568359375,
+    -388.291287978007
+  ],
+  "marks": {
+    "worldStart": 1744,
+    "sceneReady": 12098.100000023842,
+    "worldPrepared": 10928.399999976158,
+    "gameStart": 13344.800000011921,
+    "gameReady": 13972.199999988079,
+    "firstGameFrame": 14050.399999976158
+  },
+  "observation": {
+    "frames": 137,
+    "medianFrameMs": 66.69999999999709,
+    "maxTriangles": 1422205,
+    "maxCalls": 373,
+    "maxCpuMs": 23.600000023841858,
+    "maxLodDeficit": 0
+  },
+  "longTasks": [
+    {
+      "at": 3408.600000023842,
+      "ms": 473
+    },
+    {
+      "at": 5996.899999976158,
+      "ms": 125
+    },
+    {
+      "at": 10989.5,
+      "ms": 71
+    },
+    {
+      "at": 12104.600000023842,
+      "ms": 68
+    },
+    {
+      "at": 12812.600000023842,
+      "ms": 553
+    },
+    {
+      "at": 13984.5,
+      "ms": 66
+    },
+    {
+      "at": 14066.300000011921,
+      "ms": 100
+    }
+  ],
+  "date": "2026-10-28",
+  "isPerformanceGate": false,
+  "limitations": [
+    "Short functional sample with screenshots; not three 60-second runs.",
+    "CPU-isolated pass, 1.x performance comparison, other GPUs and real AI provider were not measured.",
+    "Load tasks exceed the unchanged 100 ms budget."
+  ]
+}

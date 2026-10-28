@@ -1,7 +1,6 @@
 import { createEmptyScene, validateEnvironment, validateScene, type ThreeSceneDocument } from '../sceneDocument.ts'
-import { DEFAULT_WORLD_BUDGETS, validateWorld, type ThreeWorldDocument } from './worldDocument.ts'
-import { fitLocationScene } from './worldGeneration.ts'
-import { createArchitectureScene } from '../sceneShowcase.ts'
+import { validateWorld, type ThreeWorldDocument } from './worldDocument.ts'
+import { adventureLocation, auroraGameplay } from './worldAdventure.ts'
 import { createHeightSource } from './worldTerrain.ts'
 
 /** First land point on a spiral from (x, z), at least `above` metres over the sea and at most `below` metres high. */
@@ -23,10 +22,9 @@ export function downhillYaw(world: Pick<ThreeWorldDocument, 'seed' | 'terrain'>,
 /** 4×4 km synthetic relief (mountains, plateaus with cliffs, coast) used to validate streaming before biomes. */
 export function createSyntheticWorld(): ThreeWorldDocument {
   const base = { seed: 20261023, terrain: { kind: 'synthetic' as const, size: [4096, 4096] as [number, number], heightRange: [-60, 700] as [number, number], seaLevel: 0, ruggedness: 0.85, erosion: 0, climate: { temperature: 16, humidity: 0.55, wind: 0 } } }
-  const spawn = landSpawn(base, 0, 0, 4, 260)
   return validateWorld({ version: '2.0', name: 'Relevo sintético 4 km', ...base, regions: [], locations: [], routes: [],
     environment: validateEnvironment({ background: '#c6d8dd', exposure: 1.05, lightIntensity: 1.5, grid: false, wireframe: false, shadows: true, reflections: true, sky: 'day', sunElevation: 34, sunAzimuth: 140, fog: 0, bloom: 0, toneMapping: 'agx',
-      player: { spawn, yaw: downhillYaw(base, spawn[0], spawn[2]), speed: 8, jumpHeight: 1.1, mode: 'walk', allowFly: true, camera: 'first' }, motion: { wind: 0.4, grass: 'none', fauna: 'none' } }) })
+      player: { spawn: null, yaw: 0, speed: 8, jumpHeight: 1.1, mode: 'walk', allowFly: true, camera: 'first' }, motion: { wind: 0.4, grass: 'none', fauna: 'none' } }) })
 }
 
 /** The 1.x scene edited and played on top of a world: its environment and player, no nodes yet. */
@@ -47,13 +45,14 @@ export function createClimateWorld(): ThreeWorldDocument {
       { id: 'vale', name: 'Vale do Rio Claro', site: [800, -300], biome: 'auto', danger: 0, ambience: 'auto', music: 'adventure' },
       { id: 'picos', name: 'Picos de Geada', site: [300, 1300], weight: 1.3, biome: 'auto', danger: 3, ambience: 'auto', music: 'mystery', weather: 'snow' },
     ],
-    // One detailed location (an existing 1.x scene) and one planned: both get level, cleared ground, joined by a road.
     locations: [
-      { id: 'lirio', name: 'Casa do Lírio', kind: 'landmark', regionId: 'bosque', position: [-723, -123], footprint: 45, brief: 'Casa de dois pavimentos de um lenhador entre as árvores.',
-        scene: fitLocationScene(createArchitectureScene(), DEFAULT_WORLD_BUDGETS, 45) },
-      { id: 'posto', name: 'Posto da Costa', kind: 'camp', regionId: 'costa', position: [32, -1300], footprint: 30, brief: 'Acampamento de pescadores no alto da costa.', scene: null },
+      { id: 'lirio', name: 'Posto do Lírio', kind: 'camp', regionId: 'bosque', position: [-160, -384], footprint: 32, brief: 'Converse com Mara e prepare suprimentos para recuperar o farol.', scene: adventureLocation('camp') },
+      { id: 'ruinas', name: 'Ruínas do Guardião', kind: 'ruin', regionId: 'bosque', position: [-40, -384], footprint: 24, brief: 'Dois lobos guardam o núcleo do farol.', scene: adventureLocation('ruins') },
+      { id: 'posto', name: 'Farol das Garças', kind: 'landmark', regionId: 'vale', position: [0, -256], footprint: 24, brief: 'Restaure o sinal de Aurora.', scene: adventureLocation('beacon') },
     ],
-    routes: [{ id: 'estrada-costa', kind: 'road', from: 'lirio', to: 'posto', width: 5 }],
+    routes: [{ id: 'estrada-ruinas', kind: 'road', from: 'lirio', to: 'ruinas', width: 5 }, { id: 'estrada-farol', kind: 'road', from: 'ruinas', to: 'posto', width: 5 }],
     environment: validateEnvironment({ background: '#c6d8dd', exposure: 1.05, lightIntensity: 1.5, grid: false, wireframe: false, shadows: true, reflections: true, sky: 'day', sunElevation: 38, sunAzimuth: 150, fog: 0.00028, bloom: 0, toneMapping: 'agx',
-      player: { spawn: null, yaw: 0, speed: 8, jumpHeight: 1.1, mode: 'walk', allowFly: true, camera: 'first' }, motion: { wind: 0.5, grass: 'none', fauna: 'none' } }) })
+      player: { spawn: null, yaw: 0, speed: 5.5, jumpHeight: 1.1, mode: 'walk', allowFly: false, camera: 'first', avatar: 'explorer', weapon: 'sword', health: 100 },
+      objective: { type: 'quests', title: 'Restaure o farol de Aurora', timeLimit: 0 }, gameplay: auroraGameplay(),
+      audio: { ambience: 'forest', music: 'adventure', volume: 0.7 }, motion: { wind: 0.5, grass: 'none', fauna: 'auto' } }) })
 }

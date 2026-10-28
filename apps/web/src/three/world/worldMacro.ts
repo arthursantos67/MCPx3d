@@ -53,6 +53,8 @@ export interface WorldMacro {
   roads: [number, number][][]
   /** Ground level each layout site was flattened to (NaN when none), in layout order. */
   siteLevels: Float32Array
+  /** Exact flat footprints (x, z, radius, level), applied after interpolation on every thread. */
+  pads?: Float32Array
   stats: { droplets: number; lakes: number; riverCells: number; ms: number }
 }
 
@@ -152,9 +154,8 @@ export function buildMacro(input: MacroInput): WorldMacro {
   const water = new Float32Array(count).fill(NaN), river = new Float32Array(count), delta = new Float32Array(count)
   let lakes = 0, riverCells = 0
   for (let k = 0; k < count; k++) delta[k] = heights[k] - base[k]
-  // Lakes are depressions at least 1.5 m deep covering 64 to 6000 points (~0.004–0.4 km²). Pits left by erosion are
-  // filled into flats instead of scattering puddles, and larger closed basins become high plains rather than lakes
-  // drowning a fifth of the map.
+  // Priority-flood heights route drainage; they must not replace the terrain of entire closed basins.
+  // Only bounded lakes get that water level, and tiny erosion pits are filled by at most 1.5 m.
   const seen = new Uint8Array(count), stack: number[] = []
   for (let start = 0; start < count; start++) {
     if (seen[start] || heights[start] <= sea || filled[start] - heights[start] <= 0.05) continue
@@ -171,7 +172,7 @@ export function buildMacro(input: MacroInput): WorldMacro {
       }
     }
     const lake = deepest >= 1.5 && component.length >= 64 && component.length <= 6000
-    for (const k of component) { if (lake) water[k] = filled[k]; else delta[k] = filled[k] - base[k] }
+    for (const k of component) { if (lake) water[k] = filled[k]; else if (component.length < 64) delta[k] += Math.min(1.5, filled[k] - heights[k]) }
     if (lake) lakes++
   }
   if (input.rivers) {
@@ -180,7 +181,7 @@ export function buildMacro(input: MacroInput): WorldMacro {
     for (let k = 0; k < count; k++) {
       if (area[k] < threshold || heights[k] <= sea || !Number.isNaN(water[k])) continue
       const width = clamp(3 + 0.008 * Math.sqrt(area[k]), 3, 24), depth = 0.6 + 0.12 * width
-      beds.push({ k, width, depth, level: filled[k] })
+      beds.push({ k, width, depth, level: heights[k] })
       riverCells++
     }
     for (const bed of beds) {
@@ -192,8 +193,9 @@ export function buildMacro(input: MacroInput): WorldMacro {
         if (bank <= 0) continue
         const target = bed.level - bed.depth, carved = base[n] + delta[n] + (target - (base[n] + delta[n])) * bank
         if (carved < base[n] + delta[n]) delta[n] = carved - base[n]
+        const lake = Number.isFinite(water[n]) && river[n] === 0
+        if (bank > 0.2 && !lake) water[n] = Math.min(Number.isNaN(water[n]) ? Infinity : water[n], bed.level - bed.depth * 0.25)
         river[n] = Math.max(river[n], bank)
-        if (bank > 0.2) water[n] = Math.max(Number.isNaN(water[n]) ? -Infinity : water[n], bed.level - bed.depth * 0.25)
       }
     }
   }
@@ -258,7 +260,8 @@ export function buildMacro(input: MacroInput): WorldMacro {
     for (const w of weights) sum += w
     for (let l = 0; l < weights.length; l++) ground[k * weights.length + l] = Math.round(255 * weights[l] / (sum || 1))
   }
-  return { cell, points: [nx, nz], origin, delta, water, river, temperature, humidity, ground, biome, drain: downstream, filled, clear, roads, siteLevels, stats: { droplets, lakes, riverCells, ms: performance.now() - started } }
+  const pads = new Float32Array((input.layout?.sites ?? []).flatMap((site, index) => [site.x, site.z, site.radius, siteLevels[index]]))
+  return { cell, points: [nx, nz], origin, delta, water, river, temperature, humidity, ground, biome, drain: downstream, filled, clear, roads, siteLevels, pads, stats: { droplets, lakes, riverCells, ms: performance.now() - started } }
 }
 
 interface LayoutGrid { nx: number; nz: number; cell: number; origin: [number, number]; base: Float32Array; delta: Float32Array; water: Float32Array; river: Float32Array; clear: Float32Array; roads: [number, number][][]; siteLevels: Float32Array }
@@ -386,23 +389,23 @@ export function sampleMacro(field: Float32Array, macro: Pick<WorldMacro, 'cell' 
   return value
 }
 
-export interface WaterMesh { positions: Float32Array; indices: Uint32Array }
+export interface WaterMesh { positions: Float32Array; indices: Uint32Array; levels: Float32Array }
 
 /**
  * One mesh for every lake and river of the world: grid points with water keep their level, dry points next to water
- * take the highest neighbouring level, so the surface runs under the banks and the terrain draws the shoreline.
+ * take the lowest neighbouring level, so upstream water does not spill across a lower dry bank.
  */
 export function waterMesh(macro: Pick<WorldMacro, 'water' | 'cell' | 'points' | 'origin'>): WaterMesh {
   const [nx, nz] = macro.points, level = new Float32Array(nx * nz).fill(NaN), vertex = new Int32Array(nx * nz).fill(-1)
   for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) {
     const k = j * nx + i
     if (!Number.isNaN(macro.water[k])) { level[k] = macro.water[k]; continue }
-    let best = -Infinity
+    let best = Infinity
     for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
       const pi = i + dx, pj = j + dz
-      if (pi >= 0 && pj >= 0 && pi < nx && pj < nz && !Number.isNaN(macro.water[pj * nx + pi])) best = Math.max(best, macro.water[pj * nx + pi])
+      if (pi >= 0 && pj >= 0 && pi < nx && pj < nz && !Number.isNaN(macro.water[pj * nx + pi])) best = Math.min(best, macro.water[pj * nx + pi])
     }
-    if (best > -Infinity) level[k] = best
+    if (best < Infinity) level[k] = best
   }
   const positions: number[] = [], indices: number[] = []
   const at = (i: number, j: number) => {
@@ -416,5 +419,15 @@ export function waterMesh(macro: Pick<WorldMacro, 'water' | 'cell' | 'points' | 
     const a = at(i, j), b = at(i + 1, j), c = at(i + 1, j + 1), d = at(i, j + 1)
     indices.push(a, c, b, a, d, c)
   }
-  return { positions: new Float32Array(positions), indices: new Uint32Array(indices) }
+  return { positions: new Float32Array(positions), indices: new Uint32Array(indices), levels: level }
+}
+
+/** Same diagonal and float32 vertex levels as waterMesh; null where no water triangle is drawn. */
+export function waterHeightAt(levels: Float32Array, grid: Pick<WorldMacro, 'cell' | 'points' | 'origin'>, x: number, z: number): number | null {
+  const [nx, nz] = grid.points, u = (x - grid.origin[0]) / grid.cell, v = (z - grid.origin[1]) / grid.cell, i = Math.floor(u), j = Math.floor(v)
+  if (i < 0 || j < 0 || i >= nx - 1 || j >= nz - 1) return null
+  const k = j * nx + i, a = levels[k], b = levels[k + 1], c = levels[k + nx + 1], d = levels[k + nx]
+  if (![a, b, c, d].every(Number.isFinite)) return null
+  const fx = u - i, fz = v - j
+  return fx >= fz ? a + fx * (b - a) + fz * (c - b) : a + fx * (c - d) + fz * (d - a)
 }

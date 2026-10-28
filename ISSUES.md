@@ -4,6 +4,8 @@ Baseline de 2026-10-02, alinhada ao [PRD](PRD.md). O planejamento antigo permane
 
 ## Three.js — frente iniciada em 2026-10-13
 
+Jogabilidade (2026-10-28): campanha de Aurora com objetivos executáveis, extração de árvores/rochas/arbustos, mochila/fabricação/cura, inimigos e farol; natação, mergulho e fôlego conectados à água local; progresso salvo com recursos removidos e mecanismos. As receitas/missões entram nos schemas e na validação do agente, com proteção dos alvos ao ajustar locais aos orçamentos. Corrigidos grandes planaltos artificiais do passe hidrológico e o apoio das construções. Pendentes: escavação/construção livre, avaliação com modelo real e certificação do gate completo da 0.7. [Detalhes](docs/threejs-gameplay.md).
+
 Skins procedurais nativas (2026-10-22): integração do avatar, seleção/interação pelos proxies ocultos, falanges articuladas, troca de qualidade em jogo e descarte seguro do cache. Exportação GLB inclui pele/esqueleto, materiais convertidos e clipes procedurais. A documentação de continuidade antiga está superada nesta frente. [Estado atual](docs/threejs-characters-hud.md).
 
 Correções da 0.6 (2026-10-22): recuo com giro corporal, combos com entrada antecipada, escalada com passagem ao patamar, equipamento/disparos vinculados à pose e contato físico dos golpes no runtime comum. IK evita travessias repetidas, HUD tem frequência limitada e a qualidade controla a resolução interna. Pendentes: medir FPS em GPU física e colisão da pele deformada por triângulo. [Detalhes e benchmark](docs/threejs-motion-fixes.md).

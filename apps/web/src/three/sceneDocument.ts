@@ -2,6 +2,8 @@ import { insertionPosition } from './scenePlacement.ts'
 import { prefabSpec, type PrefabSpec } from './scenePrefabs.ts'
 import { migrateHouseFloorSurfaces, migrateTowerHeadroom } from './sceneAssetMigrations.ts'
 import { expandSceneDraft } from './sceneDraft.ts'
+import { naturalResource, validateGameplay, validateResource, type SceneGameplay, type SceneResource } from './sceneGameplay.ts'
+import { validateGameplaySources } from './sceneGameplayAudit.ts'
 import { defaultGeometry, estimateTriangles, MAX_SCENE_TRIANGLES, validateGeometry, type GeometrySpec } from './sceneGeometrySpec.ts'
 export type Vector3Tuple = [number, number, number]
 export type NodeKind = 'group' | 'box' | 'sphere' | 'cylinder' | 'torus' | 'roundedBox' | 'cone' | 'torusKnot' | 'extrude' | 'lathe' | 'tube' | 'mesh'
@@ -55,7 +57,7 @@ export interface SceneBehavior { type: typeof behaviorTypes[number]; speed: numb
 export const emitterPresets = ['fire', 'smoke', 'sparks', 'magic', 'steam', 'fountain', 'leaves', 'dust', 'embers'] as const
 /** GPU particle source anchored to a node; `rate` scales the preset's emission and `spread` its radius in metres. */
 export interface SceneEmitter { preset: typeof emitterPresets[number]; rate: number; spread: number }
-export const objectiveTypes = ['explore', 'collectAll', 'reachGoal', 'defeatEnemies', 'survive'] as const
+export const objectiveTypes = ['explore', 'collectAll', 'reachGoal', 'defeatEnemies', 'survive', 'quests'] as const
 export interface SceneObjective { type: typeof objectiveTypes[number]; title: string; timeLimit: number }
 export const soundPresets = ['fire', 'water', 'waves', 'wind', 'machine', 'magic', 'birds', 'insects', 'drip', 'engine', 'chimes', 'alarm', 'portal', 'crowd'] as const
 export type SoundPreset = typeof soundPresets[number]
@@ -101,6 +103,7 @@ export interface SceneNode {
   behavior?: SceneBehavior
   sound?: SceneSound
   emitter?: SceneEmitter
+  resource?: SceneResource
   /** Authored purpose, used by terrain preparation and presentation without guessing from localized names. */
   role?: 'structure' | 'vegetation' | 'prop' | 'path'
 }
@@ -114,6 +117,7 @@ export interface SceneEnvironment {
   sky?: SkyPreset; sunElevation?: number; sunAzimuth?: number; fog?: number; bloom?: number; ambientOcclusion?: boolean; toneMapping?: 'aces' | 'agx' | 'neutral'
   player?: ScenePlayer
   objective?: SceneObjective
+  gameplay?: SceneGameplay
   audio?: SceneAudio
   weather?: typeof weatherKinds[number]
   grade?: typeof gradePresets[number]
@@ -301,6 +305,7 @@ export function validateEnvironment(value: unknown): SceneEnvironment {
     ambientOcclusion: env.ambientOcclusion === undefined ? false : boolean(env.ambientOcclusion, 'Oclusão ambiente'),
     toneMapping: choice(env.toneMapping, ['aces', 'agx', 'neutral'] as const, 'aces', 'Mapeamento tonal desconhecido.'), player: validatePlayer(env.player),
     ...(env.objective === undefined || env.objective === null ? {} : { objective: validateObjective(env.objective) }),
+    ...(env.gameplay == null ? {} : { gameplay: validateGameplay(env.gameplay) }),
     audio: env.audio === undefined || env.audio === null ? { ambience: 'auto', music: 'auto', volume: 0.7 } : validateAudio(env.audio),
     weather: choice(env.weather ?? undefined, weatherKinds, 'none', 'Clima desconhecido.'), grade: choice(env.grade ?? undefined, gradePresets, 'none', 'Gradação de cor desconhecida.'),
     ...(env.motion == null ? {} : { motion: validateMotion(env.motion) }),
@@ -342,6 +347,7 @@ export function validateScene(value: unknown): ThreeSceneDocument {
       ...(behavior ? { behavior } : {}),
       ...(sound ? { sound } : {}),
       ...(emitter ? { emitter } : {}),
+      ...(node.resource == null ? {} : { resource: validateResource(node.resource) }),
       ...(node.asset == null ? {} : { asset: (() => { if (node.kind !== 'group') throw new Error('Asset deve pertencer a um grupo.'); const spec = prefabSpec(node.asset); if (!spec) throw new Error('Asset desconhecido.'); return spec })() }),
       ...(node.assetPart == null ? {} : {assetPart:text(node.assetPart,'Peça gerada')}),
       ...(node.path == null ? {} : {path:validatePath(node.path)}),
@@ -372,9 +378,21 @@ export function validateScene(value: unknown): ThreeSceneDocument {
       parentId = parent.parentId
     }
   }
+  const environment = validateEnvironment(doc.environment)
+  for (const node of nodes) if (!node.resource && environment.gameplay?.naturalResources && node.asset) node.resource = naturalResource(node.asset.type)
+  for (const quest of environment.gameplay?.quests ?? []) {
+    if (quest.giverId && byId.get(quest.giverId)?.interaction?.action !== 'dialogue') throw new Error(`Missão “${quest.title}”: personagem de diálogo inexistente.`)
+    for (const step of quest.steps) if (['talk', 'interact', 'visit', 'defeat'].includes(step.kind) && step.target !== '*') {
+      if (step.kind === 'defeat' && step.target.endsWith('/*') && nodes.filter(node => node.id.startsWith(step.target.slice(0, -1)) && node.behavior?.type === 'enemy').length >= step.count) continue
+      const target = byId.get(step.target)
+      if (!target || (step.kind === 'talk' && target.interaction?.action !== 'dialogue') || (step.kind === 'interact' && !target.interaction) || (step.kind === 'defeat' && target.behavior?.type !== 'enemy')) throw new Error(`Missão “${quest.title}”: alvo inválido ${step.target}.`)
+    }
+  }
+  if (environment.objective?.type === 'quests' && !environment.gameplay?.quests.length) throw new Error('Objetivo de missões exige ao menos uma missão.')
+  validateGameplaySources(environment, nodes)
   return migrateTowerHeadroom(migrateHouseFloorSurfaces({ version: '1.4', name: text(doc.name, 'Nome do projeto'), nodes,
     timeline: { duration: doc.timeline === undefined ? 20 : number(record(doc.timeline).duration, 'Duração da timeline', 1, 120) },
-    environment: validateEnvironment(doc.environment) }))
+    environment }))
 }
 export function parseScene(source: string): ThreeSceneDocument {
   if (new TextEncoder().encode(source).byteLength > MAX_SCENE_BYTES) throw new Error('O projeto excede o limite de 32 MB.')

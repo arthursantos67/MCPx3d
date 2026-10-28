@@ -65,7 +65,7 @@ export function createLocationLod(built: BuiltScene): LocationLod {
     const meshes: THREE.Mesh[] = []
     entry.holder.traverse((child) => {
       const mesh = child as THREE.Mesh
-      if (!mesh.isMesh || (mesh as THREE.SkinnedMesh).isSkinnedMesh || Array.isArray(mesh.material) || !mesh.visible) return
+      if (!mesh.isMesh || (mesh as THREE.SkinnedMesh).isSkinnedMesh || Array.isArray(mesh.material) || !mesh.visible || built.dynamic.has(mesh.userData.nodeId as string)) return
       meshes.push(mesh)
     })
     for (const mesh of meshes) { take(mesh.geometry, mesh.matrixWorld, color.copy((mesh.material as THREE.MeshStandardMaterial).color ?? color.set('#999999'))); yield }

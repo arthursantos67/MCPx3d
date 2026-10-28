@@ -46,7 +46,7 @@ export const editorShortcutList: [string, string][] = [
 ]
 export const playControlList: [string, string][] = [
   ['W A S D', 'Andar'], ['Mouse · ← →', 'Olhar / girar'], ['Shift', 'Correr'], ['Espaço', 'Pular (subir no voo)'], ['C', 'Descer no voo'], ['F', 'Alternar caminhada/voo'],
-  ['E · clique', 'Interagir ou atacar o inimigo mirado'], ['Pular em cima', 'Derrota inimigos'], ['Escada + W/S', 'Subir e descer'], ['V', 'Alternar 1ª/3ª pessoa'], ['0–9 e letras livres', 'Gatilhos definidos na cena'], ['H', 'Mostrar/ocultar ajuda'], ['Esc', 'Liberar mouse · Esc de novo sai'],
+  ['E · clique', 'Interagir, extrair recursos ou atacar'], ['B', 'Inventário e fabricação'], ['Espaço / C na água', 'Subir à superfície / mergulhar'], ['Pular em cima', 'Derrota inimigos'], ['Escada + W/S', 'Subir e descer'], ['V', 'Alternar 1ª/3ª pessoa'], ['0–9 e letras livres', 'Gatilhos definidos na cena'], ['H', 'Mostrar/ocultar ajuda'], ['Esc', 'Pausar / fechar inventário'],
 ]
 
 export function playerKey(code: string): keyof PlayerInput | null {

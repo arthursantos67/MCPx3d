@@ -1,6 +1,7 @@
 import type { WeaponKind } from './sceneCombat.ts'
 import type { PowerKind } from './sceneDocument.ts'
 import type { InputDevice } from './sceneGamepad.ts'
+import type { CraftRecipe } from './sceneGameplay.ts'
 
 /**
  * HUD contract between the play loop (ThreeViewport) and ThreeHud.
@@ -41,6 +42,11 @@ export interface HudModel {
   time: number; limit: number; clock: string | null
   weapon: WeaponKind; weaponLabel: string
   items: { name: string; count: number }[]
+  recipes?: (CraftRecipe & { available: boolean; missing: string })[]
+  questSteps?: { label: string; value: number; count: number }[]
+  swimming?: boolean
+  submerged?: boolean
+  oxygen?: number
   effects: { power: PowerKind; seconds: number; total: number }[]
   prompt: HudPrompt | null
   boss: { name: string; health: number; max: number } | null

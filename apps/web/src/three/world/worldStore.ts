@@ -1,4 +1,5 @@
 import { validateWorld, type ThreeWorldDocument } from './worldDocument.ts'
+import type { SceneProgress } from '../sceneProgress.ts'
 
 /**
  * The open world and its play progress in IndexedDB: worlds with detailed locations outgrow localStorage, and a
@@ -7,7 +8,7 @@ import { validateWorld, type ThreeWorldDocument } from './worldDocument.ts'
  */
 const DATABASE = 'forma-worlds', STORE = 'worlds', VERSION = 1
 
-export interface WorldProgress { position: [number, number, number]; discovered: string[]; visited: string[]; fog: string; savedAt: number }
+export interface WorldProgress { position: [number, number, number]; discovered: string[]; visited: string[]; fog: string; savedAt: number; game?: SceneProgress; seed?: number }
 interface Entry { key: string; world: ThreeWorldDocument; progress?: WorldProgress; savedAt: number }
 
 function open(): Promise<IDBDatabase> {

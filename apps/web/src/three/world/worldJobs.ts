@@ -45,7 +45,7 @@ export function runWorldJob(job: WorldJob): { result: WorldJobResults[WorldJob['
   }
   if (job.type === 'macro') {
     const macro = buildWorldMacro(job.world, job.layout), mesh = waterMesh(macro)
-    const arrays = [macro.delta, macro.water, macro.river, macro.temperature, macro.humidity, macro.ground, macro.biome, macro.drain, macro.filled, macro.clear, macro.siteLevels, mesh.positions, mesh.indices]
+    const arrays = [macro.delta, macro.water, macro.river, macro.temperature, macro.humidity, macro.ground, macro.biome, macro.drain, macro.filled, macro.clear, macro.siteLevels, mesh.positions, mesh.indices, mesh.levels, ...(macro.pads ? [macro.pads] : [])]
     return { result: { macro, mesh, ms: performance.now() - started }, transfer: arrays.map((array) => array.buffer as ArrayBuffer) }
   }
   if (job.type === 'install') {

@@ -2,6 +2,7 @@ import { DEFAULT_MOTION, hasSurface, subtreeIds, type SceneMotion, type ThreeSce
 import { buildingPlan } from './sceneArchitecture.ts'
 import { sceneMatrices } from './scenePlacement.ts'
 import { Box3, Vector3 } from 'three'
+import { expandRecipeSources, itemKey } from './sceneGameplay.ts'
 
 const normalize = (text: string) => text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
 export type SceneTopology = 'landscape' | 'interior' | 'platforms' | 'arena' | 'space' | 'open'
@@ -260,8 +261,13 @@ function reviewGameplay(scene: ThreeSceneDocument, nodes: ThreeSceneDocument['no
   const archetypes = themeEnemies(request)
   if (intent.combat && enemies.length && archetypes.length && enemies.every(node => node.asset?.type === 'enemy'))
     issues.push(`Os inimigos são apenas slimes genéricos, mas o tema pede adversários próprios: use ${archetypes.join(', ')} com health e attack coerentes.`)
-  const name = (value: string) => normalize(value.trim())
-  const provided = new Set(scene.nodes.flatMap(node => [node.interaction?.item, node.asset?.type === 'key' ? node.asset.text || 'Chave dourada' : undefined]).filter((item): item is string => !!item?.trim()).map(name))
+  const name = itemKey
+  const provided = new Set(scene.nodes.flatMap(node => [node.resource?.item, node.interaction?.item, node.asset?.type === 'key' ? node.asset.text || 'Chave dourada' : undefined]).filter((item): item is string => !!item?.trim()).map(name))
+  if (environment.gameplay) {
+    for (const stack of [...environment.gameplay.startingItems, ...environment.gameplay.quests.flatMap(quest => quest.rewards)]) provided.add(itemKey(stack.item))
+    if (environment.gameplay.naturalResources) for (const item of ['Madeira', 'Pedra', 'Fibra', 'Cogumelo']) provided.add(itemKey(item))
+    expandRecipeSources(environment.gameplay, provided)
+  }
   const required = nodes.flatMap(node => [node.interaction?.requires, node.asset?.type === 'gate' ? node.asset.text : undefined]).filter((item): item is string => !!item?.trim())
   const missing = [...new Set(required.filter(item => !provided.has(name(item))))]
   if (missing.length) issues.push(`Progresso bloqueado: ${missing.slice(0, 3).map(item => `“${item}”`).join(', ')} é exigido por requires/gate, mas nenhum coletável fornece esse item. Crie key (prefab.text = nome exato) ou collect com interaction.item idêntico, alcançável antes da passagem.`)
@@ -270,7 +276,7 @@ function reviewGameplay(scene: ThreeSceneDocument, nodes: ThreeSceneDocument['no
   if (objective?.type === 'survive') {
     if (!enemies.some(node => (node.behavior?.delay ?? 0) > 0)) issues.push('O objetivo de sobrevivência não tem ondas: distribua inimigos com behavior.delay crescente (ex.: 0, 20, 40, 60 s) surgindo de lados diferentes, com curas entre as ondas.')
     if (!objective.timeLimit) issues.push('O objetivo survive precisa de timeLimit (60–300 s) para que a resistência termine em vitória.')
-  } else if (intent.survival) issues.push('O pedido é de sobrevivência: use environment.objective.type="survive" com timeLimit e ondas de inimigos por behavior.delay.')
+  } else if (intent.survival && objective?.type !== 'quests') issues.push('O pedido é de sobrevivência: use environment.objective.type="survive" com timeLimit e ondas de inimigos por behavior.delay.')
   if (intent.boss && !nodes.some(node => ['dragon', 'golem'].includes(node.asset?.type ?? '') || (node.behavior?.type === 'enemy' && (node.behavior.health ?? 0) >= 15)))
     issues.push('O chefe pedido não existe: crie um dragon ou golem (ou inimigo próprio) com behavior.health 25–60, dano alto e arena ampla com coberturas.')
   if (intent.launchers && intent.game && !nodes.some(node => node.behavior?.type === 'launcher' || node.asset?.type === 'jumpPad'))

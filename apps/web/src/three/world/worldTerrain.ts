@@ -27,7 +27,7 @@ const softPlus = (value: number, width: number) => value > 20 * width ? value : 
 const softClamp = (value: number, width = 0.04) => value - softPlus(value - 1, width) + softPlus(-value, width)
 
 /** The part of a WorldMacro needed for heights; workers receive only this. */
-export type MacroRelief = Pick<WorldMacro, 'delta' | 'cell' | 'points' | 'origin'>
+export type MacroRelief = Pick<WorldMacro, 'delta' | 'cell' | 'points' | 'origin' | 'pads'>
 
 /** Relief before erosion and rivers (also the input of the macro pass). With `macro`, its smooth delta is added. */
 export function createHeightSource(world: Pick<ThreeWorldDocument, 'seed' | 'terrain'>, macro?: MacroRelief | null): HeightSource {
@@ -75,6 +75,16 @@ export function createHeightSource(world: Pick<ThreeWorldDocument, 'seed' | 'ter
     }
     return low + softClamp(fraction) * span
   }
-  const heightAt = macro ? (x: number, z: number) => baseAt(x, z) + sampleMacro(macro.delta, macro, x, z) : baseAt
+  const heightAt = macro ? (x: number, z: number) => {
+    let height = baseAt(x, z) + sampleMacro(macro.delta, macro, x, z)
+    for (let i = 0; i < (macro.pads?.length ?? 0); i += 4) {
+      const pads = macro.pads!, radius = pads[i + 2], dx = x - pads[i], dz = z - pads[i + 1]
+      if (Math.abs(dx) > radius * 1.6 || Math.abs(dz) > radius * 1.6) continue
+      const distance = Math.hypot(dx, dz)
+      const amount = 1 - smoothstep(radius, radius * 1.6, distance)
+      if (amount > 0) height += (pads[i + 3] - height) * amount
+    }
+    return height
+  } : baseAt
   return { key: `${TERRAIN_GENERATOR}:${seed}:${terrain.size.join('x')}:${terrain.heightRange.join(':')}:${terrain.seaLevel}:${rugged}${macro ? ':macro' : ''}`, size: terrain.size, range: terrain.heightRange, seaLevel: terrain.seaLevel, heightAt }
 }

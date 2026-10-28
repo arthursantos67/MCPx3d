@@ -336,3 +336,26 @@
 .three-world-map__hint { margin-top: 10px; color: #f0ead8; font-size: 13px; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8); }
 .three-world-travel { position: absolute; inset: 0; z-index: 45; display: grid; place-items: center; background: #0b1013; color: #f0ead8; font-size: 18px; letter-spacing: 0.02em; transition: opacity 0.4s ease; }
 @media (max-width: 640px) { .three-world-map__sheet { width: 92vw; } }
+.three-inventory__backdrop { position: absolute; inset: 0; z-index: 30; display: grid; place-items: center; background: #07121be0; padding: 24px; }
+.three-inventory { width: min(880px, 100%); max-height: 90%; overflow: auto; color: #eff5ed; background: #192d2c; border: 1px solid #8caa8b; border-radius: 16px; padding: 24px; box-shadow: 0 16px 80px #0008; }
+.three-inventory header { display: flex; align-items: center; justify-content: space-between; gap: 20px; border-bottom: 1px solid #ffffff24; padding-bottom: 16px; }
+.three-inventory h2, .three-inventory h3 { color: #f0d899; margin: 6px 0 14px; }
+.three-inventory small, .three-inventory__hint { color: #b4c7b9; }
+.three-inventory strong { color: #eff5ed; }
+.three-inventory__recipes strong { color: #f0d899; }
+.three-inventory button { color: #182a24; background: #e0cc94; border: 0; border-radius: 7px; padding: 9px 13px; cursor: pointer; }
+.three-inventory button:disabled { opacity: .45; cursor: default; }
+.three-inventory__columns { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; padding-top: 20px; }
+.three-inventory ul { list-style: none; margin: 0; padding: 0; }
+.three-inventory__items li { display: flex; align-items: center; gap: 14px; padding: 12px 0; border-bottom: 1px solid #ffffff18; }
+.three-inventory__items li strong { margin-left: auto; }
+.three-inventory__recipes li { display: grid; gap: 7px; padding: 14px; margin-bottom: 12px; background: #ffffff08; border: 1px solid #ffffff1c; border-radius: 10px; }
+.three-inventory__recipes p { margin: 0; font-size: 13px; }
+.three-inventory__mission { padding-top: 20px; border-top: 1px solid #ffffff24; margin-top: 20px; }
+.three-inventory__mission li { padding: 5px 0; }
+@media (max-width: 640px) { .three-inventory__columns { grid-template-columns: 1fr; } .three-inventory__backdrop { padding: 10px; } .three-inventory { padding: 16px; } }
+.three-underwater { position: absolute; inset: 0; pointer-events: none; z-index: 2; background: #13647e66; box-shadow: inset 0 0 180px 80px #052b4666; }
+.forma-oxygen { position: relative; color: #d7f4ff; background: #123a4de0; border: 1px solid #8fd0e0; padding: 7px 12px; margin-top: 12px; min-width: 150px; font-size: 12px; border-radius: 5px; }
+.forma-oxygen span { position: absolute; bottom: 0; left: 0; height: 3px; background: #81d8e8; }
+.forma-quest-steps { margin: 8px 0 0; padding: 0; list-style: none; font-size: 12px; color: #e8ecd9; }
+.forma-quest-steps li { padding: 3px 0; }

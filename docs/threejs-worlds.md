@@ -86,6 +86,10 @@ Arquivos em `apps/web/src/three/world/`.
 
 ## Limites atuais
 
+Atualização de 28/10/2026: [Aurora agora inclui jogabilidade](threejs-gameplay.md) — missões, recursos extraíveis, inventário, fabricação, cura, combate e vitória no farol. A água local passou a controlar natação/mergulho/fôlego; árvores e rochas próximas têm colisão e deixam de colidir após extração. Grandes bacias não viram planaltos artificiais e o apoio dos assentamentos é plano entre amostras. Estas mudanças substituem as observações anteriores sobre ausência de colisão nas árvores; a certificação de desempenho da 0.7 continua separada.
+
+Verificação de 28/10: 895 testes, typecheck, lint e build aprovados; 45 casos de navegador cobertos, com repetição dos dois casos de mundo após corrigir nascimento sob lagos e atributos dos impostores. [Inspeção funcional nativa](benchmarks/0.7-gameplay-smoke-2026-10-28.json), GT 710/D3D11, 1600×900: 137 quadros, até 1.422.205 triângulos/373 draw calls, déficit de LOD zero e mediana de 66,7 ms. A tarefa máxima antes de `sceneReady` foi 473 ms; esta amostra **não aprova o gate**, nem substitui CPU isolada/comparação com a linha de base. A campanha e os limites estão [documentados aqui](threejs-gameplay.md).
+
 As fases 2–6 estão implementadas, mas **o gate completo e os critérios de saída da 0.7 permanecem pendentes**. Em 27/10/2026, o usuário solicitou interromper as verificações e enviar o estado atual para a main.
 
 - Hardware medido: GT 710 2 GB, i7-8700, 16 GB, Windows 10, Chrome 156, ANGLE/D3D11, headless. A comparação correta é com [a linha de base headless](benchmarks/0.7-baseline-headless.json); a tabela histórica acima foi medida em janela visível.
