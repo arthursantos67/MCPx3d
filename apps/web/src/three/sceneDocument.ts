@@ -68,7 +68,7 @@ export const musicPresets = ['auto', 'none', 'calm', 'adventure', 'mystery', 'te
 export interface SceneAudio { ambience: typeof ambiencePresets[number]; music: typeof musicPresets[number]; volume: number }
 export const weatherKinds = ['none', 'rain', 'snow', 'embers', 'fireflies', 'dust', 'bubbles', 'leaves', 'ash'] as const
 export const gradePresets = ['none', 'warm', 'cool', 'cinematic', 'vivid', 'noir', 'dreamy', 'retro'] as const
-export const weaponKinds = ['none', 'sword', 'blaster', 'bow', 'staff'] as const
+export const weaponKinds = ['none', 'sword', 'axe', 'blaster', 'bow', 'staff'] as const
 export const avatarKinds = ['explorer', 'knight', 'wizard', 'astronaut', 'robot'] as const
 export const grassDensities = ['auto', 'none', 'dense'] as const
 export const faunaDensities = ['auto', 'none', 'rich'] as const

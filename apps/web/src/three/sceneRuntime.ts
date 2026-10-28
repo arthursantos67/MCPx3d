@@ -1,6 +1,8 @@
 import { cycleProgress, isTriggered, playsOnce, samplePose, type ScenePose } from './sceneAnimation.ts'
 import { subtreeIds, type PowerKind, type SceneBehavior, type SceneInteraction, type SceneNode, type SceneObjective, type ThreeSceneDocument, type Vector3Tuple } from './sceneDocument.ts'
 import { activeQuest, createGameplayProgress, gameplayStatus, gatherItem, talkToQuestGiver, updateQuests, type GameplayProgress, type SceneGameplay } from './sceneGameplay.ts'
+import { createLoadout, type Loadout, type PlacedStructure } from './sceneLoadout.ts'
+import type { WeaponKind } from './sceneCombat.ts'
 
 interface NodeState { clock: number; active: boolean; progress: number; direction: 1 | -1 }
 export type RuntimeEventKind = 'collect' | 'unlock' | 'locked' | 'heal' | 'powerup' | 'powerdown' | 'hit' | 'defeat' | 'spawn' | 'checkpoint' | 'dialogue' | 'message' | 'toggle'
@@ -25,6 +27,9 @@ export interface SceneRuntime {
   items: Map<string, number>
   gameplay: GameplayProgress
   rules: SceneGameplay | undefined
+  loadout: Loadout
+  legacyWeapon: WeaponKind
+  placements: PlacedStructure[]
   /** Interactions whose last attempt was refused for a missing `requires` item. */
   blocked: Set<string>
   /** Interactions with `requires` that already succeeded once (the 'unlock' event fires only then). */
@@ -67,10 +72,11 @@ export function createRuntime(doc: ThreeSceneDocument, startTime = 0): SceneRunt
   const reachable = (node: SceneNode | undefined): boolean => !node || ((node.visible || toggles.has(node.id)) && reachable(node.parentId ? byId.get(node.parentId) : undefined))
   const health = doc.environment.player?.health ?? 100, foes = doc.nodes.filter((node) => node.behavior?.type === 'enemy' && reachable(node)), enemies = foes.map((node) => node.id)
   const collectibles = doc.nodes.filter((node) => node.interaction?.action === 'collect' && reachable(node)).length, goals = doc.nodes.filter((node) => node.behavior?.type === 'goal' && reachable(node)).map((node) => node.id)
-  const objective: SceneObjective = doc.environment.objective ?? { type: goals.length ? 'reachGoal' : collectibles ? 'collectAll' : enemies.length ? 'defeatEnemies' : 'explore', title: '', timeLimit: 0 }
+  const objective: SceneObjective = doc.environment.gameplay?.playStyle === 'sandbox' ? { type: 'explore', title: '', timeLimit: 0 } : doc.environment.objective ?? { type: goals.length ? 'reachGoal' : collectibles ? 'collectAll' : enemies.length ? 'defeatEnemies' : 'explore', title: '', timeLimit: 0 }
   const pending = new Map(foes.filter((node) => (node.behavior!.delay ?? 0) > 0).map((node) => [node.id, node.behavior!.delay!]))
   for (const id of pending.keys()) hidden.add(id)
   const runtime: SceneRuntime = { byId, nodes: doc.nodes, states, hidden, toggles, collected: new Set(), consumed: new Set(), inside: new Set(), collectibles, items: new Map(), gameplay: createGameplayProgress(), rules: doc.environment.gameplay, blocked: new Set(), unlocked: new Set(), effects: new Map(), dialogue: new Map(),
+    loadout: createLoadout(doc.environment.player?.weapon ?? 'none'), legacyWeapon: doc.environment.player?.weapon ?? 'none', placements: [],
     health, maxHealth: health, invulnerable: 0, checkpoint: null, checkpoints: new Set(), defeated: new Set(), enemies, enemyHealth: new Map(foes.map((node) => [node.id, node.behavior!.health ?? 1])), pending,
     goals, objective, elapsed: 0, outcome: 'playing', score: 0, events: [] }
   for (const stack of runtime.rules?.startingItems ?? []) gatherItem(runtime.gameplay, runtime.items, stack)
@@ -95,6 +101,7 @@ export function objectiveLimit(runtime: SceneRuntime): number {
 
 /** Remaining requirements; reaching a goal only wins after the other conditions of the objective are met. */
 export function objectiveStatus(runtime: SceneRuntime): { done: boolean; text: string } {
+  if (runtime.rules?.playStyle === 'sandbox') return { done: false, text: runtime.objective.title || 'Explore, experimente, construa' }
   const items = `${runtime.collected.size}/${runtime.collectibles} itens`, foes = `${runtime.defeated.size}/${runtime.enemies.length} inimigos`
   const title = runtime.objective.title
   switch (runtime.objective.type) {
@@ -182,6 +189,7 @@ function win(runtime: SceneRuntime) {
 
 /** Touching a goal finishes the level when the objective allows; returns a message for the HUD. */
 export function reachGoal(runtime: SceneRuntime): string | null {
+  if (runtime.rules?.playStyle === 'sandbox') return null
   if (runtime.outcome !== 'playing') return null
   const status = objectiveStatus(runtime), needsItems = runtime.objective.type === 'reachGoal' ? false : !status.done
   if (needsItems) return `O portal ainda está fechado: ${status.text}`
@@ -193,6 +201,7 @@ export function reachGoal(runtime: SceneRuntime): string | null {
 export function checkOutcome(runtime: SceneRuntime): void {
   if (runtime.outcome !== 'playing') return
   updateQuests(runtime.rules, runtime.gameplay, runtime.items, runtime.defeated)
+  if (runtime.rules?.playStyle === 'sandbox') return
   if (runtime.objective.type === 'survive') { if (runtime.health > 0 && objectiveStatus(runtime).done) win(runtime); return }
   if (runtime.objective.timeLimit > 0 && runtime.elapsed >= runtime.objective.timeLimit) { runtime.outcome = 'lost'; emit(runtime, 'timeout'); return }
   if (runtime.objective.type === 'quests') { if (!runtime.goals.length && objectiveStatus(runtime).done) win(runtime); return }

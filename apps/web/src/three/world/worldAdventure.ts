@@ -43,7 +43,7 @@ export function adventureLocation(kind: 'camp' | 'ruins' | 'beacon'): ThreeScene
   return validateScene({ ...createEmptyScene(), name: kind === 'camp' ? 'Posto do Lírio' : kind === 'ruins' ? 'Ruínas do Guardião' : 'Farol das Garças', nodes })
 }
 
-export function auroraGameplay(): SceneGameplay {
+export function campaignGameplay(): SceneGameplay {
   return { naturalResources: true, startingItems: [], recipes: [
     { id: 'sinal', name: 'Sinal de resgate', inputs: [{ item: 'Madeira', amount: 6 }, { item: 'Pedra', amount: 3 }, { item: 'Fibra', amount: 2 }], output: { item: 'Sinal de resgate', amount: 1 }, healing: 0 },
     { id: 'bandagem', name: 'Bandagem', inputs: [{ item: 'Fibra', amount: 2 }], output: { item: 'Bandagem', amount: 1 }, healing: 30 },
@@ -54,4 +54,64 @@ export function auroraGameplay(): SceneGameplay {
     { id: 'ruinas', title: 'O núcleo perdido', giverId: null, steps: [{ kind: 'defeat', target: 'ruinas/lobo1', count: 1, label: 'Derrote o lobo das ruínas' }, { kind: 'defeat', target: 'ruinas/lobo2', count: 1, label: 'Derrote o lobo do santuário' }, { kind: 'gather', target: 'Núcleo do farol', count: 1, label: 'Recupere o núcleo no altar' }], rewards: [] },
     { id: 'farol', title: 'Acender o farol', giverId: null, steps: [{ kind: 'visit', target: 'posto/acionador', count: 1, label: 'Siga até o Farol das Garças' }, { kind: 'interact', target: 'posto/acionador', count: 1, label: 'Use E no acionador para acender o sinal' }], rewards: [] },
   ] }
+}
+
+/** Open recipes have concrete uses; rare ingredients are reasons to explore, never quest locks. */
+export function auroraGameplay(): SceneGameplay {
+  const recipes = [
+    ['machado', 'Machado de pedra', [['Madeira', 2], ['Pedra', 2], ['Fibra', 1]], 0],
+    ['arco', 'Arco artesanal', [['Madeira', 3], ['Fibra', 3]], 0],
+    ['bandagem', 'Bandagem', [['Fibra', 2]], 30],
+    ['caldo', 'Caldo de cogumelos', [['Cogumelo', 2], ['Madeira', 1]], 35],
+    ['fogueira', 'Kit de fogueira', [['Madeira', 4], ['Pedra', 3]], 0],
+    ['abrigo', 'Kit de abrigo', [['Madeira', 8], ['Fibra', 6]], 0],
+    ['bau', 'Kit de baú', [['Madeira', 6], ['Fibra', 2]], 0],
+    ['cerca', 'Kit de cerca', [['Madeira', 4], ['Fibra', 1]], 0],
+    ['tocha', 'Kit de tocha', [['Madeira', 2], ['Resina', 1], ['Fibra', 1]], 0],
+    ['espada', 'Espada de cobre', [['Minério de cobre', 2], ['Madeira', 2], ['Fibra', 1]], 0],
+    ['lanterna', 'Luz dos antigos', [['Fragmento antigo', 1], ['Minério de cobre', 1], ['Resina', 1]], 0],
+  ] as const
+  return { playStyle: 'sandbox', hud: 'full', naturalResources: true, startingItems: [], quests: [],
+    recipes: recipes.map(([id, name, ingredients, healing]) => ({ id, name, inputs: ingredients.map(([item, amount]) => ({ item, amount })), output: { item: name, amount: 1 }, healing })),
+    items: [
+      { name: 'Machado de pedra', description: 'Extrai recursos com três vezes a força das mãos. Também serve para se defender.', equipment: 'axe', harvest: 3 },
+      { name: 'Arco artesanal', description: 'Ataques à distância. Selecione na barra e clique para disparar.', equipment: 'bow' },
+      { name: 'Espada de cobre', description: 'Lâmina para explorar territórios perigosos.', equipment: 'sword', harvest: 2 },
+      { name: 'Bandagem', description: 'Recupera 30 de vida ao usar.', healing: 30 },
+      { name: 'Caldo de cogumelos', description: 'Recupera 35 de vida ao usar.', healing: 35 },
+      { name: 'Kit de fogueira', description: 'Coloque em solo seco. Ficar perto recupera vida aos poucos.', placeable: 'campfire' },
+      { name: 'Kit de abrigo', description: 'Coloque e use E para descansar e definir seu ponto de retorno.', placeable: 'tent' },
+      { name: 'Kit de baú', description: 'Armazene seus recursos. Use E para guardar e retirar itens.', placeable: 'chest' },
+      { name: 'Kit de cerca', description: 'Delimite seu acampamento com uma barreira sólida.', placeable: 'fence' },
+      { name: 'Kit de tocha', description: 'Ilumina um trecho do caminho durante a noite.', placeable: 'torch' },
+      { name: 'Luz dos antigos', description: 'Uma luz construída com um fragmento encontrado nas ruínas.', placeable: 'torch' },
+    ] }
+}
+
+export function frontierLocation(kind: 'resin' | 'copper' | 'garden'): ThreeSceneDocument {
+  const nodes: SceneNode[] = []
+  if (kind === 'resin') {
+    nodes.push(...asset('log', 'tronco', [0, 0, -2]), ...asset('tent', 'tenda', [5, 0, -5]))
+    for (let i = 0; i < 5; i++) nodes.push(...asset('pine', `resina${i}`, [Math.cos(i * 1.3) * 9, 0, Math.sin(i * 1.3) * 9], { name: 'Pinheiro com resina', resource: { item: 'Resina', amount: 3, health: 3 } }))
+  } else if (kind === 'copper') {
+    nodes.push(...asset('ruinArch', 'entrada', [0, 0, -5]), ...asset('cart', 'vagoneta', [5, 0, 0]))
+    for (let i = 0; i < 5; i++) nodes.push(...asset('rock', `cobre${i}`, [-6 + i * 3, 0, -8], { name: 'Rocha com veios de cobre', resource: { item: 'Minério de cobre', amount: 2, health: 6 } }))
+  } else {
+    nodes.push(...asset('well', 'poco', [0, 0, -4]), ...asset('bench', 'banco', [5, 0, -2]))
+    for (let i = 0; i < 6; i++) nodes.push(...asset('mushroom', `horta${i}`, [-4 + i * 1.5, 0, -7], { name: 'Horta esquecida', resource: { item: 'Cogumelo', amount: 3, health: 1 } }))
+  }
+  nodes.push(...asset('sign', 'diario', [-2, 0, 1], { name: 'Anotações do viajante', interaction: { trigger: 'click', key: '', radius: 3, action: 'dialogue', targetId: null,
+    message: kind === 'resin' ? 'A resina destes pinheiros queima por muito tempo. Há marcas de rodas seguindo para o leste. | Cada viajante deixa aqui um pouco do que encontrou. Faça deste lugar sua próxima parada, se quiser.' : kind === 'copper' ? 'Os veios ainda têm cobre. Madeira e fibra podem virar o cabo de uma boa lâmina. | Os trabalhadores desenharam um arco de pedra no mapa, a sudoeste. Ninguém sabe o que encontraram lá.' : 'Uma horta que sobreviveu aos seus donos. Os cogumelos crescem à sombra das pedras. | Ao norte, uma torre ainda aparece entre a névoa. Não há pressa para ir até lá.' } }))
+  return validateScene({ ...createEmptyScene(), name: kind === 'resin' ? 'Acampamento dos Resinadores' : kind === 'copper' ? 'Pedreira Abandonada' : 'Jardim Esquecido', nodes })
+}
+
+/** Reuse the architecture while replacing the former mandatory rescue campaign. */
+export function sandboxLocation(kind: 'camp' | 'ruins' | 'beacon'): ThreeSceneDocument {
+  const scene = adventureLocation(kind)
+  for (const node of scene.nodes) {
+    if (node.id === 'mara') node.interaction!.message = 'Aurora não tem dono. Você pode explorar, montar um acampamento ou apenas seguir o rio. Mire nos recursos e use E para coletar; B abre a mochila. | Ao oeste há um posto de resinadores. Mais longe, a leste, uma pedreira guarda cobre. Resina rende tochas; cobre permite criar uma lâmina. | Há algo brilhando entre as ruínas. Leve materiais, faça suas próprias ferramentas e escolha para onde seguir. Scroll ou 1 a 5 troca o que está na mão; 1 deixa as mãos livres.'
+    if (node.id === 'nucleo') { node.name = 'Fragmento dos antigos'; node.interaction!.item = 'Fragmento antigo'; node.interaction!.message = 'Um fragmento quente ao toque. Com cobre e resina, talvez renda uma luz para o seu acampamento.' }
+    if (node.id === 'acionador') { node.name = 'Mecanismo do farol'; delete node.interaction!.requires; node.interaction!.message = 'A luz cruza o vale. De onde vieram os construtores desta torre?' }
+  }
+  return validateScene(scene)
 }

@@ -4,6 +4,8 @@ Baseline de 2026-10-02. Contratos em [PRD.md](../PRD.md); próximos trabalhos em
 
 ## Dois agentes e um estúdio visual
 
+O contrato Three.js distingue jogos dirigidos e sandbox por `gameplay.playStyle`, e interface completa/discreta por `gameplay.hud`. O catálogo `gameplay.items` liga receitas a equipamentos, consumíveis e kits executáveis. `sceneLoadout` resolve cinco slots e propriedade; `sceneConstruction` define apoio e geometria; o viewport executa construção/armazenamento/colisão; `sceneProgress` valida a restauração. Os prompts compartilhados e a revisão de direção escolhem mecânicas por gênero e não interpretam sobrevivência livre como horda obrigatória. [Detalhes e limites](threejs-sandbox.md).
+
 No estúdio Three.js, `ThreeWorkspace` aguarda a recuperação do mundo salvo e reconstrói a cena com o terreno, preservando o rascunho local correspondente, antes de habilitar Jogar/P. `ThreeViewport` comunica o carregamento e só inicia uma sessão após construir a cena, preparar terreno/colisões e compilar os materiais; uma solicitação antecipada fica pendente até esse ponto. Falhas de preparação/recuperação são visíveis. A recuperação assíncrona não substitui um projeto aberto posteriormente pelo usuário.
 
 O animador recebe a intenção `armed` para excluir gestos ociosos incompatíveis com armas nas mãos. O reinício solicita a sessão depois da compilação e pula a apresentação inicial.

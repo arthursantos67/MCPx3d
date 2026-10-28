@@ -9,6 +9,7 @@ export interface WeaponStats { kind: 'melee' | 'projectile'; damage: number; coo
 export const weaponStats: Record<WeaponKind, WeaponStats> = {
   none: { kind: 'melee', damage: 1, cooldown: 0.45, range: 0.85, arc: 50, color: '#ffd27a' },
   sword: { kind: 'melee', damage: 2, cooldown: 0.5, range: 1.6, arc: 110, color: '#dfe8ff' },
+  axe: { kind: 'melee', damage: 2, cooldown: 0.65, range: 1.4, arc: 95, color: '#b4b8b4' },
   blaster: { kind: 'projectile', damage: 1, cooldown: 0.22, range: 45, speed: 42, radius: 0.08, color: '#5ff2ff' },
   bow: { kind: 'projectile', damage: 2, cooldown: 0.75, range: 60, speed: 30, radius: 0.06, gravity: 12, color: '#d9b98c' },
   staff: { kind: 'projectile', damage: 2, cooldown: 0.9, range: 30, speed: 14, radius: 0.3, color: '#b57bff' },

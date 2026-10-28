@@ -106,6 +106,18 @@ test('shadow budget follows the player and refreshes only affected static-light 
   assert.ok(sources.every(source=>!source.light.castShadow && !source.light.shadow.map))
 })
 
+test('a dimmed practical light allocates its reserved shadow texture before a shader samples it', () => {
+  const light = new THREE.PointLight('#fff', 0, 10), scheduler = createShadowScheduler([{ id: 'daylight-off', light }], [], 1)
+  scheduler.update(new THREE.Vector3())
+  assert.equal(light.castShadow, true)
+  assert.equal(light.shadow.needsUpdate, true, 'a null map cannot fall back to a non-depth texture')
+  light.shadow.map = new THREE.WebGLRenderTarget(1, 1)
+  light.shadow.needsUpdate = false
+  scheduler.update(new THREE.Vector3())
+  assert.equal(light.shadow.needsUpdate, false, 'an allocated dimmed map is reused')
+  scheduler.dispose()
+})
+
 test('rebuilding one legacy repeated house preserves its custom contents and the other copy',()=>{
   const root=createArchitectureScene().nodes.find(n=>n.id==='casa')!
   const scene=expandSceneRecipe({name:'Casas',background:'#aabbcc',exposure:1,lightIntensity:1,duration:12,nodes:[{...root,id:'home',prefab:root.asset,color:'#ffffff',metalness:0,roughness:0.8,

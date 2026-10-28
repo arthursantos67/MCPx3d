@@ -133,7 +133,7 @@ async function bakeImpostor(renderer: THREE.WebGLRenderer, prototype: Prototype)
   scene.add(sun)
   for (const part of prototype.parts) scene.add(new THREE.InstancedMesh(part.geometry, part.material, 1))
   for (const child of scene.children) if (child instanceof THREE.InstancedMesh) child.setMatrixAt(0, new THREE.Matrix4())
-  const camera = new THREE.OrthographicCamera(-half, half, prototype.height + 0.1, -0.1, 0.1, 100)
+  const camera = new THREE.OrthographicCamera(-half, half, prototype.height / 2 + 0.1, -prototype.height / 2 - 0.1, 0.1, 100)
   // The bake lights differ from the world's, so these are new programs: link them in parallel before drawing.
   const before = renderer.getRenderTarget()
   renderer.setRenderTarget(target)
@@ -149,9 +149,11 @@ async function bakeImpostor(renderer: THREE.WebGLRenderer, prototype: Prototype)
     const angle = view / VIEWS * Math.PI * 2
     camera.position.set(Math.sin(angle) * 50, prototype.height / 2, Math.cos(angle) * 50)
     camera.lookAt(0, prototype.height / 2, 0)
+    // Rebind after editing the target: viewport/scissor use physical pixels, independent of the canvas pixel ratio.
     target.viewport.set(view * TILE[0], 0, TILE[0], TILE[1])
     target.scissor.set(view * TILE[0], 0, TILE[0], TILE[1])
     target.scissorTest = true
+    renderer.setRenderTarget(target)
     renderer.render(scene, camera)
   }
   target.scissorTest = false

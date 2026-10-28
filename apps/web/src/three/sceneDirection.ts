@@ -45,7 +45,12 @@ export function sceneIntent(request: string) {
   const peaceful=forbidsEnemies || /\b(sem (?:combate|batalhas?|violencia)|without combat|peaceful|pacific[oa]|exploracao tranquila)\b/.test(text)
   const enemies=/\b(inimigos?|enemies|enemy|adversarios?|monstros?|monsters?|drones? hostis|hostile drones?)\b/.test(text.replace(enemyProhibition,'')) && !peaceful
   const shooter=!peaceful && /\b(tiros?|atirar|atire|atirando|disparos?|disparar|dispare|shooter|fps|tiroteio|blasters?|pistolas?|rifles?|armas? de fogo|armas? laser|guns?|shoot\w*|arco e flechas?|flechas?|arqueir\w*|bows?|arrows?|archer\w*)\b/.test(text)
-  const survival=!peaceful && /\b(sobreviva|sobreviver|sobrevivencia|survival|survive|hordas?|hordes?|ondas de (?:inimigos|zumbis|monstros|robos)|enemy waves|waves of enemies|modo horda)\b/.test(text)
+  const waves=(arena && /\b(sobrevivencia|survival)\b/.test(text) && !/\b(livre|sandbox)\b/.test(text)) || /\b(hordas?|hordes?|ondas de (?:inimigos|zumbis|monstros|robos)|enemy waves|waves of enemies|modo horda|sobreviva (?:por |durante )?\d|survive (?:for )?\d|ate o amanhecer|until dawn)\b/.test(text)
+  const crafting=/\b(fabricacao|crafting|craft|fabricar|coletar (?:materiais|recursos)|construir (?:uma |sua |a )?base|the forest)\b/.test(text)
+  const freePlay=/\b(sandbox|exploracao livre|construcao livre|the forest)\b/.test(text)
+  const directed=/\b(puzzles?|quebra.cabecas?|missoes|missao|quests?|corridas?|racing|platformer|plataformas?)\b/.test(text)
+  const sandbox=!waves && (freePlay || !directed && (crafting || /\b(mundo aberto|open world|sobrevivencia|survival)\b/.test(text)))
+  const survival=!peaceful && waves
   const boss=!peaceful && /\b(chefao|chefoes|chefe final|chefe da (?:fase|masmorra)|(?:batalha|luta|combate) (?:contra|com) (?:o |um )?chefe|boss\w*|dragao|dragoes|dragons?|batalha final|final battle)\b/.test(text)
   const combat=!peaceful && (enemies || shooter || survival || boss || /\b(combate|batalhas?|combat|battles?|shooter|fps|tiroteio|duelos?|lutar|enfrentar|enfrente|fight\w*)\b/.test(text))
   const stealth=/\b(furtiv\w*|stealth|infiltra\w*|sorrateir\w*|heist|assalto|roubo|roubar|cofre|vault|espionagem|spy)\b/.test(text)
@@ -65,12 +70,12 @@ export function sceneIntent(request: string) {
   return {
     world: topology==='space' || landscape || /\b(vila|vilarejo|cidade|metropole|metropolis|bairro|centro urbano|downtown|ruas|ruinas|templo|castelo|fazenda|acampamento|camping|caverna|cavernas|cave|caves|mina|mine|village|city|town|world|mundo|fase|mapa|cenario|arenas?|masmorras?|dungeons?|estacao espacial|space station|nave|spaceship|laboratorios?|laborator\w*|complexo industrial|industrial complex|plataformas|platformer|parkour|parque|park|porto|harbor|aeroporto|airport|reinos?|kingdom|aldeia|mercado|feira|cemiterios?|graveyards?|cemetery|criptas?|crypts?|catacumbas?|enseada|cove|faroeste|velho oeste|wild west|coliseu|colosseum|coliseum|terra devastada|wasteland|pos.?apocalipt\w*|post.?apocalyptic|bunker|base (?:lunar|militar|secreta|cientifica))\b/.test(text),
     landscape: outdoor && (!enclosedTheme || planetSurface),
-    game: combat || puzzle || platforms || stealth || race || /\b(rpg|missao|missoes|quests?|npcs?|jogo|jogavel|fase|coletar|coletaveis|game|playable|level)\b/.test(text),
+    game: sandbox || combat || puzzle || platforms || stealth || race || /\b(rpg|missao|missoes|quests?|npcs?|jogo|jogavel|fase|coletar|coletaveis|game|playable|level)\b/.test(text),
     flat: /\b(plano|plana|plano horizontal|sem relevo|flat|maquete)\b/.test(text),
     night: /\b(noite|noturn[ao]|night|neon)\b/.test(text),
     topology,outerSpace:topology==='space',planetSurface,
     scienceFiction:scienceFiction || outerSpace || planetSurface,interior,platforms,arena,combat,enemies,peaceful,puzzle,housing,
-    shooter,survival,boss,stealth,race,settlement,npcs,keys,launchers,quest:/\b(rpg|missao|missoes|quests?|npcs?|dialogos?)\b/.test(text),
+    shooter,survival,sandbox,crafting,boss,stealth,race,settlement,npcs,keys,launchers,quest:!sandbox && /\b(rpg|missao|missoes|quests?|npcs?|dialogos?)\b/.test(text),
     weapon:requestedWeapon(text,shooter,scienceFiction || outerSpace || planetSurface),
     catalogHousing:housing && !scienceFiction,
     ...worldMotionIntent(text),
@@ -252,6 +257,9 @@ export function themeEnemies(request: string): string[] {
 function reviewGameplay(scene: ThreeSceneDocument, nodes: ThreeSceneDocument['nodes'], request: string): string[] {
   const intent = sceneIntent(request), issues: string[] = [], environment = scene.environment
   const enemies = nodes.filter(node => node.behavior?.type === 'enemy'), objective = environment.objective
+  if (intent.sandbox && (environment.gameplay?.playStyle !== 'sandbox' || objective?.type !== 'explore' || objective?.timeLimit)) issues.push('Exploração livre precisa de gameplay.playStyle="sandbox", objective explore e timeLimit=0, sem conclusão obrigatória.')
+  const craftUse = environment.gameplay?.recipes.some(recipe => recipe.healing > 0 || environment.gameplay!.items?.some(item => itemKey(item.name) === itemKey(recipe.output.item) && (item.equipment || item.placeable || item.healing)) || nodes.some(node => node.interaction?.requires && itemKey(node.interaction.requires) === itemKey(recipe.output.item)))
+  if (intent.crafting && !craftUse) issues.push('Fabricação precisa de receitas, fontes de materiais e saídas com utilidade real em gameplay.items ou mecanismos que usam o item.')
   const npcs = nodes.filter(node => node.behavior?.type === 'npc' || npcTypes.includes(node.asset?.type ?? ''))
   if (intent.npcs && !npcs.length && !nodes.some(node => node.interaction?.action === 'dialogue'))
     issues.push('O lugar pedido deve parecer habitado, mas não há personagens: posicione NPCs (villager, knight, wizard ou astronaut) em praças, barracas e portas, com prefab.text ou interaction dialogue contendo falas separadas por "|".')
@@ -357,7 +365,7 @@ const themes: { pattern: RegExp; brief: string }[] = [
 /** Concrete, catalogue-aware hints for every theme recognised in the request. */
 export function themeBrief(request: string): string {
   const text = normalize(request)
-  return themes.filter((theme) => theme.pattern.test(text)).slice(0, 5).map((theme) => theme.brief).join('\n')
+  return themes.filter((theme) => theme.pattern.test(text) && !(sceneIntent(request).sandbox && theme.brief.startsWith('SOBREVIVÊNCIA/HORDA'))).slice(0, 5).map((theme) => theme.brief).join('\n')
 }
 
 /** World motion and time asked for explicitly, or implied by enclosed/space topologies. */
@@ -385,10 +393,12 @@ export function directionBrief(request: string): string {
   }[intent.topology]
   const enemies=themeEnemies(request)
   const genre=[
+    intent.sandbox?'EXPLORAÇÃO LIVRE: gameplay.playStyle="sandbox", objective explore sem timeLimit e quests=[]; comece com mãos vazias. Distribua materiais e descobertas diferentes por locais conectados, pistas e silhuetas que despertem curiosidade. Fabricação gera equipamentos, consumíveis e construções realmente utilizáveis via gameplay.items; nenhum chefe ou sequência de missões é obrigatório.':'',
+    intent.puzzle?'INTERFACE: gameplay.hud="minimal" quando equipamentos e coleta não fazem parte do enigma. Mostre controles contextuais e efeitos claros das ações; evite painéis de sobrevivência sem utilidade.':'',
     intent.combat?`COMBATE: implemente inimigos funcionais com behavior.type=enemy (health, attack, speed e range coerentes), protegendo o spawn e alternando corpo a corpo e à distância.${enemies.length?` Arquétipos do tema: ${enemies.join(', ')}; evite slimes genéricos.`:''} Use o tipo de objetivo pedido, mesmo quando derrotar inimigos é apenas parte do percurso; recompense encontros com heart ou powerOrb.`:'',
     intent.shooter?`TIRO: environment.player.weapon="${intent.weapon ?? 'blaster'}"; inimigos com health 2–5, parte com attack="ranged" ou flying (drone, turret), coberturas na altura do peito e linhas de visão longas.`:'',
     intent.weapon && !intent.shooter && !intent.peaceful?`ARMA: o jogador usa environment.player.weapon="${intent.weapon}".`:'',
-    intent.npcs||intent.quest?'RPG/NPCS: povoe o lugar com NPCs (villager, knight, wizard, astronaut) parados onde fazem sentido, cada um com falas em prefab.text ou interaction dialogue (linhas separadas por "|"); um deles dá a missão; o item da missão (key ou collect com interaction.item) fica em outro ponto de interesse e abre gate/chest com requires do mesmo nome.':'',
+    intent.npcs||intent.quest?`RPG/NPCS: povoe o lugar com NPCs coerentes, com falas úteis em prefab.text ou interaction dialogue (linhas separadas por "|"). ${intent.quest ? 'Missões solicitadas têm itens e alvos reais, acessíveis, e recompensas.' : 'Use rumores, observações locais e pistas opcionais, sem impor uma missão.'}`:'',
     intent.keys && !(intent.npcs||intent.quest)?'CHAVES: key com prefab.text = nome do item (padrão "Chave dourada") e gate/chest ou porta com interaction.requires idêntico; a chave fica antes da passagem, nunca atrás dela.':'',
     intent.survival?'SOBREVIVÊNCIA: environment.objective={type:"survive",timeLimit:120–240}; ondas de inimigos com behavior.delay crescente (0, 20, 40, 60…) vindas de entradas diferentes, heart e powerOrb entre as ondas e uma posição defensável.':'',
     intent.boss?'CHEFE: um único dragon ou golem com behavior.health 25–60 e dano alto numa arena ampla com coberturas, lacaios antes da arena, checkpoint na entrada e recompensa após a vitória.':'',
@@ -398,14 +408,14 @@ export function directionBrief(request: string): string {
     intent.settlement||intent.npcs?'VIDA DOS NPCS: cada personagem com prefab.character distinto (idade, porte, altura, pele, cabelo, barba), seed e cores próprias; behavior.routine com target = ID de lugares desta receita e horários: comerciantes work na marketStall e chat no fountain/well no fim do dia, guardas patrol na muralha ou guard no portão, ferreiro work na forja (emitter sparks), bardo perform na praça, sleep em casa à noite; reaction greet nos moradores, flee nos tímidos e alert em quem chama os guardas.':'',
     lifeBrief(intent),
   ].filter(Boolean).join('\n')
-  return `\nDIREÇÃO DE PRODUÇÃO: preserve o gênero e o lugar solicitados. Antes de construir, decida título, premissa com gancho, um marco assinatura, 3–5 pontos de interesse com micro-história e 6–12 adereços cada, paleta, luz/grade/clima/som e o ciclo início → desafio → recompensa → conclusão. Construa as massas principais e depois detalhes que expressem a função de cada espaço. Prefabs opcionais são componentes, não um tema obrigatório; crie geometrias próprias quando o catálogo não representa o pedido.
+  return `\nDIREÇÃO DE PRODUÇÃO: preserve o gênero e o lugar solicitados. Antes de construir, decida título, premissa com gancho, um marco assinatura, 3–5 pontos de interesse com micro-história e 6–12 adereços cada, paleta, luz/grade/clima/som e o ciclo apropriado ao pedido: desafios com final ou exploração livre com descobertas opcionais. Construa as massas principais e depois detalhes que expressem a função de cada espaço. Prefabs opcionais são componentes, não um tema obrigatório; crie geometrias próprias quando o catálogo não representa o pedido.
 ${topology}
 ${intent.topology==='landscape' && !intent.flat ? 'Use relevo real com geometry.terrainStyle (rolling/ridged/terraced/dunes) e geometry.biome coerente; diferencie chão, rocha e encostas. Reserve apoios caminháveis para construções e conecte acessos externos com roads quando necessário.' : ''}
 ${themeBrief(request)}
 ${intent.scienceFiction?'FICÇÃO CIENTÍFICA: use módulos, painéis, estruturas técnicas, dutos, console, reactor, container e luzes práticas coerentes com a função e a época. Emissivos complementam a iluminação; não substitua instalações futuristas por casas rurais recoloridas.':''}
 ${genre}
 ${intent.puzzle?'QUEBRA-CABEÇA: implemente uma relação ação → efeito observável. Interruptores/alavancas (lever, console) precisam atingir objetos reais por interaction.targetId com toggleAnimation/toggleVisibility, sem bloquear definitivamente a única saída. Mensagens e decoração sozinhas não são um puzzle funcional.':''}
-${intent.game ? 'Entregue a atividade e a condição de conclusão solicitadas, com controles e percurso legíveis, usando mecânicas realmente implementadas pelo runtime.' : 'A exploração pode ser livre, sem impor coleta ou combate.'}
+${intent.game ? 'Entregue a atividade solicitada com controles e feedback legíveis, usando mecânicas realmente implementadas. A condição de conclusão só se aplica a jogos dirigidos; sandbox continua aberto.' : 'A exploração pode ser livre, sem impor coleta ou combate.'}
 ${intent.peaceful?'O pedido exclui inimigos ou combate: mantenha a exploração tranquila; fauna (deer) e NPCs podem dar vida ao lugar.':''}
 ${architecture ? 'ARQUITETURA: planeje plantas e volumetrias antes de distribuir casas. Escolha building.style/floors/width/depth explicitamente e mantenha escala humana. Em vilas use ao menos três silhuetas coerentes com a época; distribua portas voltadas para ruas e ligue os acessos ao caminho. Reserve um envelope de largura+3 e profundidade+4 metros por casa. Não entregue fileiras do mesmo prefab com cores diferentes. Pedidos de sobrado exigem floors=2. Preserve interiores mobiliados e circulação.' : ''}
 Revise antes de responder: identidade do gênero, escala humana, silhuetas, densidade de detalhes, materiais, acessos, iluminação, som e correspondência entre objetivo e mecânicas. Crie terreno e habitações somente quando pertencem ao pedido.`

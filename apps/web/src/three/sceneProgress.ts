@@ -1,17 +1,20 @@
 import type { SceneRuntime } from './sceneRuntime.ts'
 import { itemKey, restoreGameplay, snapshotGameplay, type GameplaySnapshot } from './sceneGameplay.ts'
+import { restoreLoadout, type Loadout, type PlacedStructure } from './sceneLoadout.ts'
+import { placeableKinds } from './sceneGameplay.ts'
 
 export interface SceneProgress {
   items: [string, number][]; collected: string[]; consumed: string[]; defeated: string[]; gameplay: GameplaySnapshot
   health: number; elapsed: number; score: number; checkpoint: [number, number, number] | null
   hiddenToggles?: string[]; unlocked?: string[]
+  loadout?: Loadout; placements?: PlacedStructure[]
 }
 export function snapshotRuntime(runtime: SceneRuntime): SceneProgress {
   return { items: [...runtime.items], collected: [...runtime.collected], consumed: [...runtime.consumed], defeated: [...runtime.defeated], gameplay: snapshotGameplay(runtime.gameplay), health: runtime.health, elapsed: runtime.elapsed, score: runtime.score, checkpoint: runtime.checkpoint,
-    hiddenToggles: [...runtime.toggles].filter(id => runtime.hidden.has(id)), unlocked: [...runtime.unlocked] }
+    hiddenToggles: [...runtime.toggles].filter(id => runtime.hidden.has(id)), unlocked: [...runtime.unlocked], loadout: structuredClone(runtime.loadout), placements: structuredClone(runtime.placements) }
 }
 export function restoreRuntime(runtime: SceneRuntime, saved: SceneProgress) {
-  const allowed = new Set([...(runtime.rules?.startingItems ?? []).map(s => itemKey(s.item)), ...(runtime.rules?.recipes ?? []).flatMap(r => [itemKey(r.output.item), ...r.inputs.map(s => itemKey(s.item))]),
+  const allowed = new Set([...(runtime.rules?.items ?? []).map(item => itemKey(item.name)), ...(runtime.rules?.startingItems ?? []).map(s => itemKey(s.item)), ...(runtime.rules?.recipes ?? []).flatMap(r => [itemKey(r.output.item), ...r.inputs.map(s => itemKey(s.item))]),
     ...(runtime.rules?.quests ?? []).flatMap(q => q.rewards.map(s => itemKey(s.item))), ...runtime.nodes.flatMap(n => [n.resource?.item, n.interaction?.item].filter((item): item is string => !!item).map(itemKey)),
     ...(runtime.rules?.naturalResources ? ['madeira', 'pedra', 'fibra', 'cogumelo'] : [])])
   if (Array.isArray(saved.items)) {
@@ -22,6 +25,13 @@ export function restoreRuntime(runtime: SceneRuntime, saved: SceneProgress) {
   if (Array.isArray(saved.hiddenToggles)) for (const id of runtime.toggles) { if (saved.hiddenToggles.includes(id)) runtime.hidden.add(id); else runtime.hidden.delete(id) }
   if (Array.isArray(saved.unlocked)) for (const id of saved.unlocked.slice(0, 2000)) if (runtime.byId.has(id)) runtime.unlocked.add(id)
   if (saved.gameplay && typeof saved.gameplay === 'object') restoreGameplay(runtime.gameplay, saved.gameplay)
+  restoreLoadout(runtime.loadout, saved.loadout, runtime.items, runtime.legacyWeapon)
+  if (Array.isArray(saved.placements)) for (const p of saved.placements.slice(0, 64)) {
+    if (!p || typeof p.id !== 'string' || p.id.length > 100 || typeof p.item !== 'string' || !placeableKinds.includes(p.kind) || !runtime.rules?.items?.some(item => itemKey(item.name) === itemKey(p.item) && item.placeable === p.kind)) continue
+    if (!Array.isArray(p.position) || p.position.length !== 3 || !p.position.every(n => typeof n === 'number' && Number.isFinite(n) && Math.abs(n) <= 10000) || !Number.isFinite(p.yaw)) continue
+    const storage: [string, number][] = p.kind === 'chest' && Array.isArray(p.storage) ? p.storage.slice(0, 64).filter(pair => Array.isArray(pair) && typeof pair[0] === 'string' && allowed.has(itemKey(pair[0])) && Number.isInteger(pair[1]) && pair[1] > 0 && pair[1] <= 100000) : []
+    if (!runtime.placements.some(other => other.id === p.id)) runtime.placements.push({ id: p.id, item: p.item, kind: p.kind, position: [...p.position], yaw: p.yaw % (Math.PI * 2), ...(p.kind === 'chest' ? { storage } : {}) })
+  }
   for (const id of runtime.gameplay.destroyed) if (runtime.byId.get(id)?.resource) runtime.hidden.add(id)
   if (typeof saved.health === 'number' && Number.isFinite(saved.health)) runtime.health = Math.max(1, Math.min(runtime.maxHealth, saved.health))
   if (typeof saved.elapsed === 'number' && Number.isFinite(saved.elapsed)) runtime.elapsed = Math.max(0, Math.min(1e8, saved.elapsed))

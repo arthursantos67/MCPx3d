@@ -15,7 +15,7 @@ export const musicLabels: Record<typeof musicPresets[number], string> = { auto: 
   combat: 'Combate', space: 'Espacial', festive: 'Festiva', spooky: 'Assombrada', heroic: 'Heroica' }
 export const weatherLabels: Record<typeof weatherKinds[number], string> = { none: 'Sem clima', rain: 'Chuva', snow: 'Neve', embers: 'Brasas', fireflies: 'Vaga-lumes', dust: 'Poeira', bubbles: 'Bolhas', leaves: 'Folhas ao vento', ash: 'Cinzas' }
 export const gradeLabels: Record<typeof gradePresets[number], string> = { none: 'Neutra', warm: 'Quente (golden hour)', cool: 'Fria (luar)', cinematic: 'Cinematográfica', vivid: 'Vívida', noir: 'Noir', dreamy: 'Onírica', retro: 'Filme retrô' }
-export const weaponLabels: Record<typeof weaponKinds[number], string> = { none: 'Mãos (golpe com E)', sword: 'Espada', blaster: 'Blaster', bow: 'Arco', staff: 'Cajado mágico' }
+export const weaponLabels: Record<typeof weaponKinds[number], string> = { none: 'Mãos vazias', sword: 'Espada', axe: 'Machado', blaster: 'Blaster', bow: 'Arco', staff: 'Cajado mágico' }
 export const avatarLabels: Record<typeof avatarKinds[number], string> = { explorer: 'Explorador', knight: 'Cavaleiro', wizard: 'Mago', astronaut: 'Astronauta', robot: 'Robô' }
 export const powerLabels: Record<PowerKind, string> = { speed: 'Velocidade', jump: 'Super pulo', shield: 'Escudo', strength: 'Força' }
 export const routineLabels: Record<RoutineActivity, string> = { wander: 'Passear', work: 'Trabalhar no local', sit: 'Sentar', chat: 'Conversar em grupo', patrol: 'Patrulhar até o local', guard: 'Montar guarda', sleep: 'Dormir', perform: 'Tocar/dançar' }

@@ -35,6 +35,7 @@ export interface WorldMacro {
   delta: Float32Array
   /** Water surface height (lakes, rivers), NaN where dry; the sea is separate. */
   water: Float32Array
+  lake?: Uint8Array
   /** 0..1 river presence, for wet banks. */
   river: Float32Array
   temperature: Float32Array
@@ -151,7 +152,7 @@ export function buildMacro(input: MacroInput): WorldMacro {
   const area = new Float32Array(count).fill(cell * cell)
   for (let o = order.length - 1; o >= 0; o--) { const k = order[o], d = downstream[k]; if (d >= 0) area[d] += area[k] }
 
-  const water = new Float32Array(count).fill(NaN), river = new Float32Array(count), delta = new Float32Array(count)
+  const water = new Float32Array(count).fill(NaN), river = new Float32Array(count), delta = new Float32Array(count), lakeMask = new Uint8Array(count)
   let lakes = 0, riverCells = 0
   for (let k = 0; k < count; k++) delta[k] = heights[k] - base[k]
   // Priority-flood heights route drainage; they must not replace the terrain of entire closed basins.
@@ -172,7 +173,7 @@ export function buildMacro(input: MacroInput): WorldMacro {
       }
     }
     const lake = deepest >= 1.5 && component.length >= 64 && component.length <= 6000
-    for (const k of component) { if (lake) water[k] = filled[k]; else if (component.length < 64) delta[k] += Math.min(1.5, filled[k] - heights[k]) }
+    for (const k of component) { if (lake) { water[k] = filled[k]; lakeMask[k] = 1 } else if (component.length < 64) delta[k] += Math.min(1.5, filled[k] - heights[k]) }
     if (lake) lakes++
   }
   if (input.rivers) {
@@ -193,7 +194,7 @@ export function buildMacro(input: MacroInput): WorldMacro {
         if (bank <= 0) continue
         const target = bed.level - bed.depth, carved = base[n] + delta[n] + (target - (base[n] + delta[n])) * bank
         if (carved < base[n] + delta[n]) delta[n] = carved - base[n]
-        const lake = Number.isFinite(water[n]) && river[n] === 0
+        const lake = lakeMask[n] === 1
         if (bank > 0.2 && !lake) water[n] = Math.min(Number.isNaN(water[n]) ? Infinity : water[n], bed.level - bed.depth * 0.25)
         river[n] = Math.max(river[n], bank)
       }
@@ -261,7 +262,7 @@ export function buildMacro(input: MacroInput): WorldMacro {
     for (let l = 0; l < weights.length; l++) ground[k * weights.length + l] = Math.round(255 * weights[l] / (sum || 1))
   }
   const pads = new Float32Array((input.layout?.sites ?? []).flatMap((site, index) => [site.x, site.z, site.radius, siteLevels[index]]))
-  return { cell, points: [nx, nz], origin, delta, water, river, temperature, humidity, ground, biome, drain: downstream, filled, clear, roads, siteLevels, pads, stats: { droplets, lakes, riverCells, ms: performance.now() - started } }
+  return { cell, points: [nx, nz], origin, delta, water, lake: lakeMask, river, temperature, humidity, ground, biome, drain: downstream, filled, clear, roads, siteLevels, pads, stats: { droplets, lakes, riverCells, ms: performance.now() - started } }
 }
 
 interface LayoutGrid { nx: number; nz: number; cell: number; origin: [number, number]; base: Float32Array; delta: Float32Array; water: Float32Array; river: Float32Array; clear: Float32Array; roads: [number, number][][]; siteLevels: Float32Array }
@@ -389,13 +390,13 @@ export function sampleMacro(field: Float32Array, macro: Pick<WorldMacro, 'cell' 
   return value
 }
 
-export interface WaterMesh { positions: Float32Array; indices: Uint32Array; levels: Float32Array }
+export interface WaterMesh { positions: Float32Array; indices: Uint32Array; levels: Float32Array; depths?: Float32Array; triangles?: Uint8Array }
 
 /**
  * One mesh for every lake and river of the world: grid points with water keep their level, dry points next to water
  * take the lowest neighbouring level, so upstream water does not spill across a lower dry bank.
  */
-export function waterMesh(macro: Pick<WorldMacro, 'water' | 'cell' | 'points' | 'origin'>): WaterMesh {
+export function waterMesh(macro: Pick<WorldMacro, 'water' | 'cell' | 'points' | 'origin'>, heightAt?: (x: number, z: number) => number): WaterMesh {
   const [nx, nz] = macro.points, level = new Float32Array(nx * nz).fill(NaN), vertex = new Int32Array(nx * nz).fill(-1)
   for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) {
     const k = j * nx + i
@@ -407,27 +408,51 @@ export function waterMesh(macro: Pick<WorldMacro, 'water' | 'cell' | 'points' | 
     }
     if (best < Infinity) level[k] = best
   }
-  const positions: number[] = [], indices: number[] = []
+  const positions: number[] = [], indices: number[] = [], depths = heightAt ? new Float32Array(nx * nz).fill(-1) : undefined, triangles = heightAt ? new Uint8Array((nx - 1) * (nz - 1) * 2) : undefined
+  if (depths) for (let k = 0; k < level.length; k++) if (Number.isFinite(level[k])) depths[k] = Math.min(Number.isFinite(macro.water[k]) ? Infinity : -0.02, level[k] - heightAt!(macro.origin[0] + (k % nx) * macro.cell, macro.origin[1] + Math.floor(k / nx) * macro.cell))
   const at = (i: number, j: number) => {
     const k = j * nx + i
     if (vertex[k] < 0) { vertex[k] = positions.length / 3; positions.push(macro.origin[0] + i * macro.cell, level[k], macro.origin[1] + j * macro.cell) }
     return vertex[k]
   }
+  const edges = new Map<string, number>()
+  const clipped = (ids: number[], cell: number) => {
+    if (!depths || !triangles) { indices.push(...ids.map(k => at(k % nx, Math.floor(k / nx)))); return }
+    const points = ids.map(k => ({ k, x: macro.origin[0] + (k % nx) * macro.cell, y: level[k], z: macro.origin[1] + Math.floor(k / nx) * macro.cell, depth: depths[k] }))
+    const bed = points.map(p => heightAt!(p.x, p.z)), span = Math.max(...points.map(p => p.y)) - Math.min(...points.map(p => p.y))
+    if (span > Math.max(macro.cell * 0.75, Math.max(...bed) - Math.min(...bed) + 2)) return
+    const polygon: number[] = []
+    for (let i = 0; i < 3; i++) {
+      const a = points[i], b = points[(i + 1) % 3]
+      if (a.depth > 0) polygon.push(at(a.k % nx, Math.floor(a.k / nx)))
+      if ((a.depth > 0) === (b.depth > 0)) continue
+      const key = a.k < b.k ? `${a.k}:${b.k}` : `${b.k}:${a.k}`
+      let index = edges.get(key)
+      if (index === undefined) { const t = a.depth / (a.depth - b.depth); index = positions.length / 3; positions.push(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t); edges.set(key, index) }
+      polygon.push(index)
+    }
+    if (polygon.length < 3) return
+    triangles[cell] = 1
+    for (let i = 1; i + 1 < polygon.length; i++) indices.push(polygon[0], polygon[i], polygon[i + 1])
+  }
   for (let j = 0; j < nz - 1; j++) for (let i = 0; i < nx - 1; i++) {
     const k = j * nx + i
     if (Number.isNaN(level[k]) || Number.isNaN(level[k + 1]) || Number.isNaN(level[k + nx]) || Number.isNaN(level[k + nx + 1])) continue
-    const a = at(i, j), b = at(i + 1, j), c = at(i + 1, j + 1), d = at(i, j + 1)
-    indices.push(a, c, b, a, d, c)
+    const t = (j * (nx - 1) + i) * 2
+    clipped([k, k + nx + 1, k + 1], t)
+    clipped([k, k + nx, k + nx + 1], t + 1)
   }
-  return { positions: new Float32Array(positions), indices: new Uint32Array(indices), levels: level }
+  return { positions: new Float32Array(positions), indices: new Uint32Array(indices), levels: level, ...(depths ? { depths, triangles } : {}) }
 }
 
 /** Same diagonal and float32 vertex levels as waterMesh; null where no water triangle is drawn. */
-export function waterHeightAt(levels: Float32Array, grid: Pick<WorldMacro, 'cell' | 'points' | 'origin'>, x: number, z: number): number | null {
+export function waterHeightAt(levels: Float32Array, grid: Pick<WorldMacro, 'cell' | 'points' | 'origin'>, x: number, z: number, triangles?: Uint8Array, depths?: Float32Array): number | null {
   const [nx, nz] = grid.points, u = (x - grid.origin[0]) / grid.cell, v = (z - grid.origin[1]) / grid.cell, i = Math.floor(u), j = Math.floor(v)
   if (i < 0 || j < 0 || i >= nx - 1 || j >= nz - 1) return null
   const k = j * nx + i, a = levels[k], b = levels[k + 1], c = levels[k + nx + 1], d = levels[k + nx]
   if (![a, b, c, d].every(Number.isFinite)) return null
   const fx = u - i, fz = v - j
+  if (triangles && !triangles[(j * (nx - 1) + i) * 2 + (fx >= fz ? 0 : 1)]) return null
+  if (depths) { const [da, db, dc, dd] = [depths[k], depths[k + 1], depths[k + nx + 1], depths[k + nx]]; const depth = fx >= fz ? da + fx * (db - da) + fz * (dc - db) : da + fx * (dc - dd) + fz * (dd - da); if (depth <= 0) return null }
   return fx >= fz ? a + fx * (b - a) + fz * (c - b) : a + fx * (c - d) + fz * (d - a)
 }

@@ -4,7 +4,8 @@ import { ProviderRequestError, type LLMProvider } from '../../../../packages/age
 import { createEmptyScene, createNode, validateScene, type ThreeSceneDocument } from '../../src/three/sceneDocument.ts'
 import { buildWorldMacro } from '../../src/three/world/worldJobs.ts'
 import { createHeightSource } from '../../src/three/world/worldTerrain.ts'
-import { applyWorldEdit, continueWorld, fitLocationScene, generateWorld, MAX_DETAILED, placeLocations, retryDelay, sanitizeAtlas, type WorldGenerationDeps } from '../../src/three/world/worldGeneration.ts'
+import { applyWorldEdit, continueWorld, detailRequest, fitLocationScene, generateWorld, MAX_DETAILED, placeLocations, retryDelay, sanitizeAtlas, type WorldGenerationDeps } from '../../src/three/world/worldGeneration.ts'
+import { composeWorldScene } from '../../src/three/world/worldScene.ts'
 import type { ThreeWorldDocument } from '../../src/three/world/worldDocument.ts'
 
 const atlas = {
@@ -43,6 +44,24 @@ test('the atlas sanitizer caps, deduplicates, resolves references and applies bu
   assert.ok(notes.some((note) => note.includes('região desconhecida')))
   assert.deepEqual(sanitizeAtlas(atlas, 'arquipélago', 42).world, world, 'deterministic')
   assert.doesNotThrow(() => sanitizeAtlas({ regions: 'x', locations: [{}], routes: null }, 'qualquer coisa', 1))
+})
+
+test('world generation carries genre choices through local detail without inventing mandatory missions', () => {
+  const { world } = sanitizeAtlas({ ...atlas, playStyle: 'directed' }, 'Sobrevivência livre como The Forest com crafting', 42)
+  assert.equal(world.environment.gameplay!.playStyle, 'sandbox')
+  world.locations[0].scene = scene(3)
+  assert.equal(composeWorldScene(world).scene.environment.gameplay!.quests.length, 0)
+  const request = detailRequest(world, world.locations[0], 200, 0)
+  assert.match(request, /Pedido original: Sobrevivência livre/)
+  assert.match(request, /quests=\[\]/)
+  assert.doesNotMatch(request, /precisa de ao menos uma missão/)
+  const puzzle = sanitizeAtlas({ ...atlas, playStyle: 'directed', hud: 'minimal' }, 'Um puzzle de alavancas', 43).world
+  puzzle.locations[0].scene = scene(3)
+  puzzle.locations[0].scene.environment.objective = { type: 'reachGoal', title: 'Saída', timeLimit: 0 }
+  const composed = composeWorldScene(puzzle).scene
+  assert.equal(composed.environment.gameplay!.hud, 'minimal')
+  assert.equal(composed.environment.gameplay!.quests.length, 0)
+  assert.equal(composed.environment.objective!.type, 'reachGoal')
 })
 
 test('locations are placed on dry ground by their terrain rule, spaced and deterministic', () => {

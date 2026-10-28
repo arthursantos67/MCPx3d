@@ -11,7 +11,7 @@ export const GROUND_SAMPLES = 257
 /** Grass share of each ground layer (blades grow on meadows and forest floors, sparsely on dry ground). */
 const GRASS: Partial<Record<typeof GROUND_LAYERS[number], number>> = { grass: 1, forest: 0.55, taiga: 0.35, dry: 0.45, mud: 0.3 }
 const TINT: Record<typeof GROUND_LAYERS[number], [number, number, number]> = {
-  grass: [0.36, 0.49, 0.26], forest: [0.25, 0.35, 0.18], sand: [0.84, 0.77, 0.6], dry: [0.66, 0.58, 0.4], mud: [0.31, 0.29, 0.2], snow: [0.93, 0.95, 0.96], rock: [0.48, 0.44, 0.4], taiga: [0.3, 0.37, 0.24],
+  grass: [0.36, 0.49, 0.26], forest: [0.25, 0.35, 0.18], sand: [0.84, 0.77, 0.6], dry: [0.46, 0.51, 0.27], mud: [0.31, 0.36, 0.2], snow: [0.93, 0.95, 0.96], rock: [0.48, 0.44, 0.4], taiga: [0.3, 0.37, 0.24],
 }
 
 export interface GroundWindow { center: [number, number]; data: Uint8Array; tint: Uint8Array; range: [number, number] }
@@ -44,8 +44,8 @@ export function groundWindow(heightAt: (x: number, z: number) => number, macro: 
     const at = (a: number, c: number) => heights[Math.min(n - 1, Math.max(0, c)) * n + Math.min(n - 1, Math.max(0, a))]
     const slope = Math.hypot(at(i + 1, j) - at(i - 1, j), at(i, j + 1) - at(i, j - 1)) / (2 * step)
     grass[k] = cover[k] ? density / (sum || 1) * (1 - Math.min(1, Math.max(0, (slope - 0.45) / 0.25))) : 0
-    const color = new THREE.Color().setRGB(r / (sum || 1), g / (sum || 1), b / (sum || 1), THREE.LinearSRGBColorSpace).convertLinearToSRGB()
-    tint[k * 4] = Math.round(color.r * 255); tint[k * 4 + 1] = Math.round(color.g * 255); tint[k * 4 + 2] = Math.round(color.b * 255); tint[k * 4 + 3] = 255
+    // Palette entries already are sRGB values; the sRGB texture performs decoding on the GPU.
+    tint[k * 4] = Math.round(r / (sum || 1) * 255); tint[k * 4 + 1] = Math.round(g / (sum || 1) * 255); tint[k * 4 + 2] = Math.round(b / (sum || 1) * 255); tint[k * 4 + 3] = 255
   }
   if (high - low < 0.01) high = low + 0.01
   const data = new Uint8Array(n * n * 4)

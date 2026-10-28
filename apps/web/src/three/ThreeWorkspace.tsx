@@ -34,6 +34,7 @@ const WORLD_FLAG = 'modeler:three-world'
 import type { ThreeWorldDocument } from './world/worldDocument.ts'
 import { createClimateWorld, createSyntheticWorld } from './world/worldExamples.ts'
 import { composeWorldScene } from './world/worldScene.ts'
+import { upgradeAurora } from './world/worldExamples.ts'
 import { parseProject } from './world/worldDocument.ts'
 import { continueWorld, editWorld, generateWorld, type WorldGenerationDeps, type WorldGenerationEvent } from './world/worldGeneration.ts'
 import { createWorldWorkers } from './world/workerPool.ts'
@@ -295,10 +296,20 @@ export default function ThreeWorkspace({ active, provider, ready, onBusyChange, 
     void loadWorld().then((saved) => {
       if (!live || version !== worldRestoreVersion.current) return
       if (!saved || saved.world.name !== flag) throw new Error('O terreno salvo não foi encontrado. Abra o mundo pelo menu Projeto ou importe seu arquivo.')
-      const restored = { past: [], present: initial.restored && initial.document.name === saved.world.name ? structuredClone(initial.document) : composeWorldScene(saved.world).scene, future: [] }
+      const upgraded = upgradeAurora(saved.world), restoredWorld = upgraded ?? saved.world
+      let present = initial.restored && initial.document.name === saved.world.name ? structuredClone(initial.document) : composeWorldScene(restoredWorld).scene
+      if (upgraded) {
+        const composed = composeWorldScene(upgraded).scene, oldIds = new Set(present.nodes.map(node => node.id)), oldLocations = new Set(saved.world.locations.map(location => location.id))
+        present.environment = { ...present.environment, gameplay: composed.environment.gameplay, objective: composed.environment.objective, player: { ...present.environment.player!, weapon: 'none' }, dayCycle: composed.environment.dayCycle }
+        for (const node of present.nodes) if (['lirio/mara', 'ruinas/nucleo', 'posto/acionador'].includes(node.id)) { const replacement = composed.nodes.find(entry => entry.id === node.id); if (replacement) { node.interaction = replacement.interaction; if (node.id !== 'lirio/mara') node.name = replacement.name } }
+        present.nodes.push(...composed.nodes.filter(node => !oldIds.has(node.id) && !oldLocations.has(node.id.startsWith('local:') ? node.id.slice(6) : node.id.split('/')[0])))
+        present = validateScene(present)
+        void saveWorld(upgraded).catch((cause: unknown) => setStorageError(`Atualização do mundo não salva: ${String(cause)}`))
+      }
+      const restored = { past: [], present, future: [] }
       historyRef.current = restored
       lastCommitted.current = restored.present
-      setWorld(saved.world)
+      setWorld(restoredWorld)
       setHistory(restored)
     }).catch((cause: unknown) => {
       if (!live || version !== worldRestoreVersion.current) return

@@ -1,7 +1,7 @@
 import type { WeaponKind } from './sceneCombat.ts'
 import type { PowerKind } from './sceneDocument.ts'
 import type { InputDevice } from './sceneGamepad.ts'
-import type { CraftRecipe } from './sceneGameplay.ts'
+import type { CraftRecipe, GameplayItem } from './sceneGameplay.ts'
 
 /**
  * HUD contract between the play loop (ThreeViewport) and ThreeHud.
@@ -12,7 +12,7 @@ export type HudPhase = 'title' | 'playing' | 'paused' | 'won' | 'lost'
 export type MarkerKind = 'objective' | 'enemy' | 'npc' | 'item' | 'goal' | 'checkpoint'
 export type DamageKind = 'dealt' | 'taken' | 'crit' | 'heal'
 export type AnchorKind = 'enemy' | 'npc' | 'boss'
-export type HudIconName = 'fist' | 'sword' | 'blaster' | 'bow' | 'staff' | 'heart' | 'bolt' | 'shield' | 'speed' | 'jump' | 'strength' | 'key' | 'coin' | 'gem' | 'potion' | 'scroll'
+export type HudIconName = 'fist' | 'sword' | 'axe' | 'blaster' | 'bow' | 'staff' | 'heart' | 'bolt' | 'shield' | 'speed' | 'jump' | 'strength' | 'key' | 'coin' | 'gem' | 'potion' | 'scroll'
   | 'food' | 'herb' | 'relic' | 'gear' | 'bag' | 'star' | 'clock' | 'skull' | 'target' | 'check' | 'pause' | 'exit' | 'settings' | 'volume' | 'mute' | 'eye' | 'wing'
   | 'flag' | 'banner' | 'speech' | 'sparkle' | 'lock' | 'arrow' | 'diamond' | 'restart' | 'play' | 'trophy' | 'controls'
 
@@ -42,6 +42,13 @@ export interface HudModel {
   time: number; limit: number; clock: string | null
   weapon: WeaponKind; weaponLabel: string
   items: { name: string; count: number }[]
+  quickbar?: { slots: { item: string | null; name: string; count: number; icon: HudIconName }[]; selected: number }
+  itemDefinitions?: GameplayItem[]
+  playStyle?: 'directed' | 'sandbox'
+  hudStyle?: 'full' | 'minimal'
+  discoveries?: number
+  placement?: { name: string; valid: boolean; reason: string }
+  storage?: { name: string; items: { name: string; count: number }[] }
   recipes?: (CraftRecipe & { available: boolean; missing: string })[]
   questSteps?: { label: string; value: number; count: number }[]
   swimming?: boolean
@@ -219,7 +226,7 @@ export function screenFromNdc(x: number, y: number, z: number, width: number, he
   return { x: (x + 1) / 2 * width, y: (1 - y) / 2 * height }
 }
 
-export const weaponIcon: Record<WeaponKind, HudIconName> = { none: 'fist', sword: 'sword', blaster: 'blaster', bow: 'bow', staff: 'staff' }
+export const weaponIcon: Record<WeaponKind, HudIconName> = { none: 'fist', sword: 'sword', axe: 'axe', blaster: 'blaster', bow: 'bow', staff: 'staff' }
 export const powerIcon: Record<PowerKind, HudIconName> = { speed: 'speed', jump: 'jump', shield: 'shield', strength: 'strength' }
 export const markerIcon: Record<MarkerKind, HudIconName> = { objective: 'diamond', goal: 'flag', enemy: 'skull', npc: 'speech', item: 'sparkle', checkpoint: 'banner' }
 const iconWords: [RegExp, HudIconName][] = [
@@ -235,7 +242,7 @@ export function itemIcon(name: string): HudIconName {
   return iconWords.find(([pattern]) => pattern.test(text))?.[1] ?? 'bag'
 }
 export const isHudIcon = (name: string): name is HudIconName => hudIconNames.has(name as HudIconName)
-export const hudIconNames = new Set<HudIconName>(['fist', 'sword', 'blaster', 'bow', 'staff', 'heart', 'bolt', 'shield', 'speed', 'jump', 'strength', 'key', 'coin', 'gem', 'potion', 'scroll',
+export const hudIconNames = new Set<HudIconName>(['fist', 'sword', 'axe', 'blaster', 'bow', 'staff', 'heart', 'bolt', 'shield', 'speed', 'jump', 'strength', 'key', 'coin', 'gem', 'potion', 'scroll',
   'food', 'herb', 'relic', 'gear', 'bag', 'star', 'clock', 'skull', 'target', 'check', 'pause', 'exit', 'settings', 'volume', 'mute', 'eye', 'wing', 'flag', 'banner', 'speech', 'sparkle',
   'lock', 'arrow', 'diamond', 'restart', 'play', 'trophy', 'controls'])
 

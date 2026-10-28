@@ -7,6 +7,7 @@ import { advanceRuntime, checkOutcome, createRuntime, damageEnemy, triggerIntera
 import { restoreRuntime, snapshotRuntime } from '../../src/three/sceneProgress.ts'
 import { buildStaticCollider, emptyInput, stepPlayer, type PlayerState } from '../../src/three/scenePlayer.ts'
 import { createClimateWorld, createSyntheticWorld } from '../../src/three/world/worldExamples.ts'
+import { adventureLocation, campaignGameplay } from '../../src/three/world/worldAdventure.ts'
 import { composeWorldScene } from '../../src/three/world/worldScene.ts'
 import { createPlantInteraction, filterPlants } from '../../src/three/world/worldPlantInteraction.ts'
 import { buildMacro, waterHeightAt, waterMesh } from '../../src/three/world/worldMacro.ts'
@@ -22,8 +23,14 @@ import { findWorldSpawn } from '../../src/three/world/worldSpawn.ts'
 import { regionAt } from '../../src/three/world/worldRegions.ts'
 import { createTerrainCollider } from '../../src/three/world/terrainCollider.ts'
 
-test('Aurora has a complete harvest, craft, combat and beacon campaign; progress survives a reload', () => {
-  const { scene, omitted } = composeWorldScene(createClimateWorld())
+function campaignWorld() {
+  const world = createClimateWorld()
+  world.locations = world.locations.slice(0, 3).map((location, i) => ({ ...location, scene: adventureLocation((['camp', 'ruins', 'beacon'] as const)[i]) }))
+  world.environment.gameplay = campaignGameplay(); world.environment.objective = { type: 'quests', title: 'Resgate', timeLimit: 0 }; world.environment.player!.weapon = 'sword'
+  return world
+}
+test('directed adventures retain the complete harvest, craft, combat and beacon campaign across reloads', () => {
+  const { scene, omitted } = composeWorldScene(campaignWorld())
   assert.deepEqual(omitted, [])
   assert.ok(scene.nodes.length < 2000)
   const runtime = createRuntime(scene), before = JSON.stringify(scene)
@@ -141,7 +148,7 @@ test('the synthetic world starts on dry walkable ground after lakes exist and wa
 })
 
 test('quest targets and ingredients are validated; quest time limits still apply', () => {
-  const doc = composeWorldScene(createClimateWorld()).scene
+  const doc = composeWorldScene(campaignWorld()).scene
   const broken = structuredClone(doc)
   broken.environment.gameplay!.quests[0].giverId = 'missing'
   assert.throws(() => validateScene(broken), /diálogo inexistente/)
@@ -200,7 +207,7 @@ test('water queries use the rendered triangles and never invent an inland surfac
 
 test('Aurora settlements have flat support and their connecting roads are dry and walkable', () => {
   const world = createClimateWorld(), layout = { sites: world.locations.map(l => ({ x: l.position[0], z: l.position[1], radius: l.footprint })), roads: world.routes.map(r => ({ from: world.locations.findIndex(l => l.id === r.from), to: world.locations.findIndex(l => l.id === r.to), width: r.width })) }
-  const macro = buildWorldMacro(world, layout), source = createHeightSource(world, macro), mesh = waterMesh(macro)
+  const macro = buildWorldMacro(world, layout), source = createHeightSource(world, macro), mesh = waterMesh(macro, source.heightAt)
   runWorldJob({ type: 'install', world, fields: macro })
   const tileJob = { type: 'tile' as const, world, origin: [-2048, -2048] as [number, number], level: 0, ix: 29, iz: 26 }
   const tile = runWorldJob(tileJob).result as { heights: Float32Array }
@@ -209,7 +216,7 @@ test('Aurora settlements have flat support and their connecting roads are dry an
     const [x, z] = location.position, level = macro.siteLevels[i]
     for (const [dx, dz] of [[0, 0], [5, 5], [-12, 8]]) {
       assert.ok(Math.abs(source.heightAt(x + dx, z + dz) - level) < 0.001)
-      const water = waterHeightAt(mesh.levels, macro, x + dx, z + dz)
+      const water = waterHeightAt(mesh.levels, macro, x + dx, z + dz, mesh.triangles, mesh.depths)
       assert.ok(water === null || water < level, 'settlement stays above water')
     }
   })
@@ -220,7 +227,7 @@ test('Aurora settlements have flat support and their connecting roads are dry an
     for (let d = 1; d <= distance; d++) {
       const x = a[0] + (b[0] - a[0]) * d / distance, z = a[1] + (b[1] - a[1]) * d / distance, height = source.heightAt(x, z)
       assert.ok(Math.abs(height - previous) < 0.55, `road grade ${Math.abs(height - previous)} at ${x},${z}`)
-      const water = waterHeightAt(mesh.levels, macro, x, z)
+      const water = waterHeightAt(mesh.levels, macro, x, z, mesh.triangles, mesh.depths)
       assert.ok(water === null || water < height + 0.3, 'road is not submerged')
       previous = height
     }

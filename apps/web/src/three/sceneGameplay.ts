@@ -11,7 +11,9 @@ export type QuestStepKind = 'gather' | 'craft' | 'talk' | 'interact' | 'visit' |
 export interface QuestStep { kind: QuestStepKind; target: string; count: number; label: string }
 export interface SceneQuest { id: string; title: string; giverId: string | null; steps: QuestStep[]; rewards: ItemStack[] }
 export interface CraftRecipe { id: string; name: string; inputs: ItemStack[]; output: ItemStack; healing: number }
-export interface SceneGameplay { quests: SceneQuest[]; recipes: CraftRecipe[]; startingItems: ItemStack[]; naturalResources: boolean }
+export const placeableKinds = ['campfire', 'tent', 'chest', 'fence', 'torch'] as const
+export interface GameplayItem { name: string; description: string; equipment?: 'none' | 'sword' | 'axe' | 'blaster' | 'bow' | 'staff'; placeable?: typeof placeableKinds[number]; healing?: number; harvest?: number }
+export interface SceneGameplay { quests: SceneQuest[]; recipes: CraftRecipe[]; startingItems: ItemStack[]; naturalResources: boolean; playStyle?: 'directed' | 'sandbox'; hud?: 'full' | 'minimal'; items?: GameplayItem[] }
 export function expandRecipeSources(spec: SceneGameplay, available: Set<string>): void {
   let changed = true
   while (changed) {
@@ -57,7 +59,20 @@ export function validateGameplay(value: unknown): SceneGameplay | undefined {
   })
   if (new Set(quests.map(q => q.id)).size !== quests.length || new Set(recipes.map(r => r.id)).size !== recipes.length) throw new Error('IDs de missões e receitas precisam ser únicos.')
   if (data.naturalResources != null && typeof data.naturalResources !== 'boolean') throw new Error('Recursos naturais: booleano obrigatório.')
-  return { quests, recipes, startingItems: list(data.startingItems ?? [], 24).map(stack), naturalResources: data.naturalResources === true }
+  const items = list(data.items ?? [], 64).map((entry): GameplayItem => {
+    const item = object(entry)
+    if (item.equipment != null && !['none', 'sword', 'axe', 'blaster', 'bow', 'staff'].includes(item.equipment as string)) throw new Error('Equipamento de item desconhecido.')
+    if (item.placeable != null && !placeableKinds.includes(item.placeable as typeof placeableKinds[number])) throw new Error('Construção de item desconhecida.')
+    if (item.equipment != null && item.placeable != null) throw new Error('Um item não pode ser arma e construção ao mesmo tempo.')
+    return { name: label(item.name, 40), description: typeof item.description === 'string' ? item.description.slice(0, 300) : '',
+      ...(item.equipment == null ? {} : { equipment: item.equipment as GameplayItem['equipment'] }), ...(item.placeable == null ? {} : { placeable: item.placeable as GameplayItem['placeable'] }),
+      ...(item.healing == null ? {} : { healing: count(item.healing, 0) }), ...(item.harvest == null ? {} : { harvest: count(item.harvest) }) }
+  })
+  if (new Set(items.map(item => itemKey(item.name))).size !== items.length) throw new Error('Nomes de itens devem ser únicos.')
+  if (data.playStyle != null && !['directed', 'sandbox'].includes(data.playStyle as string)) throw new Error('Estilo de jogo desconhecido.')
+  if (data.hud != null && !['full', 'minimal'].includes(data.hud as string)) throw new Error('Interface de jogo desconhecida.')
+  return { quests, recipes, startingItems: list(data.startingItems ?? [], 24).map(stack), naturalResources: data.naturalResources === true,
+    ...(data.playStyle == null ? {} : { playStyle: data.playStyle as SceneGameplay['playStyle'] }), ...(data.hud == null ? {} : { hud: data.hud as SceneGameplay['hud'] }), ...(items.length ? { items } : {}) }
 }
 export const createGameplayProgress = (): GameplayProgress => ({ accepted: new Set(), completed: new Set(), talked: new Set(), interacted: new Set(), visited: new Set(), destroyed: new Set(), gathered: new Map(), crafted: new Map(), resourceHealth: new Map() })
 export const itemCount = (items: Map<string, number>, name: string) => [...items].reduce((sum, [key, amount]) => sum + (itemKey(key) === itemKey(name) ? amount : 0), 0)

@@ -26,6 +26,7 @@ export interface ThreeHudProps {
   /** Shows the pause button in the corner when provided. */
   onPause?(): void
   onInventory?(): void
+  onSlot?(slot: number): void
 }
 /** Overlay handle plus `skipTyping()`: true when it completed a line still being typed, so the caller can swallow that confirm press. */
 export interface ThreeHudHandle extends HudOverlayHandle { skipTyping(): boolean }
@@ -167,19 +168,13 @@ const Vitals = memo(function Vitals({ health, maxHealth, stamina, maxStamina, ef
   </div>
 }, same)
 
-const Hotbar = memo(function Hotbar({ weapon, weaponLabel, items, device }: Pick<HudModel, 'weapon' | 'weaponLabel' | 'items' | 'device'>) {
-  const { slots, overflow } = hotbarItems(items)
-  return <div className="forma-hotbar">
-    <div className="forma-slot forma-slot--weapon" aria-label={`Arma: ${weaponLabel}`}>
-      <span className="forma-slot__key"><InputGlyph glyph={glyph('attack', device)} /></span>
-      <HudIcon name={weaponIcon[weapon]} /><span className="forma-slot__name">{weaponLabel}</span>
-    </div>
-    {slots.length > 0 && <ul className="forma-hotbar__items" aria-label="Inventário">
-      {slots.map((slot) => <li key={slot.name} className="forma-slot" title={slot.name}>
-        <HudIcon name={slot.icon} />{slot.count > 1 && <b className="forma-slot__count">×{slot.count}</b>}<span className="forma-slot__name">{slot.name}</span>
-      </li>)}
-      {overflow > 0 && <li className="forma-slot forma-slot--more" title={items.slice(-overflow).map((item) => item.name).join(', ')}>+{overflow}</li>}
-    </ul>}
+const Hotbar = memo(function Hotbar({ weapon, weaponLabel, items, quickbar, onSlot }: Pick<HudModel, 'weapon' | 'weaponLabel' | 'items' | 'quickbar'> & { onSlot?: (slot: number) => void }) {
+  const fallback = [{ item: null, name: 'Mãos vazias', count: 0, icon: 'fist' as const }, ...(weapon === 'none' ? [] : [{ item: '@weapon', name: weaponLabel, count: 1, icon: weaponIcon[weapon] }]), ...hotbarItems(items).slots.map(slot => ({ ...slot, item: slot.name }))]
+  const slots = quickbar?.slots ?? Array.from({ length: 5 }, (_, i) => fallback[i] ?? { item: null, name: 'Vazio', count: 0, icon: 'bag' as const })
+  return <div className="forma-hotbar" role="toolbar" aria-label="Barra de atalhos · scroll ou 1 a 5">
+    {slots.map((slot, i) => <button type="button" key={i} className={`forma-slot${i === (quickbar?.selected ?? (weapon === 'none' ? 0 : 1)) ? ' forma-slot--weapon' : ''}`} aria-label={`Slot ${i + 1}: ${slot.name}`} aria-pressed={i === (quickbar?.selected ?? 0)} title={`${slot.name} · ${i + 1}`} onClick={() => onSlot?.(i)}>
+      <span className="forma-slot__key">{i + 1}</span>{(i === 0 || slot.item) && <HudIcon name={slot.icon} />}{slot.count > 1 && <b className="forma-slot__count">×{slot.count}</b>}<span className="forma-slot__name">{slot.name}</span>
+    </button>)}
   </div>
 }, same)
 
@@ -399,7 +394,7 @@ const removeAfter = (node: HTMLElement, ms: number) => {
 }
 
 /** Game-mode HUD. React renders the model; per-frame plates, damage numbers, hit markers, pickups and hurt arcs go through the `overlay` handle. */
-export default function ThreeHud({ model, toasts, overlay, settings, presentation = false, onResume, onRestart, onExit, onDismissOutcome, onCaptureMouse, onDialogueOption, onSettings, onPause, onInventory }: ThreeHudProps) {
+export default function ThreeHud({ model, toasts, overlay, settings, presentation = false, onResume, onRestart, onExit, onDismissOutcome, onCaptureMouse, onDialogueOption, onSettings, onPause, onInventory, onSlot }: ThreeHudProps) {
   const prefix = `forma-hud-${useId().replace(/[^a-zA-Z0-9]/g, '')}`
   const ui = useRef<HTMLDivElement>(null), plates = useRef<HTMLDivElement>(null), numbers = useRef<HTMLDivElement>(null), marker = useRef<HTMLDivElement>(null)
   const arcs = useRef<HTMLDivElement>(null), pickups = useRef<HTMLDivElement>(null)
@@ -523,24 +518,24 @@ export default function ThreeHud({ model, toasts, overlay, settings, presentatio
 
       <div className="forma-hud__row forma-hud__row--top">
         <div className="forma-hud__cell">
-          <Tracker objective={model.objective} done={model.objectiveDone} collected={model.collected} total={model.total} defeated={model.defeated} enemyTotal={model.enemyTotal}
-            tracker={model.tracker} heading={model.compass.heading} omitted={model.omitted} steps={model.questSteps} />
+          {model.hudStyle !== 'minimal' && (model.playStyle === 'sandbox' ? <section className="forma-tracker forma-exploration" aria-label="Exploração"><header className="forma-kicker"><HudIcon name="wing" />Sua jornada</header><p>Explore, experimente, construa.</p><small>{model.discoveries ?? 0} locais descobertos · sem destino obrigatório</small></section> : <Tracker objective={model.objective} done={model.objectiveDone} collected={model.collected} total={model.total} defeated={model.defeated} enemyTotal={model.enemyTotal}
+            tracker={model.tracker} heading={model.compass.heading} omitted={model.omitted} steps={model.questSteps} />)}
         </div>
         <div className="forma-hud__cell forma-hud__cell--center">
-          <Compass heading={model.compass.heading} markers={model.compass.markers} />
+          {model.hudStyle !== 'minimal' && <Compass heading={model.compass.heading} markers={model.compass.markers} />}
           {model.boss && <BossBar name={model.boss.name} health={model.boss.health} max={model.boss.max} />}
           <ul className="forma-toasts" role="status">{toasts.map((item) => <li key={item.id}>{item.text}</li>)}</ul>
         </div>
         <div className="forma-hud__cell forma-hud__cell--end">
           <div className="forma-info">
-            <span className="forma-pill forma-pill--score" aria-label="Pontuação"><HudIcon name="star" />{formatScore(model.score)}</span>
-            <span className="forma-pill" aria-label="Tempo de jogo" data-urgent={timer.urgent || undefined}><HudIcon name="clock" />{timer.text}{timer.countdown && <small>restantes</small>}</span>
+            {model.hudStyle !== 'minimal' && model.playStyle !== 'sandbox' && <span className="forma-pill forma-pill--score" aria-label="Pontuação"><HudIcon name="star" />{formatScore(model.score)}</span>}
+            {(model.hudStyle !== 'minimal' || model.limit > 0) && model.playStyle !== 'sandbox' && <span className="forma-pill" aria-label="Tempo de jogo" data-urgent={timer.urgent || undefined}><HudIcon name="clock" />{timer.text}{timer.countdown && <small>restantes</small>}</span>}
             {model.clock && <span className="forma-pill" aria-label="Hora do dia">{model.clock}</span>}
           </div>
           <div className="forma-info forma-info--meta">
             <span className="forma-pill forma-pill--quiet">{model.muted && <HudIcon name="mute" />}<HudIcon name={model.fly ? 'wing' : 'eye'} />{view}</span>
             {showFps && <span className="forma-pill forma-pill--quiet" aria-label="Quadros por segundo">{model.fps} FPS</span>}
-            {playing && onInventory && <button type="button" className="forma-corner-button" onClick={onInventory}><HudIcon name="bag" />Inventário · B</button>}
+            {playing && onInventory && (model.hudStyle !== 'minimal' || !!model.items.length || !!model.recipes?.length) && <button type="button" className="forma-corner-button" onClick={onInventory}><HudIcon name="bag" />Inventário · B</button>}
             {playing && onPause && <button type="button" className="forma-corner-button" aria-label="Pausar" title="Pausar" onClick={onPause}><HudIcon name="pause" /></button>}
             {playing && <button type="button" className="forma-corner-button forma-corner-button--exit" onClick={onExit}><HudIcon name="exit" />Sair do jogo</button>}
           </div>
@@ -555,13 +550,14 @@ export default function ThreeHud({ model, toasts, overlay, settings, presentatio
 
       <div className="forma-hud__row forma-hud__row--bottom">
         <div className="forma-hud__cell">
-          <Vitals health={model.health} maxHealth={model.maxHealth} stamina={model.stamina} maxStamina={model.maxStamina} effects={model.effects} />
+          {(model.hudStyle !== 'minimal' || model.health < model.maxHealth || model.effects.length > 0) && <Vitals health={model.health} maxHealth={model.maxHealth} stamina={model.stamina} maxStamina={model.maxStamina} effects={model.effects} />}
           {model.oxygen !== undefined && model.oxygen < 100 && <div className="forma-oxygen" role="meter" aria-label="Fôlego" aria-valuenow={model.oxygen} aria-valuemin={0} aria-valuemax={100}>Fôlego {model.oxygen}%<span style={{ width: `${model.oxygen}%` }} /></div>}
         </div>
         <div className="forma-hud__cell forma-hud__cell--center">
           {model.dialogue && <Dialogue dialogue={model.dialogue} device={model.device} onOption={onDialogueOption} register={register} />}
           {subtitle && <p className="forma-subtitle" aria-live="polite"><b>{subtitle.speaker}</b>{subtitle.text}</p>}
-          {!model.dialogue && <Hotbar weapon={model.weapon} weaponLabel={model.weaponLabel} items={model.items} device={model.device} />}
+          {model.hudStyle !== 'minimal' && <Hotbar weapon={model.weapon} weaponLabel={model.weaponLabel} items={model.items} quickbar={model.quickbar} onSlot={onSlot} />}
+          {model.placement && <p className="forma-placement" data-valid={model.placement.valid}>{model.placement.name} · {model.placement.reason}</p>}
         </div>
         <div className="forma-hud__cell forma-hud__cell--end">
           {playing && !model.pointerLocked && model.device === 'keyboard' && <button type="button" className="forma-capture" onClick={onCaptureMouse}>

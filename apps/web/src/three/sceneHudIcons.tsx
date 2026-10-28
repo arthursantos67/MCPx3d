@@ -15,6 +15,7 @@ const S = { fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap:
 
 /** Pictograms on a 24-unit grid: filled silhouettes for game objects, strokes for interface verbs. */
 const shapes: Record<HudIconName, ReactNode> = {
+  axe: <><path {...S} strokeWidth={3} d="M6 21L17 3" /><path fill="currentColor" d="M13 5l5-2 5 6-4 5-6-3 2-3z" /></>,
   fist: <path {...S} d="M7 11V7.5a1.5 1.5 0 0 1 3 0V10m0-.5V6a1.5 1.5 0 0 1 3 0v3.5m0 0V6.5a1.5 1.5 0 0 1 3 0V10m0 .5V9a1.5 1.5 0 0 1 3 0v4a7 7 0 0 1-7 7h-.5A6.5 6.5 0 0 1 5 13.5V12a1.5 1.5 0 0 1 3 0" />,
   sword: <><path fill="currentColor" d="M21 3l-1.3 4.7-9.1 9.1-3.4-3.4 9.1-9.1z" /><path {...S} strokeWidth={2.2} d="M5 11.6l7.4 7.4M7.6 16.4L3.6 20.4" /><circle cx="3.4" cy="20.6" r="1.4" fill="currentColor" /></>,
   blaster: <><path fill="currentColor" d="M2.5 8.5h13l1.8-1.8H21v5.4h-3l-1 1h-4.6L11 19.5H6.2L7.8 13H2.5z" /><path fill={dark} d="M10 9.8h4.5v1.6H10z" /></>,

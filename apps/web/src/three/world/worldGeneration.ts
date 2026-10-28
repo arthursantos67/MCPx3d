@@ -4,6 +4,7 @@ import { DEFAULT_CLIMATE, DEFAULT_WORLD_BUDGETS, locationKinds, routeKinds, vali
 import { hash2 } from './worldNoise.ts'
 import { BIOMES, type WorldMacro } from './worldMacro.ts'
 import { GAMEPLAY_PROMPT } from '../sceneGameplaySchema.ts'
+import { sceneIntent } from '../sceneDirection.ts'
 
 /**
  * AI world generation in two scales. The model writes a compact atlas (regions by map area, locations by terrain
@@ -22,9 +23,10 @@ const NODES_BY_SIZE = { small: 250, medium: 450, large: 600 } as const
 const string = (max: number) => ({ type: 'string', maxLength: max })
 const enumOf = (values: readonly string[]) => ({ type: 'string', enum: [...values] })
 export const atlasSchema: JsonSchema = {
-  type: 'object', additionalProperties: false, required: ['name', 'premise', 'terrain', 'regions', 'locations', 'routes'],
+  type: 'object', additionalProperties: false, required: ['name', 'premise', 'playStyle', 'hud', 'terrain', 'regions', 'locations', 'routes'],
   properties: {
     name: string(120), premise: string(1200),
+    playStyle: enumOf(['directed', 'sandbox']), hud: enumOf(['full', 'minimal']),
     terrain: { type: 'object', additionalProperties: false, required: ['ruggedness', 'sea', 'erosion', 'temperature', 'humidity'], properties: {
       ruggedness: { type: 'number', minimum: 0, maximum: 1 }, sea: { type: 'boolean' }, erosion: { type: 'number', minimum: 0, maximum: 1 },
       temperature: { type: 'number', minimum: -20, maximum: 35 }, humidity: { type: 'number', minimum: 0, maximum: 1 } } },
@@ -39,7 +41,7 @@ export const atlasSchema: JsonSchema = {
 }
 
 export const ATLAS_PROMPT = `Você é a diretora de mundo do Forma. Devolva SOMENTE o JSON do atlas de um mundo de 4×4 km para exploração em primeira pessoa.
-Defina nas descrições dos locais uma aventura jogável: ponto inicial seguro com NPC útil, recursos/itens alcançáveis, tarefas ligadas à premissa, progressão e um desfecho. A primeira região deve ter atividades perto da chegada; não entregue apenas quilômetros de terreno. Descreva recursos extraíveis e receitas necessárias quando o gênero pedir fabricação; NPCs precisam de ações e missões reais, não só falas.
+Escolha playStyle directed ou sandbox e hud full ou minimal conforme o gênero. Exploração/sobrevivência livre usa sandbox: recursos com usos distintos, fabricação/construção, pistas e descobertas opcionais, sem missão ou chefe obrigatório. Jogos dirigidos têm desafios e conclusão quando pedidos; puzzles usam controles com efeitos e interface discreta. A primeira região precisa de atividades reais perto da chegada, sem quilômetros vazios. NPCs podem dar rumores e ter rotinas; missões só quando adequadas ao pedido.
 Regiões (até ${MAX_ATLAS_REGIONS}): cada uma ocupa uma área do mapa (north, south, east, west, center e diagonais), com bioma (o clima local segue o bioma), perigo 0–5, ambiência, música, clima e premissa curta.
 Locais (até ${MAX_ATLAS_LOCATIONS}): vilas, cidades, castelos, portos, acampamentos, masmorras, ruínas e marcos; diga a região, a regra de terreno onde devem ficar (coast, river, lake, hill, valley, plain, forest, mountain, any), o tamanho (small/medium/large) e uma descrição concreta do que contêm. Marque detail=true nos até ${MAX_DETAILED} locais mais importantes, que serão construídos em detalhe.
 Rotas: estradas (road) entre locais que fazem sentido ligar; trilhas (path) para lugares remotos.
@@ -66,6 +68,12 @@ const AREA_DIRECTION: Record<typeof AREAS[number], [number, number]> = {
  */
 export function sanitizeAtlas(value: unknown, request: string, seed: number, size: [number, number] = [4096, 4096]): SanitizedAtlas {
   const atlas = record(value), notes: string[] = [], terrain = record(atlas.terrain), half = size[0] / 2
+  const intent = sceneIntent(request), environment = worldEnvironment()
+  if (atlas.playStyle === 'sandbox' || atlas.playStyle === 'directed' || intent.sandbox || intent.puzzle) {
+    const playStyle = intent.sandbox ? 'sandbox' : intent.quest || intent.survival || intent.puzzle || intent.race || intent.platforms ? 'directed' : pick(atlas.playStyle, ['directed', 'sandbox'] as const, 'directed')
+    environment.gameplay = { playStyle, hud: pick(atlas.hud, ['full', 'minimal'] as const, intent.puzzle ? 'minimal' : 'full'), naturalResources: true, quests: [], recipes: [], startingItems: [], items: [] }
+    if (playStyle === 'sandbox') { environment.objective = { type: 'explore', title: '', timeLimit: 0 }; environment.player!.weapon = 'none' }
+  }
   const ids = new Set<string>(), unique = (base: string) => { let candidate = base, n = 2; while (ids.has(candidate)) candidate = `${base}-${n++}`.slice(0, 60); ids.add(candidate); return candidate }
   const rawRegions = Array.isArray(atlas.regions) ? atlas.regions : []
   if (rawRegions.length > MAX_ATLAS_REGIONS) notes.push(`Atlas com ${rawRegions.length} regiões; mantidas ${MAX_ATLAS_REGIONS}.`)
@@ -118,7 +126,7 @@ export function sanitizeAtlas(value: unknown, request: string, seed: number, siz
     terrain: { kind: 'climate', size, heightRange: [-60, 600 + Math.round(clamp(terrain.ruggedness, 0, 1, 0.5) * 500)], seaLevel: terrain.sea === false ? null : 0,
       ruggedness: clamp(terrain.ruggedness, 0, 1, 0.5), erosion: clamp(terrain.erosion, 0, 1, 0.5), climate },
     regions, locations: locations.map((location) => ({ ...location, position: [Math.max(-half, Math.min(half, location.position[0])), Math.max(-half, Math.min(half, location.position[1]))] })), routes,
-    budgets: { ...DEFAULT_WORLD_BUDGETS }, environment: worldEnvironment(),
+    budgets: { ...DEFAULT_WORLD_BUDGETS }, environment,
     premise: label(atlas.premise, 1200, request.slice(0, 1200)),
     generation: { request: request.slice(0, 4000), pending: intents.filter((intent) => intent.detail).map((intent) => intent.id), failed: [] } })
   return { world, intents, notes }
@@ -183,11 +191,12 @@ export function detailRequest(world: ThreeWorldDocument, location: WorldLocation
   const region = world.regions.find((item) => item.id === location.regionId)
   const lights = world.budgets.shadowLightsPerRegion, sizeClass = location.footprint >= SIZES.large ? 'large' : location.footprint >= SIZES.medium ? 'medium' : 'small'
   const limit = Math.min(nodes, NODES_BY_SIZE[sizeClass]), concise = attempt ? ` Esta é a tentativa ${attempt + 1}: a anterior não terminou; entregue uma versão mais enxuta e completa.` : ''
-  return `${location.brief ?? location.name}. ${location.name} é um local do tipo ${location.kind} no mundo “${world.name}”${region ? `, região ${region.name} (perigo ${region.danger}${region.premise ? `; ${region.premise}` : ''})` : ''}.
+  return `Pedido original: ${world.generation?.request ?? world.premise ?? world.name}.
+${location.brief ?? location.name}. ${location.name} é um local do tipo ${location.kind} no mundo “${world.name}”${region ? `, região ${region.name} (perigo ${region.danger}${region.premise ? `; ${region.premise}` : ''})` : ''}.
 O chão já existe e está aplainado num círculo de raio ${Math.round(location.footprint)} m centrado na origem: não crie terreno, mar nem lagos; construa tudo dentro desse círculo, sobre y = 0.
 Orçamento: no máximo ${Math.round(limit * Math.pow(0.75, attempt))} objetos e ${lights} luzes com sombra.${concise}
 ${GAMEPLAY_PROMPT}
-Este local precisa de ao menos uma missão executável coerente com sua função, com referências apenas a nós deste local. Faça um pequeno ciclo completo (ação, progresso e recompensa), com recursos suficientes. A primeira tarefa deve ser acessível ao chegar ao local.`
+Estilo global: ${world.environment.gameplay?.playStyle ?? 'conforme o pedido'}, HUD ${world.environment.gameplay?.hud ?? 'adequado ao gênero'}. ${world.environment.gameplay?.playStyle === 'sandbox' ? 'Use gameplay.playStyle="sandbox", quests=[] e descobertas opcionais; não crie campanha obrigatória.' : 'Implemente a atividade adequada ao gênero; missões somente quando solicitadas.'} Ofereça ações reais acessíveis ao chegar e recursos suficientes. Referências por ID pertencem a este local; não substitua funcionamento por falas.`
 }
 
 /**

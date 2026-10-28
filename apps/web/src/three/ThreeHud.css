@@ -232,6 +232,13 @@
 .forma-slot--weapon .forma-slot__name { color: #ffe7ad; max-width: calc(110 * var(--u)); }
 .forma-slot__key { position: absolute; left: calc(-7 * var(--u)); top: calc(-8 * var(--u)); transform: scale(0.85); }
 .forma-slot--more { font: 700 var(--t-md)/1 var(--hud-display); color: var(--hud-ink-2); }
+.forma-hotbar > button { pointer-events: auto; cursor: pointer; color: var(--hud-ink); font: inherit; }
+.forma-hotbar > .forma-slot { width: calc(54 * var(--u)); height: calc(54 * var(--u)); }
+.forma-hotbar > .forma-slot[aria-pressed="true"] { outline: 2px solid #f4d47c; outline-offset: 3px; }
+.forma-hotbar .forma-slot__key { left: 4px; top: 3px; transform: none; font-size: 10px; }
+.forma-placement { padding: 8px 12px; border-radius: 8px; background: #101e23e8; color: #ffb5a0; font-size: 12px; }
+.forma-placement[data-valid="true"] { color: #a4ead0; }
+.forma-exploration small { color: var(--hud-ink-2); }
 .forma-slot:nth-child(1) { --c: #ffd36b; }
 .forma-hotbar__items .forma-slot > .forma-icon { color: #e7eef7; }
 

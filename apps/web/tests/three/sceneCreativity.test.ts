@@ -181,7 +181,7 @@ test('the builder system prompt documents the new catalogue, mechanics, audio an
   let system=''
   const provider={generateStructured:async(messages:{role:string;content:string}[])=>{system||=messages[0].content;throw new Error('parar')}} as unknown as LLMProvider
   await generateThreeScene(provider,'Uma caixa de madeira',new AbortController().signal).catch(()=>{})
-  for (const expected of ['DIREÇÃO CRIATIVA','pontos de interesse','weapon none|sword|blaster|bow|staff','avatar explorer|knight|wizard|astronaut|robot','villager, knight, wizard, astronaut',
+  for (const expected of ['DIREÇÃO CRIATIVA','pontos de interesse','weapon none|sword|axe|blaster|bow|staff','avatar explorer|knight|wizard|astronaut|robot','villager, knight, wizard, astronaut',
     'dragon','movingPlatform','jumpPad','powerOrb','requires','dialogue','survive','delay','flying','node.sound','weather none|rain','grade none|warm','music calm','castleWall','turret'])
     assert.ok(system.includes(expected),expected)
   assert.ok(!system.includes('disparos/projéteis'),'weapons are no longer described as missing')

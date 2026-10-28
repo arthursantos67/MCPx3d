@@ -335,10 +335,18 @@
 .three-world-map__player { position: absolute; width: 0; height: 0; border-left: 7px solid transparent; border-right: 7px solid transparent; border-bottom: 16px solid #f2d14b; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.7)); }
 .three-world-map__hint { margin-top: 10px; color: #f0ead8; font-size: 13px; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8); }
 .three-world-travel { position: absolute; inset: 0; z-index: 45; display: grid; place-items: center; background: #0b1013; color: #f0ead8; font-size: 18px; letter-spacing: 0.02em; transition: opacity 0.4s ease; }
+.three-inventory__filters { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0; }
+.three-inventory__filters button[aria-pressed="true"], .three-inventory__items button[aria-pressed="true"] { color: #f1ead5; background: #235448; border-color: #73cab0; }
+.three-inventory__items li { flex-wrap: wrap; }
+.three-inventory__items li > div { flex: 1 1 120px; }
+.three-inventory__items small { display: block; color: #b6c9c7; max-width: 280px; font-size: 11px; }
+.three-inventory select { color: #eef5ef; background: #1a3036; border: 1px solid #526d70; border-radius: 5px; padding: 6px; }
 @media (max-width: 640px) { .three-world-map__sheet { width: 92vw; } }
 .three-inventory__backdrop { position: absolute; inset: 0; z-index: 30; display: grid; place-items: center; background: #07121be0; padding: 24px; }
 .three-inventory { width: min(880px, 100%); max-height: 90%; overflow: auto; color: #eff5ed; background: #192d2c; border: 1px solid #8caa8b; border-radius: 16px; padding: 24px; box-shadow: 0 16px 80px #0008; }
 .three-inventory header { display: flex; align-items: center; justify-content: space-between; gap: 20px; border-bottom: 1px solid #ffffff24; padding-bottom: 16px; }
+.three-inventory header > div:last-child { display: flex; flex-wrap: wrap; gap: 8px; }
+.three-inventory :is(button, select):focus-visible { outline: 2px solid #f4d47c; outline-offset: 3px; }
 .three-inventory h2, .three-inventory h3 { color: #f0d899; margin: 6px 0 14px; }
 .three-inventory small, .three-inventory__hint { color: #b4c7b9; }
 .three-inventory strong { color: #eff5ed; }

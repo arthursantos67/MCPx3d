@@ -17,4 +17,12 @@ export function validateGameplaySources(environment: SceneEnvironment, nodes: Sc
     }
     for (const reward of quest.rewards) available.add(itemKey(reward.item))
   }
+  expandRecipeSources(spec, available)
+  for (const recipe of spec.recipes) if (recipe.inputs.some(input => !available.has(itemKey(input.item)))) throw new Error(`Receita “${recipe.name}”: ingredientes inacessíveis.`)
+  if (spec.playStyle === 'sandbox') for (const recipe of spec.recipes) {
+    const definition = spec.items?.find(item => itemKey(item.name) === itemKey(recipe.output.item))
+    const ingredient = spec.recipes.some(other => other.inputs.some(input => itemKey(input.item) === itemKey(recipe.output.item)))
+    const used = nodes.some(node => node.interaction?.requires && itemKey(node.interaction.requires) === itemKey(recipe.output.item))
+    if (!definition?.equipment && !definition?.placeable && !definition?.healing && !recipe.healing && !ingredient && !used) throw new Error(`Receita “${recipe.name}”: saída sem utilidade no jogo.`)
+  }
 }

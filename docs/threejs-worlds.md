@@ -4,6 +4,8 @@ Em andamento desde 23 de outubro de 2026. Objetivo e fases em [ROADMAP.md](../RO
 
 ## Medição
 
+Atualização de jogabilidade em 28/10: Aurora agora oferece exploração livre, cinco atalhos com mãos vazias, fabricação de equipamentos/construções, baús e três locais adicionais. Corrigidos margens/níveis de água, sombras apagadas pelo ciclo diário, atlas da vegetação e cor da grama. [Contrato, controles, verificações e limites](threejs-sandbox.md). As medições anteriores abaixo pertencem aos builds indicados e não certificam o novo estado.
+
 `node scripts/benchmark-three-fps.mjs` gera o build de produção, abre o Chrome do sistema com GPU real (ANGLE/Direct3D 11) e recusa renderizadores por software. Cada cenário abre o exemplo pelo menu, entra no modo jogo e segue uma rota fixa: um giro completo e depois os pontos de interesse da cena (interações, personagens, objetivo), na mesma ordem em toda execução. Mundos usam rotas próprias (a pé com corrida ou voo acompanhando o relevo a 36 m/s). O jogador não recebe dano durante a medição.
 
 A sonda só existe com `?bench=1` na URL (`apps/web/src/three/sceneBench.ts`). Ela registra, por quadro: intervalo entre quadros, tempo de CPU do quadro na thread principal, draw calls e triângulos somando todas as passadas, tempo de GPU por consultas `EXT_disjoint_timer_query_webgl2` quando disponíveis e, em mundos, tempo de seleção, de streaming e quadros com nível de detalhe ainda não carregado. Também estima a memória de GPU pelos bytes únicos de geometrias e texturas. Tarefas longas vêm do `PerformanceObserver`.

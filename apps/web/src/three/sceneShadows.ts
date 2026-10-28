@@ -36,7 +36,9 @@ export function createShadowScheduler(sources:ShadowSource[],casters:ShadowCaste
       for(const source of sources) if(active.has(source.id)&&!next.has(source.id)) release(source.light)
       for(const {id,light,lit} of candidates) {
         light.castShadow=true
-        if(!lit) { lightMatrices.delete(id); continue }
+        // A reserved shadow slot still enters the shader when its light is dimmed. Allocate its depth map once;
+        // sampling the renderer's ordinary empty texture as sampler2DShadow makes the entire draw invalid.
+        if(!lit) { if(!light.shadow.map) light.shadow.needsUpdate=true; lightMatrices.delete(id); continue }
         const moved=!lightMatrices.get(id)?.equals(light.matrixWorld),fresh=!active.has(id)
         const position=light.getWorldPosition(point)
         if(fresh || moved || changed.some(bounds=>bounds.distanceToPoint(position)<(light.distance||Infinity))) {light.shadow.needsUpdate=true;refreshed.push(id)}

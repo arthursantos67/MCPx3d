@@ -1,5 +1,7 @@
 # Jogabilidade de Aurora — 2026-10-28
 
+**Atualização:** a campanha descrita abaixo foi substituída no preset por [exploração livre com fabricação e construção](threejs-sandbox.md), conforme a nova direção do produto. As quatro missões permanecem como fixture de regressão das aventuras dirigidas; as medições desta página registram o build anterior.
+
 Aurora passa a ter uma aventura com início, progressão e vitória. Abra **Projeto → Terras de Aurora 4 km → Jogar**. O jogador começa no Posto do Lírio, próximo de Mara, dos recursos e da primeira missão. As estradas ligam o posto, as ruínas e o farol.
 
 ## Como jogar

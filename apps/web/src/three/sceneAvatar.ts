@@ -9,7 +9,7 @@ import type { WeaponKind } from './sceneCombat.ts'
 
 /** Invisible handle that closes the fist around the weapon's natural carrying axis (the weapon itself is runtime equipment). */
 const handles: Partial<Record<WeaponKind, { hand: 'L' | 'R'; rotation: [number, number, number] }>> = {
-  sword: { hand: 'R', rotation: [112, 0, 7] }, blaster: { hand: 'R', rotation: [90, 0, 0] }, staff: { hand: 'R', rotation: [6, 0, 6] }, bow: { hand: 'L', rotation: [4, 0, -6] },
+  sword: { hand: 'R', rotation: [112, 0, 7] }, axe: { hand: 'R', rotation: [112, 0, 7] }, blaster: { hand: 'R', rotation: [90, 0, 0] }, staff: { hand: 'R', rotation: [6, 0, 6] }, bow: { hand: 'L', rotation: [4, 0, -6] },
 }
 
 export function createAvatar(kind: AvatarKind, options: Pick<SkinOptions, 'quality' | 'shadows'>, weapon: WeaponKind = 'none') {

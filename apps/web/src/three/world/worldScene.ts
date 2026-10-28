@@ -1,6 +1,6 @@
 import { createEmptyScene, createNode, MAX_SCENE_NODES, validateScene, type SceneNode, type ThreeSceneDocument } from '../sceneDocument.ts'
 import type { ThreeWorldDocument } from './worldDocument.ts'
-import { remapGameplay, type SceneGameplay } from '../sceneGameplay.ts'
+import { itemKey, remapGameplay, type SceneGameplay } from '../sceneGameplay.ts'
 
 /** Prefix of the group that holds a location's nodes in the composed world scene. */
 export const LOCATION_GROUP = 'local:'
@@ -18,7 +18,7 @@ export function composeWorldScene(world: ThreeWorldDocument): { scene: ThreeScen
     Math.hypot(a.position[0] - origin[0], a.position[1] - origin[1]) - Math.hypot(b.position[0] - origin[0], b.position[1] - origin[1]) || (a.id < b.id ? -1 : 1))
   const nodes: SceneNode[] = [], omitted: string[] = []
   const gameplay: SceneGameplay = structuredClone(world.environment.gameplay ?? { naturalResources: true, quests: [], recipes: [], startingItems: [] })
-  const authoredQuests = gameplay.quests.length > 0
+  const authoredQuests = gameplay.quests.length > 0 || gameplay.playStyle === 'sandbox'
   for (const location of detailed) {
     const scene = location.scene!
     if (nodes.length + scene.nodes.length + 1 > MAX_SCENE_NODES) { omitted.push(location.id); continue }
@@ -28,9 +28,10 @@ export function composeWorldScene(world: ThreeWorldDocument): { scene: ThreeScen
       if (!authoredQuests) gameplay.quests.push(...part.quests)
       gameplay.recipes.push(...part.recipes)
       gameplay.startingItems.push(...part.startingItems)
+      for (const item of part.items ?? []) { gameplay.items ??= []; if (!gameplay.items.some(other => itemKey(other.name) === itemKey(item.name))) gameplay.items.push(item) }
       gameplay.naturalResources ||= part.naturalResources
     }
-    if (!authoredQuests && !scene.environment.gameplay?.quests.length && scene.nodes.length) {
+    if (!authoredQuests && !gameplay.playStyle && !scene.environment.gameplay?.quests.length && scene.nodes.length) {
       const steps = scene.nodes.filter(node => node.behavior?.type === 'enemy').map(node => ({ kind: 'defeat' as const, target: local(node.id), count: 1, label: `Derrote ${node.name}` }))
       const npc = scene.nodes.find(node => node.interaction?.action === 'dialogue')
       gameplay.quests.push({ id: `${location.id}/explorar`, title: `Ajude em ${location.name}`, giverId: null,
@@ -43,8 +44,9 @@ export function composeWorldScene(world: ThreeWorldDocument): { scene: ThreeScen
   }
   const timeline = Math.max(20, ...detailed.filter((location) => !omitted.includes(location.id)).map((location) => location.scene!.timeline.duration))
   gameplay.quests = gameplay.quests.slice(0, 16); gameplay.recipes = gameplay.recipes.slice(0, 24); gameplay.startingItems = gameplay.startingItems.slice(0, 24)
-  const armed = detailed.map(location => location.scene!.environment.player).find(player => player?.weapon && player.weapon !== 'none')
+  const armed = gameplay.playStyle !== 'sandbox' && detailed.map(location => location.scene!.environment.player).find(player => player?.weapon && player.weapon !== 'none')
+  const localObjective = gameplay.playStyle === 'directed' && (!world.environment.objective || world.environment.objective.type === 'explore') ? detailed.filter(location => !omitted.includes(location.id)).map(location => location.scene!.environment.objective).find(objective => objective && objective.type !== 'explore') : undefined
   const environment = { ...world.environment, ...(armed && (!world.environment.player?.weapon || world.environment.player.weapon === 'none') ? { player: { ...world.environment.player!, weapon: armed.weapon, avatar: armed.avatar } } : {}), ...(world.terrain.kind !== 'none' || gameplay.quests.length || world.environment.gameplay ? { gameplay,
-    objective: gameplay.quests.length ? { type: 'quests' as const, title: '', timeLimit: 0 } : world.environment.objective } : {}) }
+    objective: gameplay.quests.length ? { type: 'quests' as const, title: '', timeLimit: 0 } : localObjective || world.environment.objective } : {}) }
   return { scene: validateScene({ ...createEmptyScene(), name: world.name, nodes, timeline: { duration: Math.min(120, timeline) }, environment }), omitted }
 }

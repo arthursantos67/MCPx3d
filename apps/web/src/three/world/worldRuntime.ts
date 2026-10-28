@@ -105,7 +105,7 @@ export function createWorldRuntime(world: ThreeWorldDocument, pool: WorldPool, o
     sea.position.y = world.terrain.seaLevel!
     sea.receiveShadow = true
   }
-  let water: THREE.Mesh | null = null, waterLevels: Float32Array | null = null
+  let water: THREE.Mesh | null = null, waterLevels: Float32Array | null = null, waterDepths: Float32Array | undefined, waterTriangles: Uint8Array | undefined
   const waterSurface = (mesh: WaterMesh) => {
     if (!mesh.indices.length) return null
     const geometry = new THREE.BufferGeometry(), uv = new Float32Array(mesh.positions.length / 3 * 2)
@@ -226,7 +226,7 @@ export function createWorldRuntime(world: ThreeWorldDocument, pool: WorldPool, o
   const runtime: WorldRuntime = {
     object, collision, errors, stats,
     heightAt: (x, z) => source.heightAt(x, z),
-    waterAt: (x, z) => { const level = macro && waterLevels ? waterHeightAt(waterLevels, macro, x, z) : null; return level === null ? world.terrain.seaLevel : Math.max(level, world.terrain.seaLevel ?? -Infinity) },
+    waterAt: (x, z) => { const level = macro && waterLevels ? waterHeightAt(waterLevels, macro, x, z, waterTriangles, waterDepths) : null; return level === null ? world.terrain.seaLevel : Math.max(level, world.terrain.seaLevel ?? -Infinity) },
     resourceAt: (ray, range) => vegetation?.raycast(ray, range) ?? null,
     obstacles: (x, z) => vegetation?.obstacles(x, z) ?? [],
     removePlant(id) { removedPlants.add(id); vegetation?.removePlant(id) },
@@ -252,7 +252,7 @@ export function createWorldRuntime(world: ThreeWorldDocument, pool: WorldPool, o
       await pool.broadcast({ type: 'install', world: seed, fields: { delta: macro.delta, cell: macro.cell, points: macro.points, origin: macro.origin, biome: macro.biome, water: macro.water, river: macro.river, ground: macro.ground, clear: macro.clear, pads: macro.pads } })
       if (needsMacro(world)) source = createHeightSource(world, macro)
       spawn = focus?.clone() ?? await findWorldSpawn(world, source, (x, z) => {
-        const level = waterHeightAt(macroResult.mesh.levels, macro!, x, z)
+        const level = waterHeightAt(macroResult.mesh.levels, macro!, x, z, macroResult.mesh.triangles, macroResult.mesh.depths)
         return regionAt(world, macro, x, z).dry && (level === null || source.heightAt(x, z) > level + 0.5)
       })
       if (focus && world.environment.player?.mode !== 'fly') spawn.y = source.heightAt(spawn.x, spawn.z) + 0.05
@@ -270,6 +270,7 @@ export function createWorldRuntime(world: ThreeWorldDocument, pool: WorldPool, o
       terrain = createTerrainRenderer(stream, macro, options.anisotropy)
       water = waterSurface(macroResult.mesh)
       waterLevels = macroResult.mesh.levels
+      waterDepths = macroResult.mesh.depths; waterTriangles = macroResult.mesh.triangles
       if (options.vegetation) {
         // Only the species some biome of this world grows; each is built and baked in its own task.
         const present = new Set<Species>()

@@ -67,6 +67,11 @@ export function createEquipment(kind: WeaponKind): Equipment {
     const groove = material(new THREE.MeshPhysicalMaterial({ color: '#8b97a3', metalness: 0.95, roughness: 0.35 }))
     for (const side of [-1, 1]) add('Sulco da lâmina', new THREE.ShapeGeometry(fuller, 6).rotateX(Math.PI / 2).rotateZ(side > 0 ? 0 : Math.PI), groove, [0, side * 0.0058, 0.13])
     blade.set(new THREE.Vector3(0, 0, 0.12), new THREE.Vector3(0, 0, 0.11 + length))
+  } else if (kind === 'axe') {
+    add('Cabo de madeira', alongZ(new THREE.CylinderGeometry(0.022, 0.027, 0.7, 10)), wood, [0, 0, 0.2])
+    add('Cabeça de pedra', new THREE.DodecahedronGeometry(0.12, 0).scale(1.4, 0.4, 0.85), steel, [0.07, 0, 0.5])
+    for (let i = 0; i < 4; i++) add('Amarra de fibra', new THREE.TorusGeometry(0.035, 0.006, 5, 12), leather, [0, 0, 0.43 + i * 0.025])
+    blade.set(new THREE.Vector3(0, 0, 0.34), new THREE.Vector3(0.18, 0, 0.56))
   } else if (kind === 'blaster') {
     grip = PISTOL
     add('Cabo', new RoundedBoxGeometry(0.046, 0.15, 0.06, 3, 0.016), shell, [0, -0.02, -0.035], [-0.28, 0, 0])
@@ -151,12 +156,13 @@ export function aimEquipment(equipment: Equipment, target: THREE.Vector3): void 
 }
 
 export function poseFirstPersonEquipment(equipment: Equipment, animator: Animator): void {
-  const object = equipment.object, a = animator, sw = a.swing, ranged = !['none', 'sword'].includes(equipment.kind)
+  const object = equipment.object, a = animator, sw = a.swing, ranged = !['none', 'sword', 'axe'].includes(equipment.kind)
   const u = sw ? THREE.MathUtils.clamp((a.time - sw.a) / sw.s, 0, 1) : 0
   const envelope = sw ? Math.sin(Math.PI * Math.min(1, a.time / (sw.a + sw.s + sw.r))) : 0
   object.scale.setScalar(1)
   object.position.set(equipment.kind === 'bow' ? -0.2 : 0.25, -0.26 + envelope * 0.08, ranged ? -0.55 : -0.48)
   object.rotation.set(0, Math.PI, 0)
+  if (!sw && !ranged) { object.position.set(0.34, -0.46, -0.36); object.rotation.set(0.85, Math.PI, -0.15) }
   if (equipment.kind === 'staff') { object.position.set(0.3, -0.62, -0.62); object.rotation.set(-0.35, Math.PI, 0) }
   if (!sw || ranged) return
   const sweep = (u * 2 - 1) * 0.85 * envelope

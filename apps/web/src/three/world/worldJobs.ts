@@ -28,8 +28,15 @@ function source(world: WorldSeed): HeightSource {
 /** Erosion, drainage and climate of a world, from its base relief. */
 export function buildWorldMacro(world: WorldSeed, layout?: MacroLayout): WorldMacro {
   const base = createHeightSource(world), climate = needsMacro(world)
-  return buildMacro({ seed: world.seed, size: world.terrain.size, range: world.terrain.heightRange, seaLevel: world.terrain.seaLevel,
+  const macro = buildMacro({ seed: world.seed, size: world.terrain.size, range: world.terrain.heightRange, seaLevel: world.terrain.seaLevel,
     erosion: climate ? world.terrain.erosion : 0, rivers: climate, climate: world.terrain.climate, base: base.heightAt, layout: climate ? layout : undefined })
+  const ground = createHeightSource(world, climate ? macro : null)
+  for (let k = 0; k < macro.water.length; k++) if (Number.isFinite(macro.water[k]) && !macro.lake?.[k]) {
+    const x = macro.origin[0] + (k % macro.points[0]) * macro.cell, z = macro.origin[1] + Math.floor(k / macro.points[0]) * macro.cell, bed = ground.heightAt(x, z)
+    macro.water[k] = Math.min(macro.water[k], bed + Math.max(0.15, macro.river[k] * 2.5))
+    if (macro.water[k] <= bed + 0.03) macro.water[k] = NaN
+  }
+  return macro
 }
 
 /** Executes one job; shared by the worker and by tests, so both produce identical data. */
@@ -44,8 +51,8 @@ export function runWorldJob(job: WorldJob): { result: WorldJobResults[WorldJob['
     return { result: { ...data, ms: performance.now() - started }, transfer: [data.color.buffer as ArrayBuffer, data.normal.buffer as ArrayBuffer, data.rough.buffer as ArrayBuffer] }
   }
   if (job.type === 'macro') {
-    const macro = buildWorldMacro(job.world, job.layout), mesh = waterMesh(macro)
-    const arrays = [macro.delta, macro.water, macro.river, macro.temperature, macro.humidity, macro.ground, macro.biome, macro.drain, macro.filled, macro.clear, macro.siteLevels, mesh.positions, mesh.indices, mesh.levels, ...(macro.pads ? [macro.pads] : [])]
+    const macro = buildWorldMacro(job.world, job.layout), mesh = waterMesh(macro, createHeightSource(job.world, needsMacro(job.world) ? macro : null).heightAt)
+    const arrays = [macro.delta, macro.water, macro.river, macro.temperature, macro.humidity, macro.ground, macro.biome, macro.drain, macro.filled, macro.clear, macro.siteLevels, mesh.positions, mesh.indices, mesh.levels, ...(macro.lake ? [macro.lake] : []), ...(mesh.depths ? [mesh.depths] : []), ...(mesh.triangles ? [mesh.triangles] : []), ...(macro.pads ? [macro.pads] : [])]
     return { result: { macro, mesh, ms: performance.now() - started }, transfer: arrays.map((array) => array.buffer as ArrayBuffer) }
   }
   if (job.type === 'install') {
