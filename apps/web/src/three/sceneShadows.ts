@@ -2,6 +2,13 @@ import * as THREE from 'three'
 
 export interface ShadowCaster { id:string; object:THREE.Object3D; dimensions:[number,number,number] }
 export interface ShadowSource { id:string; light:THREE.PointLight|THREE.SpotLight }
+/** Change map resolution without changing the shader's reserved shadow-light count. */
+export function setShadowResolution(light: THREE.Light & { shadow: THREE.LightShadow }, size: number): boolean {
+  if (light.shadow.mapSize.x === size && light.shadow.mapSize.y === size) return false
+  light.shadow.dispose(); light.shadow.map = null; light.shadow.mapPass = null
+  light.shadow.mapSize.set(size,size); light.shadow.needsUpdate = true
+  return true
+}
 const visible=(object:THREE.Object3D)=>{for(let p:THREE.Object3D|null=object;p;p=p.parent) if(!p.visible) return false;return true}
 const release=(light:THREE.PointLight|THREE.SpotLight)=>{light.shadow.dispose();light.shadow.map=null;light.shadow.mapPass=null;light.castShadow=false}
 
@@ -28,7 +35,7 @@ export function createShadowScheduler(sources:ShadowSource[],casters:ShadowCaste
         history.set(caster.id,{matrix,visible:shown,bounds})
       }
       // Unlit lights (a day cycle dims practical lamps) keep their slot without redrawing; they still lose it to nearer lit ones.
-      const ranked=sources.filter(({light})=>visible(light)).map(source=>({ ...source,lit:source.light.intensity>0,score:source.light.getWorldPosition(point).distanceTo(focus)/Math.max(4,source.light.distance||100) }))
+      const ranked=sources.filter(({light})=>visible(light)).map(source=>({ ...source,lit:source.light.intensity>0&&source.light.userData.sourceVisible!==false,score:source.light.getWorldPosition(point).distanceTo(focus)/Math.max(4,source.light.distance||100) }))
         .sort((a,b)=>Number(b.lit)-Number(a.lit)||a.score-b.score||a.id.localeCompare(b.id))
       const candidates=[...ranked.filter(({light})=>light instanceof THREE.PointLight).slice(0,slots.point),...ranked.filter(({light})=>!(light instanceof THREE.PointLight)).slice(0,slots.spot)]
         .sort((a,b)=>Number(b.lit)-Number(a.lit)||a.score-b.score||a.id.localeCompare(b.id))

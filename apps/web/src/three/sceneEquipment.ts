@@ -4,6 +4,7 @@ import type { RigBinding } from './sceneCharacterRig.ts'
 import type { WeaponKind } from './sceneCombat.ts'
 import type { Animator } from './sceneCharacterAnimator.ts'
 import type { CharacterSkin } from './sceneRuntimeTypes.ts'
+import { libraryEquipment } from './sceneModelLibrary.ts'
 
 /**
  * Hand-held weapon. The model is authored in its aim frame: origin at the centre of the handle, +Z towards the tip or the line of fire.
@@ -28,10 +29,35 @@ const PISTOL = basis([-1, 0, 0], [0, 0, -1], [0, -1, 0]), RISER = basis([1, 0, 0
 const lathe = (profile: [number, number][], segments = 20) => new THREE.LatheGeometry(profile.map(([r, y]) => new THREE.Vector2(r, y)), segments)
 /** Lathe profiles run along +Y; equipment runs along +Z. */
 const alongZ = (geometry: THREE.BufferGeometry) => geometry.rotateX(Math.PI / 2)
+const viewToolRotation=(shaft:THREE.Vector3)=>{
+  const z=shaft.normalize(),x=new THREE.Vector3(0,0,-1).addScaledVector(z,z.z).normalize(),y=new THREE.Vector3().crossVectors(z,x)
+  return new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(x,y,z))
+}
+const TOOL_REST=viewToolRotation(new THREE.Vector3(.1,.93,-.35)),TOOL_WINDUP=viewToolRotation(new THREE.Vector3(.55,.8,-.23)),TOOL_STRIKE=viewToolRotation(new THREE.Vector3(-.5,.8,-.3))
+
+function viewHand():THREE.Group {
+  const hand=new THREE.Group();hand.name='Mão em primeira pessoa';hand.visible=false
+  const glove=new THREE.MeshStandardMaterial({color:'#bc956e',roughness:.92}),sleeve=new THREE.MeshStandardMaterial({color:'#4b625c',roughness:1})
+  const add=(name:string,size:[number,number,number],position:[number,number,number],material:THREE.Material)=>{const mesh=new THREE.Mesh(new RoundedBoxGeometry(...size,2,.008),material);mesh.name=name;mesh.position.set(...position);hand.add(mesh)}
+  add('Palma',[.085,.055,.11],[0,-.025,-.015],glove)
+  add('Manga',[.085,.075,.24],[0,-.025,-.19],sleeve)
+  for(let i=0;i<4;i++)add(`Dedo ${i}`,[.018,.03,.065],[-.031+i*.021,-.006,.045],glove)
+  add('Polegar',[.025,.035,.06],[.049,-.022,-.005],glove)
+  return hand
+}
+function disposeViewHand(hand:THREE.Group){const geometries=new Set<THREE.BufferGeometry>(),materials=new Set<THREE.Material>();hand.traverse(object=>{if(object instanceof THREE.Mesh){geometries.add(object.geometry);for(const material of Array.isArray(object.material)?object.material:[object.material])materials.add(material)}});for(const geometry of geometries)geometry.dispose();for(const material of materials)material.dispose()}
 
 export function createEquipment(kind: WeaponKind): Equipment {
   const object = new THREE.Group(), geometries: THREE.BufferGeometry[] = [], materials: THREE.Material[] = []
+  const handModel=viewHand();object.add(handModel)
   object.name = `Equipamento: ${kind}`
+  const native = libraryEquipment(kind)
+  if (native) {
+    object.add(native)
+    const blade = kind === 'axe' ? new THREE.Line3(new THREE.Vector3(0, 0, 0.34), new THREE.Vector3(0.18, 0, 0.56)) : new THREE.Line3(new THREE.Vector3(0, 0, kind === 'staff' ? 0.6 : 0.12), new THREE.Vector3(0, 0, kind === 'staff' ? 1.1 : 0.95))
+    const muzzle = new THREE.Vector3(0, 0, kind === 'staff' ? 1.08 : 0.55)
+    return { kind, object, blade, muzzle, radius: 0.035, grip: new THREE.Quaternion(), hand: 'R', segment: () => new THREE.Line3(object.localToWorld(blade.start.clone()), object.localToWorld(blade.end.clone())), origin: () => object.localToWorld(muzzle.clone()), dispose() { object.removeFromParent();disposeViewHand(handModel); object.clear() } }
+  }
   const material = <T extends THREE.Material>(value: T) => { materials.push(value); return value }
   const steel = material(new THREE.MeshPhysicalMaterial({ color: '#c9d3dd', metalness: 0.92, roughness: 0.22, clearcoat: 0.4, clearcoatRoughness: 0.3 }))
   const gold = material(new THREE.MeshPhysicalMaterial({ color: '#c9a04a', metalness: 0.9, roughness: 0.32 }))
@@ -67,6 +93,11 @@ export function createEquipment(kind: WeaponKind): Equipment {
     const groove = material(new THREE.MeshPhysicalMaterial({ color: '#8b97a3', metalness: 0.95, roughness: 0.35 }))
     for (const side of [-1, 1]) add('Sulco da lâmina', new THREE.ShapeGeometry(fuller, 6).rotateX(Math.PI / 2).rotateZ(side > 0 ? 0 : Math.PI), groove, [0, side * 0.0058, 0.13])
     blade.set(new THREE.Vector3(0, 0, 0.12), new THREE.Vector3(0, 0, 0.11 + length))
+  } else if (kind === 'pickaxe') {
+    add('Cabo da picareta',alongZ(new THREE.CylinderGeometry(.022,.027,.72,8)),wood,[0,0,.18])
+    add('Cabeça da picareta',new THREE.CylinderGeometry(.035,.045,.36,8).rotateZ(Math.PI/2),steel,[0,0,.48])
+    for(const side of[-1,1])add('Ponta da picareta',new THREE.ConeGeometry(.045,.21,8).rotateZ(-side*Math.PI/2),steel,[side*.25,0,.48])
+    blade.set(new THREE.Vector3(-.34,0,.48),new THREE.Vector3(.34,0,.48))
   } else if (kind === 'axe') {
     add('Cabo de madeira', alongZ(new THREE.CylinderGeometry(0.022, 0.027, 0.7, 10)), wood, [0, 0, 0.2])
     add('Cabeça de pedra', new THREE.DodecahedronGeometry(0.12, 0).scale(1.4, 0.4, 0.85), steel, [0.07, 0, 0.5])
@@ -121,7 +152,7 @@ export function createEquipment(kind: WeaponKind): Equipment {
   return { kind, object, muzzle, blade, grip, hand, radius: kind === 'none' ? 0.09 : 0.035,
     segment: () => new THREE.Line3(object.localToWorld(blade.start.clone()), object.localToWorld(blade.end.clone())),
     origin: () => object.localToWorld(muzzle.clone()),
-    dispose: () => { object.removeFromParent(); geometries.forEach((geometry) => geometry.dispose()); materials.forEach((value) => value.dispose()) } }
+    dispose: () => { object.removeFromParent();disposeViewHand(handModel); geometries.forEach((geometry) => geometry.dispose()); materials.forEach((value) => value.dispose()) } }
 }
 
 export function equipmentHand(binding: RigBinding, holders: Map<string, THREE.Object3D>, side: 'L' | 'R' = 'R'): THREE.Object3D | undefined {
@@ -130,11 +161,14 @@ export function equipmentHand(binding: RigBinding, holders: Map<string, THREE.Ob
 
 /** Seats the equipment in the closed fist of a skinned hand; rigid bodies fall back to a point below the forearm. */
 export function mountEquipment(equipment: Equipment, binding: RigBinding, holders: Map<string, THREE.Object3D>, skin?: CharacterSkin | null): boolean {
+  const handModel=equipment.object.getObjectByName('Mão em primeira pessoa');if(handModel)handModel.visible=false
   const socket = skin?.grips[equipment.hand] ?? (equipment.hand === 'L' ? skin?.grips.R : undefined)
   if (socket) {
     if (equipment.object.parent !== socket) socket.add(equipment.object)
     equipment.object.position.set(0, 0, 0)
     equipment.object.quaternion.copy(equipment.grip)
+    // Native rigs have their own authoring-unit scale. A one-metre sword must remain one metre in the world.
+    if(skin?.nativeClips)equipment.object.scale.copy(new THREE.Vector3(1,1,1).divide(socket.getWorldScale(new THREE.Vector3())))
     return true
   }
   const hand = equipmentHand(binding, holders)
@@ -155,15 +189,31 @@ export function aimEquipment(equipment: Equipment, target: THREE.Vector3): void 
   object.quaternion.copy(rotation)
 }
 
-export function poseFirstPersonEquipment(equipment: Equipment, animator: Animator): void {
-  const object = equipment.object, a = animator, sw = a.swing, ranged = !['none', 'sword', 'axe'].includes(equipment.kind)
+export function poseFirstPersonEquipment(equipment: Equipment, animator: Animator,gatherSeconds=Infinity): void {
+  const object = equipment.object, a = animator, sw = a.swing, ranged = ['blaster','bow','staff'].includes(equipment.kind)
+  const handModel=object.getObjectByName('Mão em primeira pessoa'),gathering=gatherSeconds>=0&&gatherSeconds<.65
+  for(const child of object.children)if(child===handModel)child.visible=true;else child.visible=!gathering
   const u = sw ? THREE.MathUtils.clamp((a.time - sw.a) / sw.s, 0, 1) : 0
   const envelope = sw ? Math.sin(Math.PI * Math.min(1, a.time / (sw.a + sw.s + sw.r))) : 0
   object.scale.setScalar(1)
-  object.position.set(equipment.kind === 'bow' ? -0.2 : 0.25, -0.26 + envelope * 0.08, ranged ? -0.55 : -0.48)
+  object.position.set(equipment.kind === 'bow' ? -0.2 : 0.32, -0.34 + envelope * 0.08, ranged ? -0.65 : -0.72)
   object.rotation.set(0, Math.PI, 0)
-  if (!sw && !ranged) { object.position.set(0.34, -0.46, -0.36); object.rotation.set(0.85, Math.PI, -0.15) }
+  if (!sw && !ranged) { object.position.set(0.34, -0.48, -0.72); object.rotation.set(0.65, Math.PI, -0.18) }
   if (equipment.kind === 'staff') { object.position.set(0.3, -0.62, -0.62); object.rotation.set(-0.35, Math.PI, 0) }
+  if(gathering){const reach=Math.sin(Math.PI*gatherSeconds/.65);object.position.set(.22,-.4+reach*.14,-.55-reach*.35);object.rotation.set(.2-reach*.3,Math.PI,-.2);if(handModel)for(const finger of handModel.children)if(finger.name.startsWith('Dedo'))finger.rotation.x=-.5*reach;return}
+  if(handModel)for(const finger of handModel.children)if(finger.name.startsWith('Dedo'))finger.rotation.x=.95
+  if(equipment.kind==='axe'||equipment.kind==='pickaxe'){
+    // The edge (+X) faces the scene; swing the grip across the view at nearly
+    // constant depth, rather than thrusting the broad face at the camera.
+    object.position.set(.36,-.46,-.82);object.quaternion.copy(TOOL_REST)
+    if(sw){
+      const wind=THREE.MathUtils.smoothstep(a.time,0,sw.a),hit=THREE.MathUtils.smoothstep(a.time,sw.a,sw.a+sw.s),recover=THREE.MathUtils.smoothstep(a.time,sw.a+sw.s,sw.a+sw.s+sw.r)
+      object.quaternion.slerp(TOOL_WINDUP,wind).slerp(TOOL_STRIKE,hit).slerp(TOOL_REST,recover)
+      const across=hit*(1-recover)
+      object.position.set(.36+.12*wind*(1-hit)-.6*across,-.46+.18*wind*(1-hit)-.06*across,-.82-.035*hit*(1-recover))
+    }
+    return
+  }
   if (!sw || ranged) return
   const sweep = (u * 2 - 1) * 0.85 * envelope
   object.rotation.y += a.combo === 2 ? -sweep : sweep

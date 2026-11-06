@@ -44,6 +44,8 @@ A versão 0.5 acrescenta personagens animados, NPCs com diálogo, inimigos com e
 
 O Three.js abre com a cena em destaque e criação por conversa. **Editor avançado** torna os controles manuais opcionais; **Projeto** reúne arquivos e exemplos, e **Atividade** mostra diagnósticos. **Jogar** usa toda a janela. A [revisão de qualidade de 15/10](docs/threejs-production-upgrade.md) documenta terrenos com biomas, detalhamento, revisão do agente, edição por conversa e a referência Vale dos Ventos.
 
+O [trabalho de confiabilidade de 6/11](docs/threejs-reliability-2026-11-06.md) revisa movimento e colisão, substitui o inventário por slots com arraste e bancada contextual e inclui **Projeto → Biblioteca de modelos**. A [continuação sobre combate, catálogo e água](docs/threejs-combat-catalog-water-2026-11-06.md) amplia a seleção para 23 modelos KayKit (nove personagens animados) e 3.145 modelos estáticos Kenney, corrige o alcance na cripta e a recompilação de shaders ao coletar itens com luz, e escava leitos para os rios. O carregamento ocorre em blocos e a qualidade automática ajusta a resolução durante o jogo.
+
 ## Desenvolvimento
 
 ```bash

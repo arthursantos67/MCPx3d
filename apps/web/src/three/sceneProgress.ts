@@ -2,16 +2,18 @@ import type { SceneRuntime } from './sceneRuntime.ts'
 import { itemKey, restoreGameplay, snapshotGameplay, type GameplaySnapshot } from './sceneGameplay.ts'
 import { restoreLoadout, type Loadout, type PlacedStructure } from './sceneLoadout.ts'
 import { placeableKinds } from './sceneGameplay.ts'
+import {releaseBagCursor,syncBagCells,type BagCell} from './sceneInventory.ts'
 
 export interface SceneProgress {
   items: [string, number][]; collected: string[]; consumed: string[]; defeated: string[]; gameplay: GameplaySnapshot
   health: number; elapsed: number; score: number; checkpoint: [number, number, number] | null
   hiddenToggles?: string[]; unlocked?: string[]
   loadout?: Loadout; placements?: PlacedStructure[]
+  bagSlots?:BagCell[]
 }
 export function snapshotRuntime(runtime: SceneRuntime): SceneProgress {
   return { items: [...runtime.items], collected: [...runtime.collected], consumed: [...runtime.consumed], defeated: [...runtime.defeated], gameplay: snapshotGameplay(runtime.gameplay), health: runtime.health, elapsed: runtime.elapsed, score: runtime.score, checkpoint: runtime.checkpoint,
-    hiddenToggles: [...runtime.toggles].filter(id => runtime.hidden.has(id)), unlocked: [...runtime.unlocked], loadout: structuredClone(runtime.loadout), placements: structuredClone(runtime.placements) }
+    hiddenToggles: [...runtime.toggles].filter(id => runtime.hidden.has(id)), unlocked: [...runtime.unlocked], loadout: structuredClone(runtime.loadout), placements: structuredClone(runtime.placements),bagSlots:syncBagCells(runtime.bagSlots,runtime.items) }
 }
 export function restoreRuntime(runtime: SceneRuntime, saved: SceneProgress) {
   const allowed = new Set([...(runtime.rules?.items ?? []).map(item => itemKey(item.name)), ...(runtime.rules?.startingItems ?? []).map(s => itemKey(s.item)), ...(runtime.rules?.recipes ?? []).flatMap(r => [itemKey(r.output.item), ...r.inputs.map(s => itemKey(s.item))]),
@@ -25,6 +27,7 @@ export function restoreRuntime(runtime: SceneRuntime, saved: SceneProgress) {
   if (Array.isArray(saved.hiddenToggles)) for (const id of runtime.toggles) { if (saved.hiddenToggles.includes(id)) runtime.hidden.add(id); else runtime.hidden.delete(id) }
   if (Array.isArray(saved.unlocked)) for (const id of saved.unlocked.slice(0, 2000)) if (runtime.byId.has(id)) runtime.unlocked.add(id)
   if (saved.gameplay && typeof saved.gameplay === 'object') restoreGameplay(runtime.gameplay, saved.gameplay)
+  runtime.bagSlots=releaseBagCursor(syncBagCells(Array.isArray(saved.bagSlots)?saved.bagSlots:[],runtime.items))
   restoreLoadout(runtime.loadout, saved.loadout, runtime.items, runtime.legacyWeapon)
   if (Array.isArray(saved.placements)) for (const p of saved.placements.slice(0, 64)) {
     if (!p || typeof p.id !== 'string' || p.id.length > 100 || typeof p.item !== 'string' || !placeableKinds.includes(p.kind) || !runtime.rules?.items?.some(item => itemKey(item.name) === itemKey(p.item) && item.placeable === p.kind)) continue

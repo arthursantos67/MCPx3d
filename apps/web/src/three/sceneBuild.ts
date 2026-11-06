@@ -4,6 +4,7 @@ import { proceduralTexture } from './sceneTextures.ts'
 import { isCharacterType } from './sceneCharacters.ts'
 import { hasSurface, subtreeIds, type SceneNode, type ThreeSceneDocument } from './sceneDocument.ts'
 import { createShadowScheduler } from './sceneShadows.ts'
+import { createLightRegistry } from './sceneLightRegistry.ts'
 import { prepareTerrainLayers, usesTerrainLayers } from './sceneTerrainMaterial.ts'
 import type { CharacterSkin } from './sceneRuntimeTypes.ts'
 
@@ -78,7 +79,7 @@ export function createResources(anisotropy = 8): SceneResources {
       const aspect = node.kind === 'text' ? Math.round(node.dimensions[0] / node.dimensions[1] * 4) / 4 : 0
       const biome = node.kind === 'terrain' && !!node.geometry.biome && node.geometry.biome !== 'none'
       const layered=usesTerrainLayers(node)
-      const key = JSON.stringify([node.material, wireframe, node.kind === 'text' ? [node.geometry.text, aspect] : node.kind === 'tube', biome,layered?node.geometry.biome:null, variant ?? null])
+      const key = JSON.stringify([node.material,node.liquid??null, wireframe, node.kind === 'text' ? [node.geometry.text, aspect] : node.kind === 'tube', biome,layered?node.geometry.biome:null, variant ?? null])
       usedMaterials.add(key)
       if (materials.has(key)) return materials.get(key)!
       const { texture: kind, textureScale = 1, textureImage, doubleSided, normalStrength = 1, sheen = 0, ...physical } = node.material
@@ -98,7 +99,7 @@ export function createResources(anisotropy = 8): SceneResources {
         parameters.normalScale = new THREE.Vector2(normalStrength, normalStrength)
       }
       const material = new THREE.MeshPhysicalMaterial(parameters)
-      if (kind === 'water' && !textureImage && !layered) material.userData.water = true
+      if (kind === 'water' && !textureImage && !layered) {material.userData.water = true;material.userData.liquid=node.liquid;material.metalness=0;material.roughness=Math.max(.3,material.roughness);material.envMapIntensity=.55;if(material.normalScale)material.normalScale.setScalar(Math.min(.2,normalStrength))}
       finishTerrain?.(material)
       if (variant) prepare?.(material)
       materials.set(key, material)
@@ -139,11 +140,13 @@ export interface BuiltScene {
 }
 export interface BuildOptions {
   instancing: boolean; helpers: boolean
+  /** Live viewport keeps light slots stable across collection/visibility; exporters retain the authored hierarchy. */
+  stableLights?: boolean
   /** Material variant for a node (null = shared material) and its one-time preparation. */
   variant?: (node: SceneNode) => { key: string; prepare: (material: THREE.MeshPhysicalMaterial) => void; depth?: () => THREE.Material } | null
   /** Replaces the cached geometry of a node (e.g. tessellated water). */
   geometry?: (node: SceneNode) => THREE.BufferGeometry | null
-  skins?: (doc: ThreeSceneDocument, holders: Map<string, THREE.Object3D>) => CharacterSkin[]
+  skins?: (doc: ThreeSceneDocument, holders: Map<string, THREE.Object3D>) => Iterable<CharacterSkin>
 }
 const CHUNKS_PER_AXIS = 4, MIN_CHUNK = 24, CHUNKED_TRIANGLES = 30000
 const chunkPoint = new THREE.Vector3()
@@ -180,6 +183,10 @@ export function* buildSceneSteps(doc: ThreeSceneDocument, resources: SceneResour
   const root = new THREE.Group(), holders = new Map<string, THREE.Object3D>(), meshes = new Map<string, THREE.Mesh>()
   const instances = new Map<string, { mesh: THREE.InstancedMesh; index: number }>(), lights = new Map<string, THREE.PointLight | THREE.SpotLight>()
   const pickables: THREE.Object3D[] = [], helperResources: { dispose: () => void }[] = [], byId = new Map(doc.nodes.map((node) => [node.id, node]))
+  const batchMeshes: THREE.InstancedMesh[] = [], skins = new Map<string, CharacterSkin>()
+  let completed = false
+  const release = () => { for (const skin of skins.values()) { skin.object.removeFromParent(); skin.dispose() }; for (const mesh of batchMeshes) mesh.dispose(); for (const resource of helperResources) resource.dispose(); for (const light of lights.values()) light.dispose() }
+  try {
   const dynamic = new Set<string>()
   for (const node of doc.nodes) {
     if (node.resource || node.animation.kind !== 'none' || ['collect', 'heal', 'powerup'].includes(node.interaction?.action ?? '') || node.behavior?.type === 'enemy' || node.behavior?.type === 'npc') for (const id of subtreeIds(doc.nodes, node.id)) dynamic.add(id)
@@ -247,7 +254,6 @@ export function* buildSceneSteps(doc: ThreeSceneDocument, resources: SceneResour
     holders.set(node.id, holder)
   }
   for (const node of doc.nodes) (holders.get(node.parentId ?? '') ?? root).add(holders.get(node.id)!)
-  const batchMeshes: THREE.InstancedMesh[] = []
   yield
   root.updateMatrixWorld(true)
   for (const nodes of [...batches.values()].filter((group) => group.length >= MIN_BATCH).flatMap((group) => spatialChunks(group, holders, resources.geometry(group[0])))) {
@@ -271,13 +277,13 @@ export function* buildSceneSteps(doc: ThreeSceneDocument, resources: SceneResour
     for (const mesh of batchMeshes) { mesh.instanceMatrix.needsUpdate = true; mesh.computeBoundingBox(); mesh.computeBoundingSphere() }
   }
   sync()
-  const skins = new Map<string, CharacterSkin>()
   if (options.skins) {
     yield
     root.updateMatrixWorld(true)
     for (const skin of options.skins(doc, holders)) {
       skins.set(skin.rootId, skin)
       for (const id of skin.hidden) { const mesh = meshes.get(id); if (mesh) { mesh.visible = false; mesh.castShadow = false; mesh.userData.skinProxy = true; mesh.userData.skinRoot = skin.rootId } }
+      yield
     }
   }
   // Static parts keep their local matrices, and wholly static subtrees are skipped by per-frame world updates; only what can move is recomposed.
@@ -295,10 +301,14 @@ export function* buildSceneSteps(doc: ThreeSceneDocument, resources: SceneResour
   }
   root.updateMatrixWorld(true)
   resources.prune()
+  const lightRegistry=options.stableLights?createLightRegistry(root,lights,holders):null
+  lightRegistry?.update()
   const shadowScheduler=createShadowScheduler([...lights].filter(([id])=>byId.get(id)?.light?.castShadow).map(([id,light])=>({id,light})),
     doc.nodes.filter(node=>hasSurface(node.kind)&&castsShadow(node,collected)&&meshes.get(node.id)?.visible!==false).map(node=>({id:node.id,object:holders.get(node.id)!,dimensions:node.dimensions})))
-  return { root, holders, meshes, instances, lights, pickables, dynamic, sync, skins,updateShadows:focus=>{shadowScheduler.update(focus)},
-    dispose() { shadowScheduler.dispose();for (const skin of skins.values()) { skin.object.removeFromParent(); skin.dispose() };for (const mesh of batchMeshes) mesh.dispose(); for (const resource of helperResources) resource.dispose(); for (const light of lights.values()) light.dispose() } }
+  completed = true
+  return { root, holders, meshes, instances, lights, pickables, dynamic, sync, skins,updateShadows:focus=>{lightRegistry?.update();shadowScheduler.update(focus)},
+    dispose() { shadowScheduler.dispose(); release() } }
+  } finally { if (!completed) release() }
 }
 
 export function pickNodeId(intersection: THREE.Intersection): string | null {

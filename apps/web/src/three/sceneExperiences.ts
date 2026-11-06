@@ -2,6 +2,7 @@ import { Box3, Vector3 } from 'three'
 import { createEmptyScene, createNode, hasSurface, validateScene, type NodeKind, type ThreeSceneDocument, type Vector3Tuple } from './sceneDocument.ts'
 import { expandSceneRecipe } from './sceneGeneration.ts'
 import { sceneMatrices } from './scenePlacement.ts'
+import { styleCrypt } from './sceneCryptArt.ts'
 
 const single={mode:'linear',count:1,offset:[0,0,0],radius:0,axis:'y'}
 const node=(id:string,kind:NodeKind,position:Vector3Tuple,dimensions:Vector3Tuple,patch:Record<string,unknown>={})=>({...createNode(kind),id,name:id,position,dimensions,color:'#9aaebc',metalness:0.45,roughness:0.65,repeat:single,...patch})
@@ -135,15 +136,15 @@ export function createCryptScene():ThreeSceneDocument {
   nodes.push(asset('crypt-gate','gate',[0,0,0],{rotation:[0,turn?90:0,0],prefab:prefabOf('gate',1,2,{text:'Chave da cripta'})}))
   nodes.push(asset('key-altar','statue',[-6.5,0,4],{rotation:[0,90,0],prefab:prefabOf('statue',0.8,3,{primary:'#b8b0a2'})}))
   nodes.push(asset('crypt-key','key',[-4.6,0,4.5],{prefab:prefabOf('key',1,1,{text:'Chave da cripta'})}))
-  nodes.push(asset('skeleton-a','skeleton',[-4,0,10],{prefab:prefabOf('skeleton',1,3)}),asset('skeleton-b','skeleton',[5,0,6],{prefab:prefabOf('skeleton',1,8)}))
+  nodes.push(asset('skeleton-a','skeleton',[-4,0,10],{prefab:{...prefabOf('skeleton',1,3),model:'skeleton_minion'}}),asset('skeleton-b','skeleton',[5,0,6],{prefab:{...prefabOf('skeleton',1,8),model:'skeleton_rogue'}}))
   nodes.push(asset('heart-a','heart',[6.5,0,15],{prefab:prefabOf('heart',1,1)}),asset('heart-b','heart',[-6.5,0,-6],{prefab:prefabOf('heart',1,2)}))
-  nodes.push(asset('golem','golem',[3,0,-11],{rotation:[0,180,0],prefab:prefabOf('golem',1,5),behavior:{type:'enemy',speed:1.6,range:9,damage:35,health:10,attack:'melee'}}))
+  nodes.push(asset('skeleton-king','skeleton',[3,0,-11],{name:'Rei Esqueleto',rotation:[0,180,0],prefab:{...prefabOf('skeleton',1.45,5),model:'skeleton_warrior'},behavior:{type:'enemy',speed:1.6,range:9,damage:28,health:12,attack:'melee'}}))
   nodes.push(asset('treasure','chest',[-6,0,-17],{rotation:[0,45,0],prefab:prefabOf('chest',1,4)}),asset('exit','portal',[0,0,-18],{prefab:prefabOf('portal',1,1,{primary:'#b46bff'})}))
   for(const z of [-10,10]) nodes.push(node(`crypt-light${z}`,'light',[0,4,z],[0.2,0.2,0.2],{light:{type:'point',color:z<0?'#9c7bff':'#ffb36b',intensity:45,distance:20,angle:35,penumbra:0.5,castShadow:z>0}}))
-  return scene('Cripta do Rei Esqueleto',rest(nodes,()=>'crypt-floor'),living(environment('Encontre a chave, abra o portão e alcance o portal','reachGoal',[0,0.02,19]),{
+  return styleCrypt(scene('Cripta do Rei Esqueleto',rest(nodes,()=>'crypt-floor'),living(environment('Encontre a chave, abra o portão e alcance o portal','reachGoal',[0,0.02,19]),{
     sky:'night',fog:0.025,bloom:0.7,grade:'cinematic',weather:'dust',audio:{ambience:'dungeon',music:'mystery',volume:0.7},
     premise:'O Rei Esqueleto guarda a saída da própria tumba; só a chave esquecida no altar abre o caminho até o portal.',motion:{wind:0,grass:'none',fauna:'none'},
-    player:{spawn:[0,0.02,19],yaw:0,speed:4.5,jumpHeight:1.1,mode:'walk',allowFly:false,health:120,camera:'third',weapon:'sword',avatar:'knight'}}))
+    player:{spawn:[0,0.02,19],yaw:0,speed:4.5,jumpHeight:1.1,mode:'walk',allowFly:false,health:120,camera:'third',weapon:'sword',avatar:'knight'}})))
 }
 
 /** Peaceful market town: NPCs talk, a lost key opens a chest and the town wall frames the square. */

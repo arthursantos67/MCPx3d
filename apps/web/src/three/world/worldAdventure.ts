@@ -59,7 +59,9 @@ export function campaignGameplay(): SceneGameplay {
 /** Open recipes have concrete uses; rare ingredients are reasons to explore, never quest locks. */
 export function auroraGameplay(): SceneGameplay {
   const recipes = [
+    ['bancada', 'Bancada de criação', [['Madeira', 4], ['Pedra', 2]], 0],
     ['machado', 'Machado de pedra', [['Madeira', 2], ['Pedra', 2], ['Fibra', 1]], 0],
+    ['picareta', 'Picareta de pedra', [['Madeira', 2], ['Pedra', 3], ['Fibra', 1]], 0],
     ['arco', 'Arco artesanal', [['Madeira', 3], ['Fibra', 3]], 0],
     ['bandagem', 'Bandagem', [['Fibra', 2]], 30],
     ['caldo', 'Caldo de cogumelos', [['Cogumelo', 2], ['Madeira', 1]], 35],
@@ -71,12 +73,14 @@ export function auroraGameplay(): SceneGameplay {
     ['espada', 'Espada de cobre', [['Minério de cobre', 2], ['Madeira', 2], ['Fibra', 1]], 0],
     ['lanterna', 'Luz dos antigos', [['Fragmento antigo', 1], ['Minério de cobre', 1], ['Resina', 1]], 0],
   ] as const
-  return { playStyle: 'sandbox', hud: 'full', naturalResources: true, startingItems: [], quests: [],
-    recipes: recipes.map(([id, name, ingredients, healing]) => ({ id, name, inputs: ingredients.map(([item, amount]) => ({ item, amount })), output: { item: name, amount: 1 }, healing })),
+  return { playStyle: 'sandbox', hud: 'minimal', naturalResources: true, startingItems: [], quests: [],
+    recipes: recipes.map(([id, name, ingredients, healing]) => ({ id, name, inputs: ingredients.map(([item, amount]) => ({ item, amount })), output: { item: name, amount: 1 }, healing,...(['arco','espada','bau','lanterna'].includes(id)?{station:'workbench'}:id==='caldo'?{station:'campfire'}:{}) })),
     items: [
-      { name: 'Machado de pedra', description: 'Extrai recursos com três vezes a força das mãos. Também serve para se defender.', equipment: 'axe', harvest: 3 },
+      { name: 'Machado de pedra', description: 'Corta madeira com eficiência. Não substitui a picareta em pedra e minério.', equipment: 'axe', harvest: 5,damage:2 },
+      { name: 'Bancada de criação', description: 'Coloque no chão e use E. Permite fabricar equipamento avançado enquanto estiver perto.',placeable:'workbench',station:'workbench' },
+      { name: 'Picareta de pedra',description:'Minera pedra e minério; pouco eficiente para cortar árvores.',equipment:'pickaxe',harvest:5,damage:1 },
       { name: 'Arco artesanal', description: 'Ataques à distância. Selecione na barra e clique para disparar.', equipment: 'bow' },
-      { name: 'Espada de cobre', description: 'Lâmina para explorar territórios perigosos.', equipment: 'sword', harvest: 2 },
+      { name: 'Espada de cobre', description: 'Lâmina para explorar territórios perigosos.', equipment: 'sword', damage:4 },
       { name: 'Bandagem', description: 'Recupera 30 de vida ao usar.', healing: 30 },
       { name: 'Caldo de cogumelos', description: 'Recupera 35 de vida ao usar.', healing: 35 },
       { name: 'Kit de fogueira', description: 'Coloque em solo seco. Ficar perto recupera vida aos poucos.', placeable: 'campfire' },
@@ -109,7 +113,7 @@ export function frontierLocation(kind: 'resin' | 'copper' | 'garden'): ThreeScen
 export function sandboxLocation(kind: 'camp' | 'ruins' | 'beacon'): ThreeSceneDocument {
   const scene = adventureLocation(kind)
   for (const node of scene.nodes) {
-    if (node.id === 'mara') node.interaction!.message = 'Aurora não tem dono. Você pode explorar, montar um acampamento ou apenas seguir o rio. Mire nos recursos e use E para coletar; B abre a mochila. | Ao oeste há um posto de resinadores. Mais longe, a leste, uma pedreira guarda cobre. Resina rende tochas; cobre permite criar uma lâmina. | Há algo brilhando entre as ruínas. Leve materiais, faça suas próprias ferramentas e escolha para onde seguir. Scroll ou 1 a 5 troca o que está na mão; 1 deixa as mãos livres.'
+    if (node.id === 'mara') node.interaction!.message = 'Aurora não tem dono. Você pode explorar, montar um acampamento ou apenas seguir o rio. Clique para cortar árvores e minerar pedras; E recolhe plantas. B abre a mochila. Construa uma bancada para fabricar equipamento avançado. | Ao oeste há um posto de resinadores. Mais longe, a leste, uma pedreira guarda cobre. Resina rende tochas; cobre permite criar uma lâmina. | Há algo brilhando entre as ruínas. Leve materiais, faça suas próprias ferramentas e escolha para onde seguir. Scroll ou 1 a 5 troca o que está na mão; 1 deixa as mãos livres.'
     if (node.id === 'nucleo') { node.name = 'Fragmento dos antigos'; node.interaction!.item = 'Fragmento antigo'; node.interaction!.message = 'Um fragmento quente ao toque. Com cobre e resina, talvez renda uma luz para o seu acampamento.' }
     if (node.id === 'acionador') { node.name = 'Mecanismo do farol'; delete node.interaction!.requires; node.interaction!.message = 'A luz cruza o vale. De onde vieram os construtores desta torre?' }
   }

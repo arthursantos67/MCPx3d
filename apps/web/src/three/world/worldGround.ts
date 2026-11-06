@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import type { GroundField } from '../sceneGroundField.ts'
 import { GROUND_LAYERS, type WorldMacro } from './worldMacro.ts'
+import {channelAt} from './worldHydrology.ts'
 
 /**
  * A 1.x GroundField over a window around the player, so the shared grass and wind systems run unchanged on a
@@ -17,7 +18,7 @@ const TINT: Record<typeof GROUND_LAYERS[number], [number, number, number]> = {
 export interface GroundWindow { center: [number, number]; data: Uint8Array; tint: Uint8Array; range: [number, number] }
 
 /** Height, grass, coverage and tint of the window centred on `center` (pure; runs in a worker). */
-export function groundWindow(heightAt: (x: number, z: number) => number, macro: Pick<WorldMacro, 'cell' | 'points' | 'origin' | 'ground' | 'water'>, center: [number, number], seaLevel: number | null): GroundWindow {
+export function groundWindow(heightAt: (x: number, z: number) => number, macro: Pick<WorldMacro, 'cell' | 'points' | 'origin' | 'ground' | 'water'> & Partial<Pick<WorldMacro,'channels'>>, center: [number, number], seaLevel: number | null): GroundWindow {
   const n = GROUND_SAMPLES, step = GROUND_WINDOW / (n - 1), x0 = center[0] - GROUND_WINDOW / 2, z0 = center[1] - GROUND_WINDOW / 2
   const heights = new Float32Array(n * n), grass = new Float32Array(n * n), cover = new Uint8Array(n * n), tint = new Uint8Array(n * n * 4)
   const sea = seaLevel ?? -Infinity, layers = GROUND_LAYERS.length, weights = new Float32Array(layers)
@@ -26,7 +27,7 @@ export function groundWindow(heightAt: (x: number, z: number) => number, macro: 
   for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
     const k = j * n + i, x = x0 + i * step, z = z0 + j * step
     const mi = Math.min(macro.points[0] - 1, Math.max(0, Math.round((x - macro.origin[0]) / macro.cell))), mj = Math.min(macro.points[1] - 1, Math.max(0, Math.round((z - macro.origin[1]) / macro.cell)))
-    const m = mj * macro.points[0] + mi, wet = !Number.isNaN(macro.water[m]) && heights[k] < macro.water[m] + 0.2
+    const m = mj * macro.points[0] + mi,channel=macro.channels?.length?channelAt(macro,x,z):null,wet = !!(channel?.ratio!==undefined&&channel.ratio<1&&heights[k]<channel.level+.2)||!Number.isNaN(macro.water[m]) && heights[k] < macro.water[m] + 0.2
     cover[k] = heights[k] > sea + 0.3 && !wet ? 1 : 0
     // Ground weights read bilinearly like the terrain splat, so blades and soil colour agree.
     const u = Math.min(macro.points[0] - 1.001, Math.max(0, (x - macro.origin[0]) / macro.cell)), v = Math.min(macro.points[1] - 1.001, Math.max(0, (z - macro.origin[1]) / macro.cell))

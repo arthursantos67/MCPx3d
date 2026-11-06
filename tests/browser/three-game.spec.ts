@@ -37,7 +37,7 @@ function arena() {
     material: { ...createNode('box').material, color: '#c0392b' }, interaction: { trigger: 'click' as const, key: '', radius: 5, action: 'toggleAnimation' as const, targetId: hinge.id, message: '' } }
   const bell = { ...createNode('sphere'), id: 'bell', name: 'Sino', position: [6, 0.5, 6] as [number, number, number], interaction: { trigger: 'key' as const, key: '1', radius: 3, action: 'message' as const, targetId: null, message: 'Olá, explorador!' } }
   const doc = validateScene({ ...createEmptyScene(), name: 'Arena', nodes: [floor, gem, hinge, door, bell] })
-  doc.environment = { ...doc.environment, sky: 'day', player: { spawn: [0, 0, 0], yaw: 0, speed: 4.5, jumpHeight: 1, mode: 'walk' } }
+  doc.environment = { ...doc.environment, sky: 'day',gameplay:{quests:[],recipes:[],naturalResources:false,startingItems:[],hud:'full'}, player: { spawn: [0, 0, 0], yaw: 0, speed: 4.5, jumpHeight: 1, mode: 'walk' } }
   return validateScene(doc)
 }
 
@@ -60,7 +60,7 @@ test('the playable island renders with sky, lights and post-processing, and expo
   expect(png.data.subarray(1, 4).toString('latin1')).toBe('PNG')
   await page.getByRole('button', { name: '▶ Jogar', exact: true }).click()
   const hud = page.getByRole('region', { name: 'Modo jogo' })
-  await expect(hud).toContainText('Itens 0/8')
+  await expect(hud).toBeVisible();await expect(page.locator('.forma-tracker')).toBeHidden()
   await page.keyboard.down('w')
   await page.waitForTimeout(700)
   await page.keyboard.up('w')
@@ -153,6 +153,7 @@ test('game systems: hazards hurt, third-person camera, enemies are defeated and 
       nodes: [{ ...base, id: 'floor', name: 'Piso', kind: 'box', position: [0, -0.1, 0], dimensions: [40, 0.2, 40] }, prefab('spikes', 'spikes', [0, 0, 0]), prefab('slime', 'enemy', [0, 0, -1.2], 2)] }))
   })
   const doc = JSON.parse(json)
+  doc.environment.gameplay={quests:[],recipes:[],naturalResources:false,startingItems:[],hud:'full'}
   await load(page, doc)
   await page.keyboard.press('p')
   const hud = page.getByRole('region', { name: 'Modo jogo' })

@@ -30,7 +30,7 @@ async function mount(page: Page, size: { width: number; height: number }) {
     document.body.appendChild(host)
     const deg = (value: number) => value * Math.PI / 180
     const base = {
-      phase: 'playing', title: { name: 'Ruínas de Valemar', premise: 'A névoa cobriu o vale e o dragão acordou sob o castelo. Recupere os três cristais antes do anoitecer.', objective: 'Recupere os cristais e derrote o dragão' },
+      hudStyle:'full',phase: 'playing', title: { name: 'Ruínas de Valemar', premise: 'A névoa cobriu o vale e o dragão acordou sob o castelo. Recupere os três cristais antes do anoitecer.', objective: 'Recupere os cristais e derrote o dragão' },
       health: 62, maxHealth: 100, stamina: 40, maxStamina: 100, objective: 'Recupere os cristais do santuário e derrote o Dragão Ancião', objectiveDone: false,
       tracker: { label: 'Santuário do Leste', distance: 48, bearing: deg(38) },
       compass: { heading: deg(12), markers: [
@@ -107,7 +107,8 @@ for (const size of sizes) {
     await frames(page, 320)
     await expect(page.locator('.forma-plate')).toHaveCount(4)
     await page.screenshot({ path: `.cache/browser/three-hud-combat-${tag}.png` })
-    await expectLayout(page, size, ['.forma-tracker', '.forma-compass', '.forma-boss', '.forma-hud__cell--end .forma-info', '.forma-vitals', '.forma-hotbar', '.forma-hints', '.forma-capture', '.forma-pickups', '.forma-crosshair'])
+    await expect(page.locator('.forma-hints')).toBeHidden();await expect(page.locator('.forma-capture')).toBeHidden()
+    await expectLayout(page, size, ['.forma-tracker', '.forma-compass', '.forma-boss', '.forma-hud__cell--end .forma-info', '.forma-vitals', '.forma-hotbar', '.forma-pickups', '.forma-crosshair'])
     const prompt = await box(page, '.forma-prompt'), crosshair = await box(page, '.forma-crosshair')
     expect(overlaps(prompt, crosshair)).toBe(false)
     expect(Math.abs(crosshair.x + crosshair.width / 2 - size.width / 2)).toBeLessThan(1)

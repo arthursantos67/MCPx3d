@@ -1,3 +1,5 @@
+import {prepareWater} from '../sceneWater.ts'
+import {createLibraryWater} from '../sceneLibraryWater.ts'
 import * as THREE from 'three'
 import { buildLodField, LEAF_SIZE, levelCount, nodeSize, selectNodes, type LodField, type QuarterDraw } from './cdlod.ts'
 import { createTerrainCollider, type CollisionShape } from './terrainCollider.ts'
@@ -13,7 +15,8 @@ import type { WaterMesh, WorldMacro } from './worldMacro.ts'
 import { regionAt, type RegionInfo } from './worldRegions.ts'
 import { createVegetationRenderer, TIER_RANGES, vegetationTextures, type VegetationRenderer } from './vegetationRenderer.ts'
 import { BIOME_VEGETATION, SPECIES, VEGETATION_CELL, type Species } from './worldVegetation.ts'
-import { BIOMES, waterHeightAt } from './worldMacro.ts'
+import { BIOMES } from './worldMacro.ts'
+import { waterMeshHeightAt } from './worldHydrology.ts'
 import type { WindSystem } from '../sceneWind.ts'
 import type { QualityLevel } from '../sceneRuntimeTypes.ts'
 import { createGrass, type GrassSystem } from '../sceneGrass.ts'
@@ -21,6 +24,7 @@ import { createWorldGroundField, GROUND_WINDOW, type GroundWindow } from './worl
 import { proceduralTexture } from '../sceneTextures.ts'
 import type { PlantObstacle, PlantTarget } from './worldPlantInteraction.ts'
 import { findWorldSpawn } from './worldSpawn.ts'
+import { worldVisibility } from './worldVisibility.ts'
 
 export const STREAM_BUDGET_MS = 2
 /** Tolerance for the terrain LOD, in screen pixels. */
@@ -44,6 +48,7 @@ export interface WorldRuntime {
   obstacles(x: number, z: number): PlantObstacle[]
   removePlant(id: string): void
   resetHarvest(): void
+  setQuality(quality:QualityLevel):void
   /** Where the player starts: the document's spawn, or a dry low point found after the macro pass. */
   readonly spawn: THREE.Vector3 | null
   readonly macro: WorldMacro | null
@@ -81,6 +86,7 @@ export interface WorldRuntimeOptions {
   vegetation?: { renderer: THREE.WebGLRenderer; wind: WindSystem; shadows: boolean; quality: QualityLevel }
 }
 export function createWorldRuntime(world: ThreeWorldDocument, pool: WorldPool, options: WorldRuntimeOptions = {}): WorldRuntime {
+  let displayQuality:QualityLevel=options.vegetation?.quality??'medium',activeDistance=Infinity
   const seed = { seed: world.seed, terrain: world.terrain }
   let source: HeightSource = createHeightSource(world), macro: WorldMacro | null = null, spawn: THREE.Vector3 | null = null
   const levels = levelCount(Math.max(...world.terrain.size)), top = levels - 1
@@ -97,29 +103,38 @@ export function createWorldRuntime(world: ThreeWorldDocument, pool: WorldPool, o
   const object = new THREE.Group()
   object.name = world.name
   // Open sea to the horizon around coastal worlds: one quad, recentred with the render origin.
-  const sea = world.terrain.seaLevel === null ? null : new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshStandardMaterial({ color: '#2f5f73', roughness: 0.18, metalness: 0, side: THREE.DoubleSide }))
+  let librarySea:ReturnType<typeof createLibraryWater>|null=null
+  const sea = world.terrain.seaLevel === null ? null : new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshPhysicalMaterial({ color: '#2f5f73', roughness: .3, metalness: 0,ior:1.333,envMapIntensity:.55,normalScale:new THREE.Vector2(.12,.12), side: THREE.DoubleSide }))
   if (sea) {
     sea.name = 'Mar do mundo'
     sea.rotation.x = -Math.PI / 2
     sea.scale.set(Math.max(...world.terrain.size) * 4, Math.max(...world.terrain.size) * 4, 1)
     sea.position.y = world.terrain.seaLevel!
     sea.receiveShadow = true
+    sea.material.userData.water=true
   }
-  let water: THREE.Mesh | null = null, waterLevels: Float32Array | null = null, waterDepths: Float32Array | undefined, waterTriangles: Uint8Array | undefined
+  let water: THREE.Group | null = null,waterData:WaterMesh|null=null,waterMaterial:THREE.MeshPhysicalMaterial|null=null
+  const waterChunks:{mesh:THREE.Mesh;bounds:THREE.Box3}[]=[]
   const waterSurface = (mesh: WaterMesh) => {
     if (!mesh.indices.length) return null
-    const geometry = new THREE.BufferGeometry(), uv = new Float32Array(mesh.positions.length / 3 * 2)
+    const uv = new Float32Array(mesh.positions.length / 3 * 2)
     for (let i = 0; i < uv.length / 2; i++) { uv[i * 2] = mesh.positions[i * 3] * 0.05; uv[i * 2 + 1] = mesh.positions[i * 3 + 2] * 0.05 }
-    geometry.setAttribute('position', new THREE.BufferAttribute(mesh.positions, 3))
-    geometry.setAttribute('uv', new THREE.BufferAttribute(uv, 2))
-    geometry.setIndex(new THREE.BufferAttribute(mesh.indices, 1))
-    geometry.computeVertexNormals()
+    const positions=new THREE.BufferAttribute(mesh.positions,3),uvs=new THREE.BufferAttribute(uv,2),normals=mesh.normals?new THREE.BufferAttribute(mesh.normals,3):null
     const normal = proceduralTexture('water', 'normal')
-    const material = new THREE.MeshStandardMaterial({ color: '#2c5d6e', roughness: 0.1, metalness: 0, normalMap: normal, normalScale: new THREE.Vector2(0.6, 0.6), side: THREE.DoubleSide })
+    const material = new THREE.MeshPhysicalMaterial({ color: '#326c78', roughness: .34, metalness: 0,ior:1.333,envMapIntensity:.5, normalMap: normal, normalScale: new THREE.Vector2(.14,.14), side: THREE.DoubleSide })
     material.userData.water = true
-    const surface = new THREE.Mesh(geometry, material)
+    waterMaterial=material
+    const surface = new THREE.Group()
     surface.name = 'Lagos e rios'
-    surface.receiveShadow = true
+    const fallback=mesh.patches?null:new THREE.Box3().setFromArray(mesh.positions)
+    const patches=mesh.patches??[{key:'all',indices:mesh.indices,min:fallback!.min.toArray(),max:fallback!.max.toArray()}]
+    for(const patch of patches){
+      const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',positions);geometry.setAttribute('uv',uvs)
+      geometry.setIndex(new THREE.BufferAttribute(patch.indices,1));if(normals)geometry.setAttribute('normal',normals);else geometry.computeVertexNormals()
+      const bounds=new THREE.Box3(new THREE.Vector3(...patch.min),new THREE.Vector3(...patch.max))
+      geometry.boundingBox=bounds;geometry.boundingSphere=bounds.getBoundingSphere(new THREE.Sphere())
+      const part=new THREE.Mesh(geometry,material);part.name=`Água · ${patch.key}`;part.receiveShadow=true;surface.add(part);waterChunks.push({mesh:part,bounds})
+    }
     return surface
   }
   const cells: [number, number] = [roots[0] * nodeSize(top) / ERROR_CELL, roots[1] * nodeSize(top) / ERROR_CELL]
@@ -190,9 +205,9 @@ export function createWorldRuntime(world: ThreeWorldDocument, pool: WorldPool, o
     terrain?.setField(field)
   }
   const select = (camera: THREE.Vector3, culled: boolean) => selectNodes({
-    camera: [camera.x, camera.y, camera.z], origin, levels, field: field!, roots,
+    camera: [camera.x, camera.y, camera.z], origin, levels, field: field!, roots,maxDistance:activeDistance,
     bounds: stream.bounds, resident: stream.resident,
-    visible: culled ? (x0, y0, z0, x1, y1, z1) => { box.min.set(x0, y0, z0); box.max.set(x1, y1, z1); return frustum.intersectsBox(box) } : undefined,
+    visible: (x0,y0,z0,x1,y1,z1)=>{box.min.set(x0,y0,z0);box.max.set(x1,y1,z1);return box.distanceToPoint(camera)<=activeDistance&&(!culled||frustum.intersectsBox(box))},
   })
   const nearPlayer = (draws: QuarterDraw[], player: THREE.Vector3) => draws.filter((draw) => {
     const half = nodeSize(draw.level) / 2, x0 = origin[0] + draw.ix * nodeSize(draw.level) + (draw.quarter & 1) * half, z0 = origin[1] + draw.iz * nodeSize(draw.level) + (draw.quarter >> 1) * half
@@ -226,11 +241,12 @@ export function createWorldRuntime(world: ThreeWorldDocument, pool: WorldPool, o
   const runtime: WorldRuntime = {
     object, collision, errors, stats,
     heightAt: (x, z) => source.heightAt(x, z),
-    waterAt: (x, z) => { const level = macro && waterLevels ? waterHeightAt(waterLevels, macro, x, z, waterTriangles, waterDepths) : null; return level === null ? world.terrain.seaLevel : Math.max(level, world.terrain.seaLevel ?? -Infinity) },
+    waterAt: (x, z) => { const level = macro && waterData ? waterMeshHeightAt(waterData,macro,x,z) : null; return level === null ? world.terrain.seaLevel : Math.max(level, world.terrain.seaLevel ?? -Infinity) },
     resourceAt: (ray, range) => vegetation?.raycast(ray, range) ?? null,
     obstacles: (x, z) => vegetation?.obstacles(x, z) ?? [],
     removePlant(id) { removedPlants.add(id); vegetation?.removePlant(id) },
     resetHarvest() { removedPlants.clear(); vegetation?.resetHarvest() },
+    setQuality(quality){displayQuality=quality;librarySea?.setQuality(quality)},
     get spawn() { return spawn },
     get macro() { return macro },
     regionAt: (x, z) => regionAt(world, macro, x, z),
@@ -238,7 +254,7 @@ export function createWorldRuntime(world: ThreeWorldDocument, pool: WorldPool, o
       const index = world.locations.findIndex((location) => location.id === locationId), level = index >= 0 ? macro?.siteLevels[index] : undefined
       return level === undefined || Number.isNaN(level) ? null : level
     },
-    get materials() { return [...terrain?.materials ?? [], ...(sea ? [sea.material as THREE.Material] : []), ...(water ? [water.material as THREE.Material] : []), ...vegetation?.materials ?? []] },
+    get materials() { return [...terrain?.materials ?? [], ...(sea ? [sea.material as THREE.Material] : []), ...(waterMaterial ? [waterMaterial] : []), ...vegetation?.materials ?? []] },
     async prepare(focus, camera, pixelHeight, onProgress) {
       const textures = Promise.all([...TERRAIN_TEXTURES, 'water' as const, ...options.vegetation ? vegetationTextures(SPECIES) : []].filter((kind) => !hasTextureData(kind)).map((kind) =>
         pool.run({ type: 'texture', kind }).then(({ color, normal, rough }) => primeTextureData(kind, { color, normal, rough }))))
@@ -249,10 +265,10 @@ export function createWorldRuntime(world: ThreeWorldDocument, pool: WorldPool, o
       const macroResult = await pool.run({ type: 'macro', world: seed, layout })
       if (disposed) return
       macro = macroResult.macro
-      await pool.broadcast({ type: 'install', world: seed, fields: { delta: macro.delta, cell: macro.cell, points: macro.points, origin: macro.origin, biome: macro.biome, water: macro.water, river: macro.river, ground: macro.ground, clear: macro.clear, pads: macro.pads } })
+      await pool.broadcast({ type: 'install', world: seed, fields: { delta: macro.delta, cell: macro.cell, points: macro.points, origin: macro.origin, biome: macro.biome, water: macro.water, river: macro.river,channels:macro.channels, ground: macro.ground, clear: macro.clear, pads: macro.pads } })
       if (needsMacro(world)) source = createHeightSource(world, macro)
       spawn = focus?.clone() ?? await findWorldSpawn(world, source, (x, z) => {
-        const level = waterHeightAt(macroResult.mesh.levels, macro!, x, z, macroResult.mesh.triangles, macroResult.mesh.depths)
+        const level = waterMeshHeightAt(macroResult.mesh,macro!,x,z)
         return regionAt(world, macro, x, z).dry && (level === null || source.heightAt(x, z) > level + 0.5)
       })
       if (focus && world.environment.player?.mode !== 'fly') spawn.y = source.heightAt(spawn.x, spawn.z) + 0.05
@@ -269,8 +285,7 @@ export function createWorldRuntime(world: ThreeWorldDocument, pool: WorldPool, o
       if (disposed) return
       terrain = createTerrainRenderer(stream, macro, options.anisotropy)
       water = waterSurface(macroResult.mesh)
-      waterLevels = macroResult.mesh.levels
-      waterDepths = macroResult.mesh.depths; waterTriangles = macroResult.mesh.triangles
+      waterData=macroResult.mesh
       if (options.vegetation) {
         // Only the species some biome of this world grows; each is built and baked in its own task.
         const present = new Set<Species>()
@@ -283,16 +298,25 @@ export function createWorldRuntime(world: ThreeWorldDocument, pool: WorldPool, o
       }
       refreshField(camera, pixelHeight)
       await loadAround(focus, (fraction) => onProgress?.(0.6 + 0.4 * fraction))
+      if(waterMaterial&&options.vegetation)prepareWater(waterMaterial,options.vegetation.wind,ground,{amplitude:.25,flow:[.025,.01]})
+      if(sea&&options.vegetation){
+        const normal=proceduralTexture('water','normal')
+        librarySea=createLibraryWater(sea.geometry,normal,Math.max(...world.terrain.size)*4,world.terrain.seaLevel!)
+        librarySea.setQuality(displayQuality);librarySea.object.scale.copy(sea.scale)
+        sea.material.dispose();normal.dispose()
+      }
       // Attached only now: a mesh in the scene compiles its program on the next frame even with no instances, which
       // would block; the viewport compiles it in parallel right after this resolves.
-      if (!disposed) { object.add(terrain.object); if (sea) object.add(sea); if (water) object.add(water); if (vegetation) object.add(vegetation.object); object.add(worldSpace) }
+      if (!disposed) { object.add(terrain.object); if (sea) object.add(librarySea?.object??sea); if (water) object.add(water); if (vegetation) object.add(vegetation.object); object.add(worldSpace) }
     },
     update(camera, pixelHeight, player) {
       if (!terrain) return
+      activeDistance=player?worldVisibility(displayQuality).distance:Infinity
       const started = performance.now()
       stream.beginFrame()
       refreshField(camera, pixelHeight)
       camera.getWorldPosition(cameraWorld)
+      librarySea?.setCaptureEnabled(cameraWorld.y-world.terrain.seaLevel!<40&&source.heightAt(cameraWorld.x,cameraWorld.z)<world.terrain.seaLevel!+8)
       const anchor = player ?? cameraWorld
       if (Math.hypot(anchor.x - renderOrigin[0], anchor.z - renderOrigin[1]) > RECENTER_DISTANCE) {
         renderOrigin = [Math.round(anchor.x / ORIGIN_STEP) * ORIGIN_STEP, Math.round(anchor.z / ORIGIN_STEP) * ORIGIN_STEP]
@@ -300,7 +324,9 @@ export function createWorldRuntime(world: ThreeWorldDocument, pool: WorldPool, o
       }
       object.position.set(renderOrigin[0], 0, renderOrigin[1])
       sea?.position.set(-renderOrigin[0], world.terrain.seaLevel!, -renderOrigin[1])
+      librarySea?.object.position.set(-renderOrigin[0],world.terrain.seaLevel!,-renderOrigin[1])
       water?.position.set(-renderOrigin[0], 0, -renderOrigin[1])
+      for(const chunk of waterChunks)chunk.mesh.visible=chunk.bounds.distanceToPoint(cameraWorld)<=activeDistance
       frustum.setFromProjectionMatrix(matrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse))
       const view = select(cameraWorld, true), all = select(cameraWorld, false)
       const collisionWanted = player ? collisionNodes(player.x, player.z, origin, COLLISION_RADIUS) : []
@@ -332,7 +358,10 @@ export function createWorldRuntime(world: ThreeWorldDocument, pool: WorldPool, o
     collisionReady: (position) => collisionNodes(position.x, position.z, origin, LEAF_SIZE / 2).every((node) => !!stream.tile(node.level, node.ix, node.iz)),
     dispose() {
       disposed = true; stream.dispose(); terrain?.dispose(); vegetation?.dispose(); grass?.dispose(); ground?.dispose()
-      for (const mesh of [sea, water]) { mesh?.geometry.dispose(); (mesh?.material as THREE.MeshStandardMaterial | undefined)?.normalMap?.dispose(); (mesh?.material as THREE.Material | undefined)?.dispose() }
+      sea?.geometry.dispose();librarySea?.dispose();if(!librarySea)(sea?.material as THREE.Material|undefined)?.dispose()
+      for(const chunk of waterChunks)chunk.mesh.geometry.dispose()
+      waterChunks.length=0;waterMaterial?.normalMap?.dispose();waterMaterial?.dispose()
+      waterData=null
     },
   }
   return runtime

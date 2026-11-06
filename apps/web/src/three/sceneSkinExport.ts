@@ -50,6 +50,7 @@ export function bakeSkinMaterial(mesh: THREE.SkinnedMesh): { geometry: THREE.Buf
 export function prepareSkinExport(built: BuiltScene): () => void {
   const owned: { dispose: () => void }[] = []
   for (const skin of built.skins.values()) {
+    if (skin.nativeClips) continue
     skin.meshes.forEach((mesh, i) => { mesh.visible = i === 0 })
     const mesh = skin.meshes[0], baked = bakeSkinMaterial(mesh)
     mesh.geometry = baked.geometry; mesh.material = baked.materials
@@ -59,8 +60,9 @@ export function prepareSkinExport(built: BuiltScene): () => void {
 }
 
 export function characterExportClips(doc: ThreeSceneDocument, built: BuiltScene): THREE.AnimationClip[] {
-  const bindings = bindRigs(doc)
-  if (!bindings.length) return []
+  const native = [...built.skins.values()].flatMap(skin => skin.nativeClips ?? [])
+  const bindings = bindRigs(doc).filter(binding => !built.skins.get(binding.rootId)?.nativeClips)
+  if (!bindings.length) return native
   const objects = new Set<THREE.Object3D>()
   for (const binding of bindings) {
     binding.joints.forEach((joint) => { const holder = built.holders.get(joint.nodeId); if (holder) objects.add(holder) })
@@ -68,7 +70,7 @@ export function characterExportClips(doc: ThreeSceneDocument, built: BuiltScene)
   }
   const rest = [...objects].map((object) => ({ object, position: object.position.clone(), quaternion: object.quaternion.clone() }))
   const restore = () => rest.forEach(({ object, position, quaternion }) => { object.position.copy(position); object.quaternion.copy(quaternion) })
-  const clips: THREE.AnimationClip[] = []
+  const clips: THREE.AnimationClip[] = [...native]
   try {
     for (const speed of [0, 1.6]) {
       restore()

@@ -3,9 +3,13 @@ import ThreeViewport, { type GizmoMode, type TransformPatch, type ViewportContro
 import ThreeStage from './ThreeStage.tsx'
 import GeometryEditor from './GeometryEditor.tsx'
 import { importGlb } from './importGlb.ts'
+import { catalogModelData, type CatalogModel, type CatalogPack } from './sceneModelCatalog.ts'
+import ThreeModelLibrary from './ThreeModelLibrary.tsx'
+import { loadLibraryModel, modelLibrary, modelUrl, type LibraryModelId } from './sceneModelLibrary.ts'
+import { Box3, Vector3 } from 'three'
 import { inspectSceneAsync } from './inspectSceneAsync.ts'
 import type { SceneInspection } from './sceneInspection.ts'
-import { insertionPosition } from './scenePlacement.ts'
+import { insertionPosition, supportedInsertionPosition, sceneMatrices } from './scenePlacement.ts'
 import { expandSceneRecipe, generateThreeScene, editThreeScene, healScene, SceneGenerationTimeoutError, type SceneGenerationEvent, type SceneGenerationReport } from './sceneGeneration.ts'
 import ThreeGenerationProgress, { type SceneGenerationRun } from './ThreeGenerationProgress.tsx'
 import { auditScene, describeAudit, type SceneAudit } from './sceneLayout.ts'
@@ -160,6 +164,7 @@ export default function ThreeWorkspace({ active, provider, ready, onBusyChange, 
   const [helpOpen, setHelpOpen] = useState(false)
   const [studioOpen, setStudioOpen] = useState(false)
   const [projectMenu, setProjectMenu] = useState(false)
+  const [modelLibraryOpen, setModelLibraryOpen] = useState(false)
   const [reportsOpen, setReportsOpen] = useState(false)
   const [hasCreated, setHasCreated] = useState(!!initial.restored)
   const [prompt, setPrompt] = useState('')
@@ -253,7 +258,7 @@ export default function ThreeWorkspace({ active, provider, ready, onBusyChange, 
           nodes: [{ ...createNode('group', parentId), id, name: prefabLabels[type], color: '#cccccc', metalness: 0, roughness: 0.6, repeat: { mode: 'linear', count: 1, offset: [0, 0, 0], radius: 0, axis: 'y' },
             prefab: { type, size: 1, seed: Math.floor(Math.random() * 1000), primary: null, secondary: null, text: '', lit: true, interactive: true } }] }, () => {}, doc.nodes)
         const added = expanded.nodes.slice(doc.nodes.length), root = added[0]
-        root.position = insertionPosition(doc, { ...root, position: [0, 0, 0] }, added)
+        root.position = supportedInsertionPosition(doc, { ...root, position: [0, 0, 0] }, added)
         if (commit({ ...doc, nodes: [...doc.nodes, ...added] })) { setSelectedId(root.id); setFilter('') }
       } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
       return
@@ -495,6 +500,52 @@ export default function ThreeWorkspace({ active, provider, ready, onBusyChange, 
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
     finally { setAssetBusy(false); onBusyChange(false) }
   }
+  const addLibraryModel = async (id: LibraryModelId) => {
+    if (generating || inspecting || assetBusy) return
+    const model = modelLibrary.find(entry => entry.id === id)!
+    setAssetBusy(true); onBusyChange(true); setError(null)
+    try {
+      if ('prefab' in model) {
+        await loadLibraryModel(id)
+        const rootId = `${model.prefab}-${crypto.randomUUID().slice(0, 8)}`
+        const expanded = expandSceneRecipe({ name: doc.name, duration: doc.timeline.duration, background: doc.environment.background, exposure: doc.environment.exposure, lightIntensity: doc.environment.lightIntensity, environment: doc.environment,
+          nodes: [{ ...createNode('group'), id: rootId, name: model.name, color: '#cccccc', metalness: 0, roughness: 0.6, repeat: { mode: 'linear', count: 1, offset: [0, 0, 0], radius: 0, axis: 'y' }, prefab: { type: model.prefab, model: id, size: 1, seed: 1, primary: null, secondary: null, text: '', lit: false, interactive: true } }] }, () => {}, doc.nodes)
+        const added = expanded.nodes.slice(doc.nodes.length), root = added[0]
+        root.position = supportedInsertionPosition(doc, { ...root, position: [0, 0, 0] }, added)
+        if (commit({ ...doc, nodes: [...doc.nodes, ...added] })) setSelectedId(root.id)
+      } else {
+        const response = await fetch(modelUrl(id), { signal: AbortSignal.timeout(15000) })
+        if (!response.ok) throw new Error('Não foi possível abrir o modelo local.')
+        const source = await loadLibraryModel(id), result = await importGlb(await response.arrayBuffer(), model.name, doc)
+        const root = result.document.nodes.find(node => node.id === result.selectedId)!
+        const height = new Box3().setFromObject(source.scene).getSize(new Vector3()).y
+        root.scale = [1, 1, 1].map(() => model.height / Math.max(0.01, height)) as [number, number, number]
+        root.position = supportedInsertionPosition(doc, { ...root, position: [0, 0, 0] }, result.document.nodes.slice(doc.nodes.length))
+        if (commit(result.document)) setSelectedId(root.id)
+      }
+      setModelLibraryOpen(false); setFitRequest(value => value + 1)
+      setAssetNotice(`${model.name} adicionado · KayKit, Kay Lousberg · CC0.`)
+    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
+    finally { setAssetBusy(false); onBusyChange(false) }
+  }
+  const addCatalogModel = async (model:CatalogModel,pack:CatalogPack,height:number) => {
+    if(generating||inspecting||assetBusy)return
+    setAssetBusy(true);onBusyChange(true);setError(null)
+    try {
+      const bytes=await catalogModelData(model,pack),result=await importGlb(bytes,model.name,doc)
+      const root=result.document.nodes.find(node=>node.id===result.selectedId)!,added=result.document.nodes.slice(doc.nodes.length)
+      // Imported children already contain their transforms; measure the whole object before scaling its root.
+      const matrices=sceneMatrices(result.document),bounds=new Box3()
+      for(const node of added)if(hasSurface(node.kind))bounds.union(new Box3(new Vector3(-.5,-.5,-.5),new Vector3(.5,.5,.5)).applyMatrix4(matrices.get(node.id)!.clone().scale(new Vector3(...node.dimensions))))
+      const scale=height/Math.max(.001,bounds.getSize(new Vector3()).y)
+      root.scale=[scale,scale,scale]
+      root.position=supportedInsertionPosition(doc,{...root,position:[0,0,0]},added)
+      if(!commit(result.document))throw new Error('O modelo ultrapassa os limites do projeto atual.')
+      setSelectedId(root.id);setModelLibraryOpen(false);setFitRequest(value=>value+1)
+      setAssetNotice(`${model.name} adicionado · ${pack.name} · ${pack.author} · ${pack.license}.`)
+    } catch(cause) {setError(cause instanceof Error?cause.message:String(cause));throw cause}
+    finally{setAssetBusy(false);onBusyChange(false)}
+  }
   const busy = generating || inspecting || assetBusy
   const enterPlay = () => { if (!busy && !playBlocked && (doc.nodes.length || world)) { setPlaying(false); setHelpOpen(false); setPlayMode(true) } }
   const runShortcut = (shortcut: EditorCommand) => {
@@ -630,6 +681,7 @@ export default function ThreeWorkspace({ active, provider, ready, onBusyChange, 
         <button type="button" disabled={!history.future.length} onClick={() => { setHistory(redoScene(history)); setError(null) }}>Refazer</button>
         <button type="button" onClick={() => fileInput.current?.click()}>Importar JSON</button>
         <button type="button" onClick={() => glbInput.current?.click()}>Importar GLB</button>
+        <button type="button" onClick={() => { setProjectMenu(false); setModelLibraryOpen(true) }}>Biblioteca de modelos</button>
         <input ref={glbInput} type="file" accept=".glb,model/gltf-binary" aria-label="Importar modelo GLB" hidden onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ''; if (file) void importAsset(file) }} />
         <button type="button" onClick={() => void verify()}>Verificar cena</button>
         <button type="button" onClick={() => void capture()}>Capturar PNG</button>
@@ -875,6 +927,7 @@ export default function ThreeWorkspace({ active, provider, ready, onBusyChange, 
       <output aria-label="Tempo atual">{time.toFixed(1)} / {doc.timeline.duration} s</output>
       <span>{doc.nodes.filter((node) => node.animation.kind !== 'none').length} animações · {doc.nodes.filter((node) => node.interaction).length} interações</span>
     </div>
-    <footer className="three-statusbar" hidden={!studioOpen || playMode}><span><span className="three-dot" /> Three.js · local</span><span>{doc.nodes.filter((node) => hasSurface(node.kind)).length} malhas · {doc.nodes.filter((node) => node.kind === 'light').length} luzes</span><span role="status">{saveStatus}</span><span>Projeto JSON 1.3</span></footer>
+    <footer className="three-statusbar" hidden={!studioOpen || playMode}><span><span className="three-dot" /> Three.js · local</span><span>{doc.nodes.filter((node) => hasSurface(node.kind)).length} malhas · {doc.nodes.filter((node) => node.kind === 'light').length} luzes</span><span role="status">{saveStatus}</span><span>Projeto JSON 1.4</span></footer>
+    {modelLibraryOpen && <ThreeModelLibrary busy={assetBusy} onAdd={id => void addLibraryModel(id)} onAddCatalog={addCatalogModel} onClose={() => setModelLibraryOpen(false)} />}
   </div>
 }

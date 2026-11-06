@@ -1,6 +1,7 @@
 import { textureData } from '../sceneTextures.ts'
 import { generateTile, measureBlockErrors } from './terrainTile.ts'
-import { buildMacro, waterMesh, type MacroLayout, type WorldMacro } from './worldMacro.ts'
+import { buildMacro, type MacroLayout, type WorldMacro } from './worldMacro.ts'
+import { channelAt,detailedWaterMesh } from './worldHydrology.ts'
 import { createHeightSource, type HeightSource } from './worldTerrain.ts'
 import { placeVegetation } from './worldVegetation.ts'
 import { groundWindow } from './worldGround.ts'
@@ -30,11 +31,27 @@ export function buildWorldMacro(world: WorldSeed, layout?: MacroLayout): WorldMa
   const base = createHeightSource(world), climate = needsMacro(world)
   const macro = buildMacro({ seed: world.seed, size: world.terrain.size, range: world.terrain.heightRange, seaLevel: world.terrain.seaLevel,
     erosion: climate ? world.terrain.erosion : 0, rivers: climate, climate: world.terrain.climate, base: base.heightAt, layout: climate ? layout : undefined })
-  const ground = createHeightSource(world, climate ? macro : null)
+  // Reconcile the datum before the final channel constraint reads it; sampling must not mutate its own input.
+  const ground = createHeightSource(world, climate ? {...macro,water:undefined,river:undefined,channels:undefined} : null)
   for (let k = 0; k < macro.water.length; k++) if (Number.isFinite(macro.water[k]) && !macro.lake?.[k]) {
     const x = macro.origin[0] + (k % macro.points[0]) * macro.cell, z = macro.origin[1] + Math.floor(k / macro.points[0]) * macro.cell, bed = ground.heightAt(x, z)
     macro.water[k] = Math.min(macro.water[k], bed + Math.max(0.15, macro.river[k] * 2.5))
     if (macro.water[k] <= bed + 0.03) macro.water[k] = NaN
+  }
+  const levels=new Map<string,number>(),channels=macro.channels!
+  const datum=(x:number,z:number)=>{
+    const key=`${x}:${z}`,known=levels.get(key);if(known!==undefined)return known
+    const k=Math.round((z-macro.origin[1])/macro.cell)*macro.points[0]+Math.round((x-macro.origin[0])/macro.cell)
+    const value=macro.lake?.[k]&&Number.isFinite(macro.water[k])?macro.water[k]:ground.heightAt(x,z)+1.2
+    levels.set(key,value);return value
+  }
+  for(let i=0;i<channels.length;i+=8){channels[i+2]=datum(channels[i],channels[i+1]);channels[i+5]=datum(channels[i+3],channels[i+4])}
+  if(channels.length){
+    const final=createHeightSource(world,macro)
+    for(let k=0;k<macro.water.length;k++)if(!macro.lake?.[k]){
+      const x=macro.origin[0]+(k%macro.points[0])*macro.cell,z=macro.origin[1]+Math.floor(k/macro.points[0])*macro.cell,profile=channelAt(macro,x,z)
+      macro.water[k]=profile?.ratio!==undefined&&profile.ratio<1&&profile.level>final.heightAt(x,z)+.03?profile.level:NaN
+    }
   }
   return macro
 }
@@ -51,9 +68,9 @@ export function runWorldJob(job: WorldJob): { result: WorldJobResults[WorldJob['
     return { result: { ...data, ms: performance.now() - started }, transfer: [data.color.buffer as ArrayBuffer, data.normal.buffer as ArrayBuffer, data.rough.buffer as ArrayBuffer] }
   }
   if (job.type === 'macro') {
-    const macro = buildWorldMacro(job.world, job.layout), mesh = waterMesh(macro, createHeightSource(job.world, needsMacro(job.world) ? macro : null).heightAt)
-    const arrays = [macro.delta, macro.water, macro.river, macro.temperature, macro.humidity, macro.ground, macro.biome, macro.drain, macro.filled, macro.clear, macro.siteLevels, mesh.positions, mesh.indices, mesh.levels, ...(macro.lake ? [macro.lake] : []), ...(mesh.depths ? [mesh.depths] : []), ...(mesh.triangles ? [mesh.triangles] : []), ...(macro.pads ? [macro.pads] : [])]
-    return { result: { macro, mesh, ms: performance.now() - started }, transfer: arrays.map((array) => array.buffer as ArrayBuffer) }
+    const macro = buildWorldMacro(job.world, job.layout), mesh = detailedWaterMesh(macro, createHeightSource(job.world, needsMacro(job.world) ? macro : null).heightAt)
+    const arrays = [macro.delta, macro.water, macro.river, macro.temperature, macro.humidity, macro.ground, macro.biome, macro.drain, macro.filled, macro.clear, macro.siteLevels, mesh.positions, mesh.indices, mesh.levels, ...(macro.lake ? [macro.lake] : []), ...(mesh.depths ? [mesh.depths] : []), ...(mesh.triangles ? [mesh.triangles] : []), ...(mesh.cellOffsets ? [mesh.cellOffsets] : []), ...(mesh.normals ? [mesh.normals] : []), ...(macro.pads ? [macro.pads] : [])]
+    return { result: { macro, mesh, ms: performance.now() - started }, transfer: [...arrays,...macro.channels?[macro.channels]:[],...mesh.patches?.map(patch=>patch.indices)??[]].map((array) => array.buffer as ArrayBuffer) }
   }
   if (job.type === 'install') {
     const key = worldKey(job.world)

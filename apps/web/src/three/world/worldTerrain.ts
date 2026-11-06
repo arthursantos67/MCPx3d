@@ -1,6 +1,7 @@
 import { noised, smoothstep, type NoiseSample } from './worldNoise.ts'
 import { sampleMacro, type WorldMacro } from './worldMacro.ts'
 import type { ThreeWorldDocument } from './worldDocument.ts'
+import { channelAt,carveChannel } from './worldHydrology.ts'
 
 /**
  * Elevation in metres for any world point. One pure function serves rendering tiles, collision, placement and
@@ -19,7 +20,7 @@ export interface HeightSource {
  * fine would force full-resolution patches hundreds of metres away to stay within 1 px.
  */
 export const MIN_WAVELENGTH = 64
-export const TERRAIN_GENERATOR = 'synthetic-v5'
+export const TERRAIN_GENERATOR = 'synthetic-v8'
 /** Smooth |x|: ridges keep a rounded crest instead of a crease of unbounded curvature. */
 const softAbs = (value: number, round: number) => Math.sqrt(value * value + round * round) - round
 const softPlus = (value: number, width: number) => value > 20 * width ? value : width * Math.log1p(Math.exp(value / width))
@@ -27,7 +28,7 @@ const softPlus = (value: number, width: number) => value > 20 * width ? value : 
 const softClamp = (value: number, width = 0.04) => value - softPlus(value - 1, width) + softPlus(-value, width)
 
 /** The part of a WorldMacro needed for heights; workers receive only this. */
-export type MacroRelief = Pick<WorldMacro, 'delta' | 'cell' | 'points' | 'origin' | 'pads'>
+export type MacroRelief = Pick<WorldMacro, 'delta' | 'cell' | 'points' | 'origin' | 'pads'> & Partial<Pick<WorldMacro,'water'|'river'|'channels'>>
 
 /** Relief before erosion and rivers (also the input of the macro pass). With `macro`, its smooth delta is added. */
 export function createHeightSource(world: Pick<ThreeWorldDocument, 'seed' | 'terrain'>, macro?: MacroRelief | null): HeightSource {
@@ -76,7 +77,7 @@ export function createHeightSource(world: Pick<ThreeWorldDocument, 'seed' | 'ter
     return low + softClamp(fraction) * span
   }
   const heightAt = macro ? (x: number, z: number) => {
-    let height = baseAt(x, z) + sampleMacro(macro.delta, macro, x, z)
+    let height = carveChannel(baseAt(x, z) + sampleMacro(macro.delta, macro, x, z),channelAt(macro,x,z))
     for (let i = 0; i < (macro.pads?.length ?? 0); i += 4) {
       const pads = macro.pads!, radius = pads[i + 2], dx = x - pads[i], dz = z - pads[i + 1]
       if (Math.abs(dx) > radius * 1.6 || Math.abs(dz) > radius * 1.6) continue

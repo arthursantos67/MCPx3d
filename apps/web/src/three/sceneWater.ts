@@ -31,9 +31,10 @@ export function animateWater(materials: Iterable<THREE.Material>, seconds: numbe
   for (const entry of materials) {
     if (!isWaterMaterial(entry)) continue
     const material = entry as Mapped
-    drift(material.normalMap, seconds, 0.021, 0.013, 0.015)
-    drift(material.roughnessMap, seconds, -0.017, 0.024, 0)
-    drift(material.map, seconds, -0.006, 0.004, 0)
+    const fluidTime=seconds/((material.userData.liquid as {viscosity?:number}|undefined)?.viscosity??1)
+    drift(material.normalMap, fluidTime, 0.021, 0.013, 0.015)
+    drift(material.roughnessMap, fluidTime, -0.017, 0.024, 0)
+    drift(material.map, fluidTime, -0.006, 0.004, 0)
     if (material.normalScale) {
       const base = (material.userData.waterNormalScale ??= material.normalScale.clone()) as THREE.Vector2
       material.normalScale.copy(base).multiplyScalar(1 + 0.22 * Math.sin(seconds * 0.9) + 0.08 * Math.sin(seconds * 2.3))
@@ -90,6 +91,7 @@ export function waterGeometry(node: SceneNode): THREE.BufferGeometry | null {
 const commonGLSL = /* glsl */`
 ${WIND_GLSL}
 uniform float waterAmplitude;
+uniform float waterViscosity;
 vec3 waterWave(vec2 xz) {
   vec2 d0 = windDirection;
   vec2 d1 = vec2(d0.x * 0.825 - d0.y * 0.565, d0.x * 0.565 + d0.y * 0.825);
@@ -97,7 +99,7 @@ vec3 waterWave(vec2 xz) {
   vec2 d3 = vec2(-d0.y, d0.x);
   vec4 amp = waterAmplitude * (0.04 + 0.09 * windStrength) * vec4(0.5, 0.3, 0.2, 0.12);
   vec4 k = vec4(0.35, 0.62, 1.1, 1.9);
-  vec4 phase = vec4(dot(d0, xz), dot(d1, xz), dot(d2, xz), dot(d3, xz)) * k - sqrt(9.8 * k) * windTime + vec4(0.0, 1.7, 4.1, 2.3);
+  vec4 phase = vec4(dot(d0, xz), dot(d1, xz), dot(d2, xz), dot(d3, xz)) * k - sqrt(9.8 * k) * windTime / waterViscosity + vec4(0.0, 1.7, 4.1, 2.3);
   vec4 slope = cos(phase) * amp * k;
   return vec3(dot(sin(phase), amp), d0 * slope.x + d1 * slope.y + d2 * slope.z + d3 * slope.w);
 }
@@ -134,6 +136,8 @@ worldPosition.y += waterLift;
 const fragmentHead = /* glsl */`
 ${commonGLSL}
 uniform float waterShore;
+uniform vec3 waterFoamColor;
+uniform float liquidKind;
 uniform vec3 waterDeep;
 float waterHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float waterNoise(vec2 p) {
@@ -144,16 +148,25 @@ const fragmentSurface = /* glsl */`
 vec3 waterState = waterWave(vWaterWorld.xz);
 vec4 waterGround = groundSample(vWaterWorld.xz);
 float waterDepth = waterShore * waterGround.z > 0.5 ? max(0.0, vWaterWorld.y - waterGround.x) : 50.0;
-vec2 waterDrift = vWaterWorld.xz * 1.6 + vec2(0.11, -0.07) * windTime;
-float waterGrain = waterNoise(waterDrift + windTime * 0.15) * 0.65 + waterNoise(waterDrift * 2.7 - windTime * 0.21) * 0.35;
-float waterBand = 0.5 + 0.5 * sin(waterDepth * 11.0 - windTime * 1.4 + waterGrain * 3.0);
+float fluidTime = windTime / waterViscosity;
+vec2 waterDrift = vWaterWorld.xz * 1.6 + vec2(0.11, -0.07) * fluidTime;
+float waterGrain = waterNoise(waterDrift + fluidTime * 0.15) * 0.65 + waterNoise(waterDrift * 2.7 - fluidTime * 0.21) * 0.35;
+float waterBand = 0.5 + 0.5 * sin(waterDepth * 11.0 - fluidTime * 1.4 + waterGrain * 3.0);
 float waterShoreFoam = (1.0 - smoothstep(0.0, 0.35 + 0.35 * waterGrain, waterDepth)) * smoothstep(0.25, 0.7, waterGrain * 0.7 + waterBand * 0.5);
 float waterAmp = max(1e-4, waterAmplitude * (0.04 + 0.09 * windStrength) * 1.12);
 float waterCrest = smoothstep(0.62, 0.95, waterState.x / waterAmp * 0.5 + 0.5) * smoothstep(0.45, 0.8, waterGrain) * vWaterScale * smoothstep(0.3, 1.2, windStrength);
 float waterFoam = clamp(waterShoreFoam + waterCrest * 0.7, 0.0, 1.0);
 diffuseColor.rgb *= mix(vec3(1.06, 1.05, 1.0), waterDeep, smoothstep(0.3, 6.0, waterDepth));
-diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.92, 0.95, 0.96), waterFoam);
+diffuseColor.rgb = mix(diffuseColor.rgb, waterFoamColor, waterFoam);
 diffuseColor.a = mix(diffuseColor.a * mix(0.45, 1.0, smoothstep(0.0, 1.2, waterDepth)), 1.0, waterFoam);`
+const fragmentEmission=/* glsl */`
+if(liquidKind > 0.5 && liquidKind < 1.5) {
+  vec2 lavaUv = vWaterWorld.xz * 1.8 + vec2(fluidTime * 0.11, -fluidTime * 0.07);
+  float crust = waterNoise(lavaUv + waterNoise(lavaUv * 0.45) * 1.6);
+  float molten = 1.0 - smoothstep(0.04, 0.17, abs(crust - 0.5));
+  diffuseColor.rgb = mix(vec3(0.055,0.025,0.018), vec3(0.65,0.16,0.025), molten);
+  totalEmissiveRadiance *= mix(0.025, 1.8, molten);
+} else if(liquidKind > 1.5) totalEmissiveRadiance *= 0.55 + waterGrain;`
 const fragmentNormal = /* glsl */`
 #ifdef USE_NORMALMAP_TANGENTSPACE
 float waterPhaseA = fract(windTime * 0.25), waterPhaseB = fract(windTime * 0.25 + 0.5);
@@ -177,15 +190,16 @@ normal = normalize( normal + mat3( viewMatrix ) * vec3( - waterState.y, 0.0, - w
  */
 export function prepareWater(material: THREE.MeshPhysicalMaterial, wind: WindSystem, field: GroundField | null, options: { flow?: [number, number]; amplitude?: number } = {}): void {
   if (field && wind.uniforms.groundMap.value !== field.texture) wind.setGround(field)
+  const liquid=material.userData.liquid as {kind?:string;viscosity?:number}|undefined
   const existing = material.userData.waterUniforms as Record<string, THREE.IUniform> | undefined
   if (existing) {
     ;(existing.waterFlowDefault.value as THREE.Vector2).set(...options.flow ?? [0, 0])
     existing.waterShore.value = field ? 1 : 0
-    existing.waterAmplitude.value = options.amplitude ?? 1
+    existing.waterAmplitude.value = options.amplitude ?? (liquid?.kind==='lava'?.18:1)
     return
   }
   const own: Record<string, THREE.IUniform> = { waterFlowDefault: { value: new THREE.Vector2(...options.flow ?? [0, 0]) }, waterShore: { value: field ? 1 : 0 },
-    waterAmplitude: { value: options.amplitude ?? 1 }, waterDeep: { value: new THREE.Color(0.42, 0.58, 0.74) } }
+    liquidKind:{value:liquid?.kind==='lava'?1:liquid?.kind==='acid'?2:0},waterViscosity:{value:liquid?.viscosity??1},waterFoamColor:{value:new THREE.Color(liquid?.kind==='lava'?'#ff792b':liquid?.kind==='acid'?'#b9df71':'#eaf2f5')},waterAmplitude: { value: options.amplitude ?? (liquid?.kind==='lava'?.18:1) }, waterDeep: { value: new THREE.Color(0.42, 0.58, 0.74) } }
   material.userData.waterUniforms = own
   const previous = material.onBeforeCompile, previousKey = material.customProgramCacheKey.bind(material)
   material.onBeforeCompile = (shader, renderer) => {
@@ -196,6 +210,7 @@ export function prepareWater(material: THREE.MeshPhysicalMaterial, wind: WindSys
       .replace('#include <worldpos_vertex>', `#include <worldpos_vertex>${vertexWorld}`)
     shader.fragmentShader = shader.fragmentShader.replace('#include <common>', `#include <common>\n${fragmentHead}`)
       .replace('#include <map_fragment>', `#include <map_fragment>\n${fragmentSurface}`)
+      .replace('#include <emissivemap_fragment>',`#include <emissivemap_fragment>\n${fragmentEmission}`)
       .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix( roughnessFactor, 0.75, waterFoam );')
       .replace('#include <normal_fragment_maps>', fragmentNormal)
   }

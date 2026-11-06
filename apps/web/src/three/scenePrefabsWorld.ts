@@ -313,7 +313,7 @@ export function buildWorldPrefab(spec: PrefabSpec): PrefabPart[] {
       const lid = ellipse(0, 0, 0.325, 0.25, 0, 180, 12)
       side('lid', 'Tampa', lid.map(([u, v]): Pt => [round(u + 0.325), round(v + 0.005)]), 0, 1, W, { parentId: hinge })
       for (const s of [-1, 1]) side(`lidStrap${s}`, 'Cinta da tampa', [...ellipse(0, 0, 0.335, 0.26, 0, 180, 12), ...ellipse(0, 0, 0.325, 0.25, 180, 0, 12)].map(([u, v]): Pt => [round(u + 0.325), round(v + 0.005)]), s * 0.35, 0.06, trim, { parentId: hinge })
-      P('lock', 'box', 'Fechadura', [0, 0.06, 0.665], [0.14, 0.16, 0.03], trim, { parentId: hinge })
+      P('lock', 'box', 'Fechadura', [0, 0.06, 0.665], [0.14, 0.16, 0.03], trim, { parentId: hinge, overlapWith: ['body'] })
       if (lit) P('light', 'light', 'Brilho do tesouro', [0, 0.9, 0.5], [0.12, 0.12, 0.12], undefined, { light: point('#ffd36b', 2, 4) })
       break
     }

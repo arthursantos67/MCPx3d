@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useId, useImperativeHandle, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type Ref } from 'react'
 import './ThreeHud.css'
-import { actionNames, controlActions, glyph, type GameAction, type InputDevice } from './sceneGamepad.ts'
+import { actionNames, controlActions, glyph, type InputDevice } from './sceneGamepad.ts'
 import { barFraction, bossPhase, bossPhases, compassTicks, createBar, DAMAGE_LIFE, DAMAGE_MAX, damageText, formatDistance, formatScore, hotbarItems, isHudIcon, itemIcon,
   layoutAnchors, lowHealth, markerIcon, outcomeSummary, placeMarkers, powerIcon, pushDamage, qualityOptions, relativeBearing, ringOffset, stepBar, timerText, toDegrees, TYPE_CPS, typedLength,
   vitalTone, weaponIcon, type DamageEntry, type HudAnchor, type HudDialogue, type HudModel, type HudOverlayHandle, type HudPrompt, type MenuAction } from './sceneHud.ts'
@@ -173,14 +173,14 @@ const Hotbar = memo(function Hotbar({ weapon, weaponLabel, items, quickbar, onSl
   const slots = quickbar?.slots ?? Array.from({ length: 5 }, (_, i) => fallback[i] ?? { item: null, name: 'Vazio', count: 0, icon: 'bag' as const })
   return <div className="forma-hotbar" role="toolbar" aria-label="Barra de atalhos · scroll ou 1 a 5">
     {slots.map((slot, i) => <button type="button" key={i} className={`forma-slot${i === (quickbar?.selected ?? (weapon === 'none' ? 0 : 1)) ? ' forma-slot--weapon' : ''}`} aria-label={`Slot ${i + 1}: ${slot.name}`} aria-pressed={i === (quickbar?.selected ?? 0)} title={`${slot.name} · ${i + 1}`} onClick={() => onSlot?.(i)}>
-      <span className="forma-slot__key">{i + 1}</span>{(i === 0 || slot.item) && <HudIcon name={slot.icon} />}{slot.count > 1 && <b className="forma-slot__count">×{slot.count}</b>}<span className="forma-slot__name">{slot.name}</span>
+      <span className="forma-slot__key">{i + 1}</span>{(i === 0 || slot.item) && <HudIcon name={slot.icon} />}{slot.count > 1 && <b className="forma-slot__count">×{slot.count}</b>}{slot.item&&<span className="forma-slot__name">{slot.name}</span>}
     </button>)}
   </div>
 }, same)
 
 function Prompt({ prompt, device }: { prompt: HudPrompt; device: InputDevice }) {
   return <div className="forma-prompt" data-enemy={prompt.enemy || undefined} data-locked={prompt.locked ? true : undefined}>
-    {prompt.locked ? <span className="forma-prompt__lock"><HudIcon name="lock" /></span> : <InputGlyph glyph={glyph(prompt.enemy ? 'attack' : 'interact', device)} />}
+    {prompt.locked ? <span className="forma-prompt__lock"><HudIcon name="lock" /></span> : <InputGlyph glyph={glyph(prompt.action??(prompt.enemy ? 'attack' : 'interact'), device)} />}
     <span className="forma-prompt__text"><span>{prompt.verb}</span> · <b>{prompt.target}</b></span>
     {prompt.health && prompt.health.max > 1 && <span className="forma-prompt__health" aria-label={`Resistência ${prompt.health.value}/${prompt.health.max}`}><i style={{ width: percent(prompt.health.value, prompt.health.max) }} /></span>}
     {prompt.locked && <small className="forma-prompt__needs">{prompt.locked}</small>}
@@ -236,21 +236,16 @@ function Dialogue({ dialogue, device, onOption, register }: { dialogue: HudDialo
   </section>
 }
 
-function HelpPanel({ device }: { device: InputDevice }) {
+function HelpPanel({ device, inventory, crafting }: { device: InputDevice; inventory: boolean; crafting: boolean }) {
   return <dl className="forma-help" aria-label="Controles do jogo">
     {controlActions.map((action) => <div key={action}><dt><InputGlyph glyph={glyph(action, device)} /></dt><dd>{actionNames[action]}</dd></div>)}
     <div><dt><kbd className="forma-glyph forma-glyph--wide">0–9</kbd></dt><dd>Gatilhos definidos na cena</dd></div>
-    <div><dt><kbd className="forma-glyph">B</kbd></dt><dd>Inventário e fabricação</dd></div>
+    {inventory && <div><dt><kbd className="forma-glyph">B</kbd></dt><dd>{crafting ? 'Inventário e fabricação' : 'Inventário'}</dd></div>}
     <div><dt><kbd className="forma-glyph forma-glyph--wide">C / Espaço</kbd></dt><dd>Mergulhar / subir na água</dd></div>
     <div><dt><HudIcon name="jump" /></dt><dd>Pular em cima derrota inimigos</dd></div>
   </dl>
 }
 
-function Hints({ device, fly }: { device: InputDevice; fly: boolean }) {
-  const hints: [GameAction, string][] = [['interact', 'Interagir'], ['jump', fly ? 'Subir' : 'Pular'], ...(fly ? [['down', 'Descer'] as [GameAction, string]] : []), ['dodge', 'Esquivar'],
-    ['camera', 'Câmera'], ['help', 'Ajuda'], ['pause', 'Pausa']]
-  return <ul className="forma-hints" aria-label="Atalhos">{hints.map(([action, label]) => <li key={action}><InputGlyph glyph={glyph(action, device)} />{label}</li>)}</ul>
-}
 
 function TitleCard({ title, leaving }: { title: HudModel['title']; leaving: boolean }) {
   return <div className="forma-title" data-leaving={leaving || undefined}>
@@ -293,11 +288,13 @@ function SettingsPanel({ settings, onSettings }: { settings: PlaySettings; onSet
     <Toggle label="Mostrar FPS" checked={settings.showFps} onChange={(showFps) => set({ showFps })} />
   </div>
 }
-function ControlsPanel() {
+function ControlsPanel({inventory}:{inventory:boolean}) {
   return <div className="forma-controls" aria-label="Controles">
     <h3>Controles</h3>
     <table><thead><tr><th>Ação</th><th>Teclado e mouse</th><th>Controle</th></tr></thead>
-      <tbody>{controlActions.map((action) => <tr key={action}><td>{actionNames[action]}</td><td><InputGlyph glyph={glyph(action, 'keyboard')} /></td><td><InputGlyph glyph={glyph(action, 'gamepad')} /></td></tr>)}</tbody></table>
+      <tbody>{controlActions.map((action) => <tr key={action}><td>{actionNames[action]}</td><td><InputGlyph glyph={glyph(action, 'keyboard')} /></td><td><InputGlyph glyph={glyph(action, 'gamepad')} /></td></tr>)}
+      {inventory&&<><tr><td>Inventário</td><td>B</td><td>—</td></tr><tr><td>Pegar / colocar pilha</td><td>Clique esquerdo</td><td>—</td></tr><tr><td>Metade da pilha / colocar 1</td><td>Clique direito</td><td>—</td></tr><tr><td>Acesso rápido</td><td>1–5 / roda do mouse</td><td>—</td></tr></>}
+      </tbody></table>
   </div>
 }
 
@@ -330,7 +327,7 @@ function PauseMenu({ model, settings, onSettings, onResume, onRestart, onExit, r
       <p className="forma-pause__hint"><InputGlyph glyph={glyph('back', model.device)} />Voltar ao jogo</p>
     </div>
     <div className="forma-pause__panel">
-      {tab === 'settings' ? <SettingsPanel settings={settings} onSettings={onSettings} /> : tab === 'controls' ? <ControlsPanel /> : <div className="forma-pause__summary">
+      {tab === 'settings' ? <SettingsPanel settings={settings} onSettings={onSettings} /> : tab === 'controls' ? <ControlsPanel inventory={model.inventoryAvailable!==false} /> : <div className="forma-pause__summary">
         <span className="forma-kicker"><HudIcon name={model.objectiveDone ? 'check' : 'diamond'} />Objetivo atual</span>
         <p>{model.objective || 'Explore livremente.'}</p>
         <dl>
@@ -514,7 +511,7 @@ export default function ThreeHud({ model, toasts, overlay, settings, presentatio
       <div className="forma-hud__numbers" ref={numbers} aria-hidden="true" />
       <div className="forma-crosshair" data-target={model.prompt ? model.prompt.enemy ? 'enemy' : 'interact' : undefined} aria-hidden="true"><i /><i /><i /><i /><b /></div>
       <div className="forma-hitmarker" ref={marker} aria-hidden="true"><i /><i /><i /><i /></div>
-      {model.prompt && !model.dialogue && model.phase !== 'paused' && <Prompt prompt={model.prompt} device={model.device} />}
+      {model.hudStyle === 'full' && model.prompt && !model.dialogue && model.phase !== 'paused' && <Prompt prompt={model.prompt} device={model.device} />}
 
       <div className="forma-hud__row forma-hud__row--top">
         <div className="forma-hud__cell">
@@ -523,19 +520,19 @@ export default function ThreeHud({ model, toasts, overlay, settings, presentatio
         </div>
         <div className="forma-hud__cell forma-hud__cell--center">
           {model.hudStyle !== 'minimal' && <Compass heading={model.compass.heading} markers={model.compass.markers} />}
-          {model.boss && <BossBar name={model.boss.name} health={model.boss.health} max={model.boss.max} />}
+          {model.hudStyle==='full'&&model.boss && <BossBar name={model.boss.name} health={model.boss.health} max={model.boss.max} />}
           <ul className="forma-toasts" role="status">{toasts.map((item) => <li key={item.id}>{item.text}</li>)}</ul>
         </div>
         <div className="forma-hud__cell forma-hud__cell--end">
           <div className="forma-info">
             {model.hudStyle !== 'minimal' && model.playStyle !== 'sandbox' && <span className="forma-pill forma-pill--score" aria-label="Pontuação"><HudIcon name="star" />{formatScore(model.score)}</span>}
             {(model.hudStyle !== 'minimal' || model.limit > 0) && model.playStyle !== 'sandbox' && <span className="forma-pill" aria-label="Tempo de jogo" data-urgent={timer.urgent || undefined}><HudIcon name="clock" />{timer.text}{timer.countdown && <small>restantes</small>}</span>}
-            {model.clock && <span className="forma-pill" aria-label="Hora do dia">{model.clock}</span>}
+            {model.hudStyle === 'full' && model.clock && <span className="forma-pill" aria-label="Hora do dia">{model.clock}</span>}
           </div>
-          <div className="forma-info forma-info--meta">
+          <div className="forma-info forma-info--meta" hidden={model.hudStyle==='minimal'}>
             <span className="forma-pill forma-pill--quiet">{model.muted && <HudIcon name="mute" />}<HudIcon name={model.fly ? 'wing' : 'eye'} />{view}</span>
             {showFps && <span className="forma-pill forma-pill--quiet" aria-label="Quadros por segundo">{model.fps} FPS</span>}
-            {playing && onInventory && (model.hudStyle !== 'minimal' || !!model.items.length || !!model.recipes?.length) && <button type="button" className="forma-corner-button" onClick={onInventory}><HudIcon name="bag" />Inventário · B</button>}
+            {playing && onInventory && model.inventoryAvailable !== false && (model.hudStyle !== 'minimal' || !!model.items.length || !!model.recipes?.length) && <button type="button" className="forma-corner-button" onClick={onInventory}><HudIcon name="bag" />Inventário · B</button>}
             {playing && onPause && <button type="button" className="forma-corner-button" aria-label="Pausar" title="Pausar" onClick={onPause}><HudIcon name="pause" /></button>}
             {playing && <button type="button" className="forma-corner-button forma-corner-button--exit" onClick={onExit}><HudIcon name="exit" />Sair do jogo</button>}
           </div>
@@ -556,13 +553,13 @@ export default function ThreeHud({ model, toasts, overlay, settings, presentatio
         <div className="forma-hud__cell forma-hud__cell--center">
           {model.dialogue && <Dialogue dialogue={model.dialogue} device={model.device} onOption={onDialogueOption} register={register} />}
           {subtitle && <p className="forma-subtitle" aria-live="polite"><b>{subtitle.speaker}</b>{subtitle.text}</p>}
-          {model.hudStyle !== 'minimal' && <Hotbar weapon={model.weapon} weaponLabel={model.weaponLabel} items={model.items} quickbar={model.quickbar} onSlot={onSlot} />}
+          {!model.dialogue&&(model.inventoryAvailable !== false || model.weapon !== 'none') && <Hotbar weapon={model.weapon} weaponLabel={model.weaponLabel} items={model.items} quickbar={model.quickbar} onSlot={onSlot} />}
           {model.placement && <p className="forma-placement" data-valid={model.placement.valid}>{model.placement.name} · {model.placement.reason}</p>}
         </div>
         <div className="forma-hud__cell forma-hud__cell--end">
-          {playing && !model.pointerLocked && model.device === 'keyboard' && <button type="button" className="forma-capture" onClick={onCaptureMouse}>
+          {model.help && playing && !model.pointerLocked && model.device === 'keyboard' && <button type="button" className="forma-capture" onClick={onCaptureMouse}>
             <InputGlyph glyph={glyph('attack', 'keyboard')} />Clique para capturar o mouse · ou arraste para olhar</button>}
-          {model.help ? <HelpPanel device={model.device} /> : <Hints device={model.device} fly={model.fly} />}
+          {model.help && <HelpPanel device={model.device} inventory={model.inventoryAvailable !== false} crafting={!!model.recipes?.length} />}
         </div>
       </div>
 

@@ -55,7 +55,7 @@ test('building support rejects water, missing ground and slopes; every supported
   assert.equal(placementSupport([0, 0, 0], 1, () => 2, () => 2.5).valid, false)
   assert.equal(placementSupport([0, 0, 0], 1, x => x, dry).valid, false)
   assert.equal(placementSupport([0, 0, 0], 1, () => null, dry).valid, false)
-  for (const kind of ['campfire', 'tent', 'chest', 'fence', 'torch'] as const) assert.ok(constructionScene(kind).nodes.some(node => node.kind !== 'group'))
+  for (const kind of ['campfire', 'tent', 'chest', 'fence', 'torch','workbench'] as const) assert.ok(constructionScene(kind).nodes.some(node => node.kind !== 'group'))
 })
 
 test('equipment, structures and chest contents survive reload with bounded validated data', () => {
@@ -98,7 +98,7 @@ test('the agent distinguishes free survival, timed hordes and puzzle interfaces'
   assert.match(directionBrief('Um puzzle de alavancas'), /hud="minimal"/)
   assert.ok(reviewSceneDirection(createEmptyScene(), 'Sobrevivência livre com crafting').some(issue => issue.includes('saídas com utilidade real')))
   const broken = composeWorldScene(createClimateWorld()).scene
-  broken.environment.gameplay!.recipes[0].inputs.push({ item: 'Fantasma', amount: 1 })
+  broken.environment.gameplay!.recipes.find(recipe=>recipe.id!=='bancada'&&!recipe.station)!.inputs.push({ item: 'Fantasma', amount: 1 })
   assert.throws(() => validateScene(broken), /ingredientes inacessíveis/)
 })
 

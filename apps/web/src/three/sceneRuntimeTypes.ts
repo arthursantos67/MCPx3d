@@ -1,4 +1,6 @@
 import type * as THREE from 'three'
+import type { AnimatorInput, AnimatorPose } from './sceneCharacterAnimator.ts'
+import type { PlayerBox } from './scenePlayer.ts'
 
 /** Rendering budget chosen by the player (or detected for software WebGL); systems scale counts and resolution with it. */
 export type QualityLevel = 'low' | 'medium' | 'high'
@@ -24,5 +26,10 @@ export interface CharacterSkin {
   setFace: (face: FaceState) => void
   setHands: (hands: HandPose) => void
   setQuality: (quality: QualityLevel) => void
+  animate?: (input: AnimatorInput, pose: AnimatorPose) => void
+  nativeClips?: THREE.AnimationClip[]
+  /** World-space body targets from the visible rig, excluding weapons and costume accessories. */
+  hitboxes?: () => PlayerBox[]
+  bodySize?: { height: number; radius: number }
   dispose: () => void
 }

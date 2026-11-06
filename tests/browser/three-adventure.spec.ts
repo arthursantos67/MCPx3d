@@ -18,25 +18,27 @@ async function open(page: Page, value: unknown) {
 test('a player breaks scenery, crafts with the collected resources and finishes the mission', async ({ page }) => {
   const scene = validateScene({ ...createEmptyScene(), nodes: [
     { ...createNode('box'), id: 'floor', position: [0, -0.1, 0], dimensions: [20, 0.2, 20] },
-    { ...createNode('box'), id: 'wood', name: 'Tronco para extração', position: [0, 1.1, -2.4], dimensions: [1, 2.2, 1], resource: { item: 'Madeira', amount: 3, health: 2 } },
+    { ...createNode('box'), id: 'wood', name: 'Tronco para extração', position: [0, 1.1, -1.4], dimensions: [1, 2.2, 1], resource: { item: 'Madeira', amount: 3, health: 5 } },
     { ...createNode('box'), id: 'finish', position: [5, 0.5, 5], interaction: { trigger: 'key', key: '1', radius: 3, action: 'message', targetId: null, message: 'O sinal está pronto!' } },
   ], environment: { ...createEmptyScene().environment, sky: 'day', motion: { fauna: 'none', grass: 'none', wind: 0 }, shadows: false,
-    player: { spawn: [0, 0, 0], yaw: 0, speed: 4.5, jumpHeight: 1, mode: 'walk', weapon: 'sword' },
-    objective: { type: 'quests', title: '', timeLimit: 0 }, gameplay: { naturalResources: false, startingItems: [],
+    player: { spawn: [0, 0, 0], yaw: 0, speed: 4.5, jumpHeight: 1, mode: 'walk', weapon: 'axe' },
+    objective: { type: 'quests', title: '', timeLimit: 0 }, gameplay: { hud:'full',naturalResources: false, startingItems: [],
       recipes: [{ id: 'signal', name: 'Sinal', inputs: [{ item: 'Madeira', amount: 3 }], output: { item: 'Sinal', amount: 1 }, healing: 0 }],
       quests: [{ id: 'make', title: 'Prepare o sinal', giverId: null, rewards: [], steps: [{ kind: 'gather', target: 'Madeira', count: 3, label: 'Extraia madeira do tronco' }, { kind: 'craft', target: 'Sinal', count: 1, label: 'Fabrique o sinal com B' }] },
         { id: 'finish', title: 'Envie o sinal', giverId: null, rewards: [], steps: [{ kind: 'interact', target: 'finish', count: 1, label: 'Pressione 1 para enviar' }] }] } } })
   const errors = await open(page, scene), hud = page.getByRole('region', { name: 'Modo jogo' })
-  await expect(hud).toContainText('Extrair')
-  await page.keyboard.press('e')
+  await expect(hud).toContainText('Golpear')
+  await page.getByRole('img',{name:'Cena Three.js interativa'}).click()
   await expect(hud).toContainText('Extraia madeira do tronco · 3/3')
   await page.keyboard.press('b')
   const inventory = page.getByRole('dialog', { name: 'Inventário e fabricação' })
   await expect(inventory).toBeVisible()
-  await expect(inventory.getByRole('button', { name: 'Fabricar Sinal', exact: true })).toBeEnabled()
-  await inventory.getByRole('button', { name: 'Fabricar Sinal', exact: true }).click()
-  await expect(inventory.locator('.three-inventory__items')).toContainText('Sinal')
-  await expect(inventory.locator('.three-inventory__items')).not.toContainText('Madeira')
+  await inventory.getByRole('button', { name: 'Mochila: Madeira, 3', exact: true }).dragTo(inventory.getByRole('button', { name: 'Bancada 1: vazio', exact: true }))
+  await inventory.getByRole('button', { name: 'Retirar resultado: Sinal', exact: true }).click()
+  await expect(page.getByLabel('Carregando 1 Sinal')).toBeVisible()
+  await inventory.getByRole('button',{name:'Espaço vazio 1',exact:true}).click()
+  await expect(inventory.getByRole('button', { name: 'Mochila: Sinal, 1', exact: true })).toBeVisible()
+  await expect(inventory.getByRole('button', { name: /^Mochila: Madeira,/ })).toHaveCount(0)
   await page.keyboard.press('Escape')
   await expect(inventory).toBeHidden()
   await expect(hud).toContainText('Envie o sinal')
@@ -44,7 +46,7 @@ test('a player breaks scenery, crafts with the collected resources and finishes 
   await expect(hud).toHaveAttribute('data-phase', 'won')
   await hud.getByRole('button', { name: 'Jogar de novo', exact: true }).click()
   await expect(hud).toHaveAttribute('data-phase', 'playing')
-  await expect(hud).toContainText('Extrair')
+  await expect(hud).toContainText('Golpear')
   expect(errors).toEqual([])
 })
 

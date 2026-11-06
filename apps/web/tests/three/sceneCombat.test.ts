@@ -81,3 +81,10 @@ test('melee targets: range, arc, nearest first and line of sight', () => {
   const wall = { ...empty(), boxes: [box(0, 1, -1.9, 4, 3, 0.1)] }
   assert.deepEqual(meleeTargets(origin, forward, 3.2, 110, targets, wall), ['near', 'side'])
 })
+
+test('point-blank melee respects thin walls and cannot hit a target behind the player',()=>{
+  const origin=new THREE.Vector3(0,1,0),forward=new THREE.Vector3(0,0,-1)
+  const targets=[{id:'front',box:box(0,1,-.4,.2,1.5,.2)},{id:'back',box:box(0,1,.4,.2,1.5,.2)}]
+  assert.deepEqual(meleeTargets(origin,forward,1.6,110,targets),['front'])
+  assert.deepEqual(meleeTargets(origin,forward,1.6,110,targets,{...empty(),boxes:[box(0,1,-.2,2,2,.02)]}),[])
+})

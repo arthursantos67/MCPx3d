@@ -8,20 +8,22 @@ import { applyWind, windKey, windKinds, windShadowMaterials, type WindSystem } f
 import { INSTANCE_STRIDE, SPECIES, VEGETATION_CELL, type CellVegetation, type Species } from './worldVegetation.ts'
 import { hash2 } from './worldNoise.ts'
 import { createPlantInteraction, filterPlants, type PlantTarget, type PlantObstacle } from './worldPlantInteraction.ts'
+import { distantVegetation } from './worldVisibility.ts'
+import { distantTreeParts } from './worldTreeLod.ts'
 
 /**
  * Vegetation of a streamed world in three tiers per species: the full prefab near the camera (with wind and shadows),
- * the same prefab at minimum tessellation further out, and pre-rendered impostors (8 views) to the horizon of the
+ * the same prefab at minimum tessellation further out, and lightweight volumetric silhouettes to the horizon of the
  * vegetation range. Neighbouring tiers cross-fade per instance with complementary screen-space dithering, so a plant
  * is always drawn by exactly one tier and no tier pops. Instance buffers change only when the set of cells in a tier
  * changes; distances inside a tier are resolved in the shaders.
  */
-export const TIER_RANGES = { near: 70, mid: 130, far: 1400 }
+export const TIER_RANGES = { near: 80, mid: 180, far: 650 }
 const FADE = 0.12
 /** Camera travel that refreshes the near and mid tiers, and the slack their per-plant selection keeps for it. */
 const REFRESH = VEGETATION_CELL / 16
 const VARIANTS = 2
-type Tier = 'near' | 'mid'
+type Tier = 'near' | 'mid' | 'far'
 
 interface PrototypePart { geometry: THREE.BufferGeometry; material: THREE.Material }
 interface Prototype { parts: PrototypePart[]; height: number; width: number }
@@ -65,10 +67,11 @@ if (vegetationKeep <= vegetationDither()) discard;`)
   material.needsUpdate = true
 }
 
-function prototypeDocument(species: Species, variant: number, low: boolean): ThreeSceneDocument {
+function prototypeDocument(species: Species, variant: number, tier: Tier): ThreeSceneDocument {
   const spec: PrefabSpec = { type: species, size: 1, seed: variant * 7 + 3, primary: null, secondary: null, text: '', lit: false, interactive: false }
   const root = { ...createNode('group'), id: 'plant', name: species, asset: spec, role: 'vegetation' as const }
-  const parts = low && (species === 'tree' || species === 'pine') ? buildVegetation(spec, species === 'pine', true) : prefabParts(spec)
+  const low=tier!=='near'
+  const parts = tier==='far'?distantTreeParts(spec):low && (species === 'tree' || species === 'pine') ? buildVegetation(spec, species === 'pine', true) : prefabParts(spec)
   const nodes = parts.map((part) => {
     const base = createNode(part.kind), geometry = { ...base.geometry, ...part.geometry }
     if (low) Object.assign(geometry, { segments: Math.min(geometry.segments, 8), detail: Math.min(geometry.detail, 1), bevel: 0 })
@@ -82,14 +85,14 @@ function prototypeDocument(species: Species, variant: number, low: boolean): Thr
 /** Surface textures the plants of these species use, so workers can generate them before the prototypes are built. */
 export function vegetationTextures(species: readonly Species[]): TextureKind[] {
   const kinds = new Set<TextureKind>()
-  for (const name of species) for (let variant = 0; variant < VARIANTS; variant++) for (const node of prototypeDocument(name, variant, false).nodes)
+  for (const name of species) for (let variant = 0; variant < VARIANTS; variant++) for (const node of prototypeDocument(name, variant, 'near').nodes)
     if (node.material.texture && node.material.texture !== 'none' && !node.material.textureImage) kinds.add(node.material.texture)
   return [...kinds]
 }
 
 /** Builds a plant and merges its surfaces by material, in the plant's own space, so each material is one draw. */
 function buildPrototype(species: Species, variant: number, tier: Tier, resources: SceneResources, wind: WindSystem, fade: THREE.Vector4): Prototype {
-  const doc = prototypeDocument(species, variant, tier === 'mid'), specs = windKinds(doc)
+  const doc = prototypeDocument(species, variant, tier), specs = windKinds(doc)
   const built = buildScene(doc, resources, { instancing: false, helpers: false, variant: (node) => {
     const spec = specs.get(node.id)
     return { key: `vegetation:${tier}:${spec ? windKey(spec) : 'still'}`, prepare: (material) => { if (spec) applyWind(material, wind, spec.kind, spec.stiffness); prepareTier(material, fade, tier) } }
@@ -119,104 +122,15 @@ function buildPrototype(species: Species, variant: number, tier: Tier, resources
   return { parts, height: Math.max(0.5, box.max.y), width: Math.max(0.5, size.x, size.z) }
 }
 
-const VIEWS = 8, TILE = [128, 256] as const
-/** Renders a plant from 8 directions around the vertical axis into one atlas row, lit by a neutral sky and sun. */
-async function bakeImpostor(renderer: THREE.WebGLRenderer, prototype: Prototype): Promise<THREE.WebGLRenderTarget> {
-  const target = new THREE.WebGLRenderTarget(TILE[0] * VIEWS, TILE[1], { samples: 4 })
-  target.texture.colorSpace = THREE.SRGBColorSpace
-  target.texture.generateMipmaps = true
-  target.texture.minFilter = THREE.LinearMipmapLinearFilter
-  const scene = new THREE.Scene(), half = prototype.width / 2 + 0.1
-  scene.add(new THREE.HemisphereLight('#dfe9f2', '#5a5446', 2.2))
-  const sun = new THREE.DirectionalLight('#fff4e0', 2.4)
-  sun.position.set(0.4, 1, 0.3)
-  scene.add(sun)
-  for (const part of prototype.parts) scene.add(new THREE.InstancedMesh(part.geometry, part.material, 1))
-  for (const child of scene.children) if (child instanceof THREE.InstancedMesh) child.setMatrixAt(0, new THREE.Matrix4())
-  const camera = new THREE.OrthographicCamera(-half, half, prototype.height / 2 + 0.1, -prototype.height / 2 - 0.1, 0.1, 100)
-  // The bake lights differ from the world's, so these are new programs: link them in parallel before drawing.
-  const before = renderer.getRenderTarget()
-  renderer.setRenderTarget(target)
-  const compiled = renderer.compileAsync(scene, camera)
-  renderer.setRenderTarget(before)
-  await compiled
-  const output = renderer.getRenderTarget(), color = renderer.getClearColor(new THREE.Color()), alpha = renderer.getClearAlpha(), toneMapping = renderer.toneMapping
-  renderer.setRenderTarget(target)
-  renderer.setClearColor('#000000', 0)
-  renderer.toneMapping = THREE.NoToneMapping
-  renderer.clear()
-  for (let view = 0; view < VIEWS; view++) {
-    const angle = view / VIEWS * Math.PI * 2
-    camera.position.set(Math.sin(angle) * 50, prototype.height / 2, Math.cos(angle) * 50)
-    camera.lookAt(0, prototype.height / 2, 0)
-    // Rebind after editing the target: viewport/scissor use physical pixels, independent of the canvas pixel ratio.
-    target.viewport.set(view * TILE[0], 0, TILE[0], TILE[1])
-    target.scissor.set(view * TILE[0], 0, TILE[0], TILE[1])
-    target.scissorTest = true
-    renderer.setRenderTarget(target)
-    renderer.render(scene, camera)
-  }
-  target.scissorTest = false
-  renderer.setRenderTarget(output)
-  renderer.setClearColor(color, alpha)
-  renderer.toneMapping = toneMapping
-  return target
-}
-
-/** Camera-facing billboards picking the atlas view nearest to the viewing direction. */
-function impostorMesh(atlas: THREE.Texture, prototype: Prototype, fade: THREE.Vector4): THREE.Mesh {
-  const geometry = new THREE.InstancedBufferGeometry()
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute([-0.5, 0, 0, 0.5, 0, 0, 0.5, 1, 0, -0.5, 1, 0], 3))
-  geometry.setAttribute('uv', new THREE.Float32BufferAttribute([0, 0, 1, 0, 1, 1, 0, 1], 2))
-  geometry.setIndex([0, 1, 2, 0, 2, 3])
-  geometry.setAttribute('impostor', new THREE.InstancedBufferAttribute(new Float32Array(4 * 4), 4).setUsage(THREE.DynamicDrawUsage))
-  geometry.instanceCount = 0
-  geometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(), Infinity)
-  const material = new THREE.MeshBasicMaterial({ map: atlas, alphaTest: 0.5, side: THREE.DoubleSide })
-  const size = new THREE.Vector2(prototype.width + 0.2, prototype.height + 0.2)
-  material.onBeforeCompile = (shader) => {
-    Object.assign(shader.uniforms, { impostorSize: { value: size }, vegetationFade: { value: fade } })
-    shader.vertexShader = shader.vertexShader.replace('#include <common>', `#include <common>
-attribute vec4 impostor;
-uniform vec2 impostorSize;
-varying float vegetationDistance;`)
-            .replace('#include <project_vertex>', `
-// impostor = (x, y, z, yaw); impostorScale scales the quad.
-vec3 base = (modelMatrix * vec4(impostor.xyz, 1.0)).xyz;
-vec3 toCamera = cameraPosition - base;
-vec2 facing = normalize(toCamera.xz + vec2(1e-5));
-vec3 right = vec3(facing.y, 0.0, -facing.x);
-float scale = impostorScale;
-vec3 world = base + right * position.x * impostorSize.x * scale + vec3(0.0, position.y * impostorSize.y * scale, 0.0);
-float view = atan(facing.x, facing.y) - impostor.w;
-float tile = mod(floor(view / ${(Math.PI * 2 / VIEWS).toFixed(6)} + 0.5), ${VIEWS}.0);
-#ifdef USE_MAP
-vMapUv = vec2((tile + uv.x) / ${VIEWS}.0, uv.y);
-#endif
-vegetationDistance = length(toCamera);
-vec4 mvPosition = viewMatrix * vec4(world, 1.0);
-gl_Position = projectionMatrix * mvPosition;`)
-    shader.vertexShader = shader.vertexShader.replace('attribute vec4 impostor;', 'attribute vec4 impostor;\nattribute float impostorScale;')
-    shader.fragmentShader = shader.fragmentShader.replace('#include <common>', `#include <common>\nvarying float vegetationDistance;\nuniform vec4 vegetationFade;\n${DITHER}`)
-      .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
-float vegetationKeep = smoothstep(vegetationFade.x, vegetationFade.y, vegetationDistance) * (1.0 - smoothstep(vegetationFade.z, vegetationFade.w, vegetationDistance));
-if (vegetationKeep <= vegetationDither()) discard;`)
-  }
-  material.customProgramCacheKey = () => 'vegetation-impostor-v1'
-  const mesh = new THREE.Mesh(geometry, material)
-  mesh.frustumCulled = false
-  return mesh
-}
-
 export interface VegetationSetup { renderer: THREE.WebGLRenderer; wind: WindSystem; shadows: boolean; anisotropy: number; species: readonly Species[]; origin: [number, number] }
 
-/** Builds prototypes and impostors one species at a time, yielding between them so no task blocks the page. */
+/** Builds instanced prototypes one species at a time, yielding between them so no task blocks the page. */
 export async function createVegetationRenderer(setup: VegetationSetup): Promise<VegetationRenderer> {
   const resources = createResources(setup.anisotropy), object = new THREE.Group(), materials = new Set<THREE.Material>()
   object.name = 'Vegetação do mundo'
   const fades = { near: fadeRanges(null, TIER_RANGES.near), mid: fadeRanges(TIER_RANGES.near, TIER_RANGES.mid), far: fadeRanges(TIER_RANGES.mid, TIER_RANGES.far) }
   const yieldFrame = () => new Promise((resolve) => setTimeout(resolve, 0))
-  const tiers: Record<Tier, TierMesh[]> = { near: [], mid: [] }, shadowTiers = new Map<string, TierMesh[]>(), impostors = new Map<Species, { mesh: THREE.Mesh; atlas: THREE.WebGLRenderTarget }>()
+  const tiers: Record<Tier, TierMesh[]> = { near: [], mid: [],far:[] }, shadowTiers = new Map<string, TierMesh[]>()
   const shadowOnly = (mesh: THREE.InstancedMesh) => {
     let count = 0
     mesh.userData.shadowOnly = true
@@ -225,7 +139,8 @@ export async function createVegetationRenderer(setup: VegetationSetup): Promise<
   }
   const prototypes = new Map<string, Prototype>()
   for (const species of setup.species) {
-    for (let variant = 0; variant < VARIANTS; variant++) for (const tier of ['near', 'mid'] as const) {
+    for (let variant = 0; variant < VARIANTS; variant++) for (const tier of ['near', 'mid','far'] as const) {
+      if(tier==='far'&&!distantVegetation.has(species))continue
       const prototype = buildPrototype(species, variant, tier, resources, setup.wind, fades[tier])
       prototypes.set(`${species}:${variant}:${tier}`, prototype)
       for (const part of prototype.parts) {
@@ -257,18 +172,10 @@ export async function createVegetationRenderer(setup: VegetationSetup): Promise<
       }
       shadowTiers.set(`${species}:${variant}`, entries)
     }
-    const atlas = await bakeImpostor(setup.renderer, prototypes.get(`${species}:0:near`)!), mesh = impostorMesh(atlas.texture, prototypes.get(`${species}:0:near`)!, fades.far)
-    mesh.geometry.setAttribute('impostorScale', new THREE.InstancedBufferAttribute(new Float32Array(4), 1).setUsage(THREE.DynamicDrawUsage))
-    materials.add(mesh.material as THREE.Material)
-    mesh.visible = false
-    object.add(mesh)
-    impostors.set(species, { mesh, atlas })
-    await yieldFrame()
   }
   type StreamedCell = { cx: number; cz: number; plants: CellVegetation; variants: Partial<Record<Species, Uint8Array>> }
   const cells = new Map<string, StreamedCell>()
   const interactions = createPlantInteraction(setup.origin)
-  const members = { far: '' }
   const stats = { near: 0, mid: 0, far: 0, rebuilds: 0 }
   let dirty = true, lastCamera = new THREE.Vector3(Infinity, Infinity, Infinity)
   const matrix = new THREE.Matrix4(), rotation = new THREE.Quaternion(), position = new THREE.Vector3(), scale = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0), sphere = new THREE.Sphere()
@@ -333,36 +240,6 @@ export async function createVegetationRenderer(setup: VegetationSetup): Promise<
     }
     stats[tier] = total
   }
-  const fillImpostors = (selected: { plants: CellVegetation }[]) => {
-    let total = 0
-    for (const [species, { mesh }] of impostors) {
-      const geometry = mesh.geometry as THREE.InstancedBufferGeometry
-      let count = 0
-      for (const cell of selected) count += (cell.plants[species]?.length ?? 0) / INSTANCE_STRIDE
-      let data = geometry.getAttribute('impostor') as THREE.InstancedBufferAttribute, scales = geometry.getAttribute('impostorScale') as THREE.InstancedBufferAttribute
-      if (count > data.count) {
-        const capacity = 2 ** Math.ceil(Math.log2(count))
-        data = new THREE.InstancedBufferAttribute(new Float32Array(capacity * 4), 4).setUsage(THREE.DynamicDrawUsage)
-        scales = new THREE.InstancedBufferAttribute(new Float32Array(capacity), 1).setUsage(THREE.DynamicDrawUsage)
-        geometry.setAttribute('impostor', data); geometry.setAttribute('impostorScale', scales)
-      }
-      let index = 0
-      for (const cell of selected) {
-        const list = cell.plants[species]
-        if (!list) continue
-        for (let i = 0; i < list.length; i += INSTANCE_STRIDE, index++) {
-          data.array[index * 4] = list[i]; data.array[index * 4 + 1] = list[i + 1]; data.array[index * 4 + 2] = list[i + 2]; data.array[index * 4 + 3] = list[i + 3]
-          scales.array[index] = list[i + 4]
-        }
-      }
-      geometry.instanceCount = index
-      mesh.visible = index > 0
-      data.clearUpdateRanges(); data.addUpdateRange(0, index * 4); data.needsUpdate = true
-      scales.clearUpdateRanges(); scales.addUpdateRange(0, index); scales.needsUpdate = true
-      total += index
-    }
-    stats.far = total
-  }
   const rawPlants = new Map<string, CellVegetation>()
   const setCell = (cx: number, cz: number, plants: CellVegetation | null) => {
       if (plants) rawPlants.set(`${cx}:${cz}`, plants); else rawPlants.delete(`${cx}:${cz}`)
@@ -386,12 +263,10 @@ export async function createVegetationRenderer(setup: VegetationSetup): Promise<
       const cx = Math.floor((x - setup.origin[0]) / VEGETATION_CELL), cz = Math.floor((z - setup.origin[1]) / VEGETATION_CELL)
       const cell = cells.get(`${cx}:${cz}`)
       if (cell) setCell(cell.cx, cell.cz, rawPlants.get(`${cx}:${cz}`)!)
-      members.far = ''
     },
     resetHarvest() {
       interactions.removed.clear()
       for (const [key, plants] of rawPlants) { const [cx, cz] = key.split(':').map(Number); setCell(cx, cz, plants) }
-      members.far = ''
     },
     get materials() { return [...materials] },
     setCell,
@@ -406,17 +281,14 @@ export async function createVegetationRenderer(setup: VegetationSetup): Promise<
       const origin = setup.origin, all = [...cells.values()]
       const pick = (low: number, high: number) => all.filter((cell) => inRange(cell, camera, low, high, origin))
       const near = pick(0, TIER_RANGES.near * (1 + FADE)), mid = pick(TIER_RANGES.near * (1 - FADE), TIER_RANGES.mid * (1 + FADE)), far = pick(TIER_RANGES.mid * (1 - FADE), TIER_RANGES.far * (1 + FADE))
-      const keys = (list: typeof all) => list.map((cell) => `${cell.cx}:${cell.cz}`).join(',')
-      const next = { far: keys(far) }
       fillTier('near', near, camera, 0, TIER_RANGES.near * (1 + FADE), frustum)
       fillTier('mid', mid, camera, TIER_RANGES.near * (1 - FADE), TIER_RANGES.mid * (1 + FADE), frustum)
+      fillTier('far', far, camera, TIER_RANGES.mid * (1 - FADE), TIER_RANGES.far * (1 + FADE), frustum)
       stats.rebuilds++
-      if (next.far !== members.far) { fillImpostors(far); members.far = next.far; stats.rebuilds++ }
     },
     dispose() {
       for (const list of Object.values(tiers)) for (const entry of list) { entry.mesh.dispose(); entry.mesh.geometry.dispose() }
       for (const entries of shadowTiers.values()) for (const entry of entries) entry.mesh.dispose()
-      for (const { mesh, atlas } of impostors.values()) { mesh.geometry.dispose(); (mesh.material as THREE.Material).dispose(); atlas.dispose() }
       resources.dispose()
     },
   }

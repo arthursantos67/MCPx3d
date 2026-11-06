@@ -394,7 +394,7 @@ export function directionBrief(request: string): string {
   const enemies=themeEnemies(request)
   const genre=[
     intent.sandbox?'EXPLORAÇÃO LIVRE: gameplay.playStyle="sandbox", objective explore sem timeLimit e quests=[]; comece com mãos vazias. Distribua materiais e descobertas diferentes por locais conectados, pistas e silhuetas que despertem curiosidade. Fabricação gera equipamentos, consumíveis e construções realmente utilizáveis via gameplay.items; nenhum chefe ou sequência de missões é obrigatório.':'',
-    intent.puzzle?'INTERFACE: gameplay.hud="minimal" quando equipamentos e coleta não fazem parte do enigma. Mostre controles contextuais e efeitos claros das ações; evite painéis de sobrevivência sem utilidade.':'',
+    intent.puzzle?'INTERFACE: gameplay.hud="minimal"; controles na ajuda e efeitos claros das ações no cenário. Evite painéis de sobrevivência sem utilidade.':'',
     intent.combat?`COMBATE: implemente inimigos funcionais com behavior.type=enemy (health, attack, speed e range coerentes), protegendo o spawn e alternando corpo a corpo e à distância.${enemies.length?` Arquétipos do tema: ${enemies.join(', ')}; evite slimes genéricos.`:''} Use o tipo de objetivo pedido, mesmo quando derrotar inimigos é apenas parte do percurso; recompense encontros com heart ou powerOrb.`:'',
     intent.shooter?`TIRO: environment.player.weapon="${intent.weapon ?? 'blaster'}"; inimigos com health 2–5, parte com attack="ranged" ou flying (drone, turret), coberturas na altura do peito e linhas de visão longas.`:'',
     intent.weapon && !intent.shooter && !intent.peaceful?`ARMA: o jogador usa environment.player.weapon="${intent.weapon}".`:'',

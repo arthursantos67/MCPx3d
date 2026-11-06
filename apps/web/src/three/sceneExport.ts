@@ -6,6 +6,7 @@ import type { SceneNode, ThreeSceneDocument } from './sceneDocument.ts'
 import { terrainGeometryForExport } from './sceneTerrainMaterial.ts'
 import { buildCharacterSkins } from './sceneSkin.ts'
 import { characterExportClips, prepareSkinExport } from './sceneSkinExport.ts'
+import { prepareLibraryCharacters } from './sceneModelLibrary.ts'
 
 const MAX_SAMPLES = 240_000
 function tracks(node: SceneNode, holder: THREE.Object3D, frames: number, progressAt: (frame: number) => number, seconds: number) {
@@ -41,6 +42,7 @@ async function exportableTexture(texture: THREE.Texture): Promise<THREE.Texture>
 
 /** Exports visible nodes as GLB 2.0 with PBR materials, punctual lights and baked animation clips. */
 export async function exportSceneGlb(doc: ThreeSceneDocument): Promise<ArrayBuffer> {
+  await prepareLibraryCharacters(doc)
   const resources = createResources()
   const built = buildScene(doc, resources, { instancing: false, helpers: false, skins: (document, holders) => buildCharacterSkins(document, holders, { quality: 'high', shadows: false }) })
   const converted = new Map<THREE.Texture, THREE.Texture>()

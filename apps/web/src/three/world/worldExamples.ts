@@ -63,6 +63,19 @@ export function createClimateWorld(): ThreeWorldDocument {
 
 /** Upgrade only the bundled rescue preset, retaining authored nodes, transforms and stored progress IDs. */
 export function upgradeAurora(world: ThreeWorldDocument): ThreeWorldDocument | null {
+  const current=world.environment.gameplay
+  if(world.seed===714023&&world.name==='Terras de Aurora'&&current?.playStyle==='sandbox'&&current.recipes.length===13&&current.recipes.some(recipe=>recipe.id==='bancada')&&(current.hud==='full'||current.recipes[0].id!=='bancada')){
+    const next=structuredClone(world),rules=next.environment.gameplay!;rules.hud='minimal';rules.recipes.sort((a,b)=>Number(b.id==='bancada')-Number(a.id==='bancada'));return validateWorld(next)
+  }
+  if(world.seed===714023&&world.name==='Terras de Aurora'&&world.environment.gameplay?.playStyle==='sandbox'&&world.environment.gameplay.naturalResources&&!world.environment.gameplay.recipes.some(recipe=>recipe.id==='bancada')&&world.environment.gameplay.recipes.map(recipe=>recipe.id).join(',')==='machado,arco,bandagem,caldo,fogueira,abrigo,bau,cerca,tocha,espada,lanterna'){
+    const next=structuredClone(world),rules=next.environment.gameplay!,fresh=auroraGameplay()
+    for(const recipe of fresh.recipes)if(['bancada','picareta'].includes(recipe.id))rules.recipes.push(recipe)
+    for(const item of fresh.items??[])if(['Bancada de criação','Picareta de pedra'].includes(item.name))rules.items=[...rules.items??[],item]
+    for(const recipe of rules.recipes){const standard=fresh.recipes.find(entry=>entry.id===recipe.id);if(!recipe.station&&standard?.station)recipe.station=standard.station}
+    for(const item of rules.items??[])if(item.name==='Machado de pedra'&&item.harvest===3){item.harvest=5;item.description=fresh.items!.find(entry=>entry.name===item.name)!.description}
+    rules.hud='minimal';rules.recipes.sort((a,b)=>Number(b.id==='bancada')-Number(a.id==='bancada'))
+    return validateWorld(next)
+  }
   if (world.seed !== 714023 || world.name !== 'Terras de Aurora' || world.environment.gameplay?.playStyle === 'sandbox' || world.environment.gameplay?.quests.map(q => q.id).join(',') !== 'ajudar,fabricar,ruinas,farol') return null
   const fresh = createClimateWorld(), next = structuredClone(world)
   next.environment = { ...next.environment, gameplay: auroraGameplay(), objective: fresh.environment.objective, player: { ...next.environment.player!, weapon: 'none' }, dayCycle: fresh.environment.dayCycle }

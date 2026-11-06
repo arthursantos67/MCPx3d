@@ -246,7 +246,7 @@
 .forma-hints { list-style: none; margin: 0; padding: calc(8 * var(--u)) calc(10 * var(--u)); border-radius: var(--r-lg); display: flex; flex-wrap: wrap; justify-content: flex-end; gap: calc(6 * var(--u)) calc(12 * var(--u));
   max-width: min(100%, calc(340 * var(--u))); background: var(--hud-glass-soft); animation: forma-in-right 0.5s var(--hud-ease) both; }
 .forma-hints li { display: inline-flex; align-items: center; gap: calc(6 * var(--u)); font-size: var(--t-xs); font-weight: 600; color: var(--hud-ink-2); white-space: nowrap; }
-.forma-help { margin: 0; padding: calc(12 * var(--u)) calc(14 * var(--u)); border-radius: var(--r-lg); display: grid; gap: calc(6 * var(--u)); width: min(100%, calc(330 * var(--u))); animation: forma-in-right 0.35s var(--hud-ease) both; }
+.forma-help { margin: 0; padding: calc(12 * var(--u)) calc(14 * var(--u)); border-radius: var(--r-lg); display: grid; gap: calc(6 * var(--u)); width: min(100%, calc(330 * var(--u))); max-height:35cqh; overflow:auto; pointer-events:auto; animation: forma-in-right 0.35s var(--hud-ease) both; }
 .forma-help div { display: grid; grid-template-columns: calc(84 * var(--u)) 1fr; gap: calc(10 * var(--u)); align-items: center; }
 .forma-help dt { display: flex; justify-content: flex-end; color: var(--hud-ink); }
 .forma-help dd { margin: 0; font-size: var(--t-xs); color: var(--hud-ink-2); }

@@ -27,6 +27,8 @@ export interface AnimatorInput {
 export interface AnimatorPose {
   state: AnimState; joints: Map<string, Vector3Tuple>; bob: number; collapse: number; face: FaceState; combo: number; events: string[]
   seat: number; footIK: number; look: number
+  /** Authoritative attack clock, shared with imported animation and damage windows. */
+  attackTiming?: { time: number; windup: number; strike: number; recovery: number }
 }
 type V = Vector3Tuple
 type Joints = Record<string, V>
@@ -643,7 +645,8 @@ export function updateAnimator(a: Animator, input: AnimatorInput): AnimatorPose 
   const lookTarget = a.state === 'death' || a.state === 'dodge' || (a.state === 'activity' && (a.activity === 'sleep' || a.activity === 'work')) ? 0 : a.state === 'attack' ? 0.3 : a.state === 'jump' || a.state === 'fall' ? 0.5 : 1
   a.footIK = approach(a.footIK, ikTarget, 10, dt); a.look = approach(a.look, lookTarget, 6, dt)
   const state: AnimState = a.state === 'locomotion' && a.clock - a.hurtAt < 0.35 ? 'hurt' : a.state
-  return { state, joints: out, bob: clamp(fin(bob), -1.2, 1.2), collapse: clamp01(frame.collapse), face, combo: a.state === 'attack' ? a.combo : 0, events, seat: clamp01(frame.seat), footIK: clamp01(a.footIK), look: clamp01(a.look) }
+  return { state, joints: out, bob: clamp(fin(bob), -1.2, 1.2), collapse: clamp01(frame.collapse), face, combo: a.state === 'attack' ? a.combo : 0, events, seat: clamp01(frame.seat), footIK: clamp01(a.footIK), look: clamp01(a.look),
+    ...(a.state === 'attack' && a.swing ? { attackTiming: { time: a.time, windup: a.swing.a, strike: a.swing.s, recovery: a.swing.r } } : {}) }
 }
 const bound = (joint: string, v: number) => { const x = fin(v); return joint === 'j_hips' ? wrap(x) : clamp(x, -BOUND, BOUND) }
 

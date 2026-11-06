@@ -16,6 +16,7 @@ test('equipped robot fires in both camera views and preserves the authored docum
     behavior: { type: 'enemy', speed: 0, range: 12, damage: 1, health: 100, attack: 'ranged' } }
   const doc = validateScene({ ...createEmptyScene(), name: 'Regressão de equipamento', nodes: [floor, target],
     environment: { ...createEmptyScene().environment, player: { spawn: [0, 0, 0], yaw: 0, speed: 3, jumpHeight: 1, mode: 'walk', avatar: 'robot', weapon: 'blaster', camera: 'third' }, motion: { wind: 0, grass: 'none', fauna: 'none' } } })
+  doc.environment.gameplay={quests:[],recipes:[],naturalResources:false,startingItems:[],hud:'full'}
   await page.getByLabel('Importar projeto Three.js').setInputFiles({ name: 'motion.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(doc)) })
   const exportDoc = async () => {
     const pending = page.waitForEvent('download')

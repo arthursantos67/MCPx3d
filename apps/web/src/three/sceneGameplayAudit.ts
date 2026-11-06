@@ -18,6 +18,9 @@ export function validateGameplaySources(environment: SceneEnvironment, nodes: Sc
     for (const reward of quest.rewards) available.add(itemKey(reward.item))
   }
   expandRecipeSources(spec, available)
+  for(const station of spec.stations??[])if(!nodes.some(node=>node.id===station.nodeId))throw new Error(`Estação “${station.id}”: objeto não existe.`)
+  const stations=new Set([...(spec.stations??[]).map(station=>station.id),...(spec.items??[]).filter(item=>item.placeable&&available.has(itemKey(item.name))).map(item=>item.station??item.placeable)])
+  for(const recipe of spec.recipes)if(recipe.station&&!stations.has(recipe.station))throw new Error(`Receita “${recipe.name}”: estação inacessível (${recipe.station}).`)
   for (const recipe of spec.recipes) if (recipe.inputs.some(input => !available.has(itemKey(input.item)))) throw new Error(`Receita “${recipe.name}”: ingredientes inacessíveis.`)
   if (spec.playStyle === 'sandbox') for (const recipe of spec.recipes) {
     const definition = spec.items?.find(item => itemKey(item.name) === itemKey(recipe.output.item))

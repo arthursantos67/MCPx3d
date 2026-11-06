@@ -1,6 +1,8 @@
 // Three.js frame-time benchmark on a real GPU: fixed route in play mode for each example scene.
 // Usage: node scripts/benchmark-three-fps.mjs [--skip-build] [--runs 3] [--seconds 60] [--warmup 5]
 //   [--scenes "Vale dos Ventos,..."] [--modes gpu,cpu] [--label baseline] [--out file.json] [--compare base.json]
+//   [--timeout 300000] [--attempts 3] (short smoke runs can fail promptly instead of repeating a stuck phase)
+//   --stationary uses the same fixed camera in both revisions, independent of character-controller changes.
 // Default is headless (real GPU, immune to the desktop); --headed opens a window that must stay visible.
 // "gpu" renders at the quality's pixel ratio; "cpu" lowers the internal resolution to 0.25 to isolate main-thread cost.
 import { spawn, execFileSync } from 'node:child_process'
@@ -27,6 +29,8 @@ const scenes = option('scenes', SCENES.join(',')).split(',').map((item) => item.
 const runs = Number(option('runs', 3)), seconds = Number(option('seconds', 60)), warmup = Number(option('warmup', 5))
 const modes = option('modes', 'gpu,cpu').split(',').map((item) => item.trim())
 const label = option('label', 'run'), port = Number(option('port', 5190))
+const phaseTimeout = Number(option('timeout', 300_000))
+const attempts = Number(option('attempts', 3))
 const out = resolve(option('out', `.cache/benchmark-three/${label}.json`)), compare = option('compare', null)
 const chrome = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE ?? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
 const ratios = { gpu: null, cpu: 0.25 }
@@ -77,11 +81,15 @@ async function hardware(browser) {
 
 async function measure(url, scene, mode) {
   const browser = await launch()
+  // page.evaluate has no Playwright timeout. A hung GPU/renderer must also release this browser.
+  const measurementTimeout = phaseTimeout * 2 + (warmup + seconds) * 1000
+  let timedOut = false
+  const watchdog = setTimeout(() => { timedOut = true; void browser.close() }, measurementTimeout)
   try {
     const context = await browser.newContext({ viewport, deviceScaleFactor: 1 })
     const page = await context.newPage()
     const errors = []
-    page.on('pageerror', (error) => errors.push(error.message))
+    page.on('pageerror', (error) => { errors.push(error.message); console.warn(`${mode} ${scene}: ${error.message}`) })
     page.on('dialog', (dialog) => void dialog.accept())
     await page.route('**/api/**', (route) => route.fulfill({ status: 503, contentType: 'application/json', body: '{"detail":"offline"}' }))
     await page.addInitScript(() => {
@@ -103,17 +111,29 @@ async function measure(url, scene, mode) {
       button.click()
       return bench.marks.switchStart
     }, world?.button ?? scene)
-    if (world) await page.waitForFunction(() => window.__formaBench.marks.worldPrepared > window.__formaBench.marks.switchStart, null, { timeout: 300_000, polling: 100 })
-    await page.waitForFunction((after) => window.__formaBench.marks.sceneReady > window.__formaBench.marks[after], world ? 'worldPrepared' : 'switchStart', { timeout: 300_000, polling: 100 })
+    console.log(`${mode} ${scene}: cena selecionada; aguardando construção e shaders`)
+    if (world) await page.waitForFunction(() => window.__formaBench.marks.worldPrepared > window.__formaBench.marks.switchStart, null, { timeout: phaseTimeout, polling: 100 })
+    await page.waitForFunction((after) => window.__formaBench.marks.sceneReady > window.__formaBench.marks[after], world ? 'worldPrepared' : 'switchStart', { timeout: phaseTimeout, polling: 100 })
     const { sceneReady, worldStart } = await page.evaluate(() => window.__formaBench.marks)
     // The first frame with terrain follows the compile started at sceneReady; give it a second before play.
     if (world) await page.waitForTimeout(1000)
     const play = page.getByRole('button', { name: '▶ Jogar', exact: true })
     await play.waitFor()
-    await page.waitForFunction(() => { const button = [...document.querySelectorAll('button')].find((item) => item.textContent === '▶ Jogar'); return button && !button.disabled }, null, { timeout: 300_000, polling: 200 })
+    await page.waitForFunction(() => { const button = [...document.querySelectorAll('button')].find((item) => item.textContent === '▶ Jogar'); return button && !button.disabled }, null, { timeout: phaseTimeout, polling: 200 })
     const playClick = await page.evaluate(() => { window.__formaBench.mark('playClick'); [...document.querySelectorAll('button')].find((item) => item.textContent === '▶ Jogar').click(); return window.__formaBench.marks.playClick })
-    await page.waitForFunction(() => window.__formaBench.marks.firstGameFrame > window.__formaBench.marks.playClick, null, { timeout: 300_000, polling: 100 })
+    await page.waitForFunction(() => window.__formaBench.marks.firstGameFrame > window.__formaBench.marks.playClick, null, { timeout: phaseTimeout, polling: 100 })
+    console.log(`${mode} ${scene}: jogo iniciado; medindo quadros`)
     const firstGameFrame = await page.evaluate(() => window.__formaBench.marks.firstGameFrame)
+    if (flag('stationary')) await page.evaluate(() => {
+      const bench = window.__formaBench, drive = bench.drive.bind(bench)
+      bench.drive = (player,input) => {
+        drive(player,input,0)
+        for (const key of Object.keys(input)) input[key] = false
+        player.position.set(0,3,12); player.velocity.set(0,0,0)
+        player.fly = true; player.yaw = 0; player.pitch = -0.08
+      }
+    })
+    console.log(`${mode} ${scene}: câmera ${flag('stationary') ? 'fixa' : 'em percurso'}; aquecendo`)
     await page.waitForTimeout(warmup * 1000)
     await page.bringToFront()
     const startPosition = await page.evaluate(() => { const bench = window.__formaBench; bench.frames = []; bench.gpu = []; bench.recording = true; return bench.position() })
@@ -162,7 +182,10 @@ async function measure(url, scene, mode) {
       gameLongestTaskMs: round(Math.max(0, ...gameTasks), 0), playStartLongestTaskMs: round(Math.max(0, ...playTasks), 0),
       ...(world ? { worldLoadLongestTaskMs: round(Math.max(0, ...worldTasks), 0), worldLoadMs: round(sceneReady - worldStart, 0) } : {}), errors,
     }
-  } finally { await browser.close() }
+  } catch (error) {
+    if (timedOut) throw new Error(`${mode} ${scene}: navegador sem resposta; watchdog de ${measurementTimeout} ms encerrou a medição`, { cause: error })
+    throw error
+  } finally { clearTimeout(watchdog); await browser.close() }
 }
 
 function summarize(list) {
@@ -221,7 +244,7 @@ if (!flag('skip-build')) run(process.platform === 'win32' ? 'npm.cmd run build' 
 const { server, url } = await startPreview()
 const report = { label, date: new Date().toISOString(), commit: execFileSync('git', ['rev-parse', '--short', 'HEAD'], { encoding: 'utf8' }).trim(),
   dirty: execFileSync('git', ['status', '--porcelain'], { encoding: 'utf8' }).trim().length > 0,
-  settings: { runs, seconds, warmup, modes, quality: 'auto → médio em GPU real', ratios, build: 'vite build (produção)', vsync: 'ativo', window: flag('headed') ? 'janela visível' : 'headless' }, hardware: null, runs: [], summary: {} }
+  settings: { runs, seconds, warmup, modes, stationary: flag('stationary'), quality: 'automática; escala fixa quando ratio é informado', ratios, build: 'vite build (produção)', vsync: 'ativo', window: flag('headed') ? 'janela visível' : 'headless' }, hardware: null, runs: [], summary: {} }
 try {
   const probe = await launch()
   try { report.hardware = await hardware(probe) } finally { await probe.close() }
@@ -238,7 +261,7 @@ try {
       let result = null
       for (let attempt = 0; !result; attempt++) {
         try { result = await measure(url, scene, mode) } catch (error) {
-          if (attempt >= 2) throw error
+          if (attempt + 1 >= attempts) throw error
           console.log(`${mode} ${scene}: falha do navegador (${String(error.message).split(/\r?\n/)[0]}), repetindo`)
         }
       }

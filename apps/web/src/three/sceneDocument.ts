@@ -4,6 +4,7 @@ import { migrateHouseFloorSurfaces, migrateTowerHeadroom } from './sceneAssetMig
 import { expandSceneDraft } from './sceneDraft.ts'
 import { naturalResource, validateGameplay, validateResource, type SceneGameplay, type SceneResource } from './sceneGameplay.ts'
 import { validateGameplaySources } from './sceneGameplayAudit.ts'
+import {validateLiquid,liquidMaterial,type LiquidSpec} from './sceneLiquids.ts'
 import { defaultGeometry, estimateTriangles, MAX_SCENE_TRIANGLES, validateGeometry, type GeometrySpec } from './sceneGeometrySpec.ts'
 export type Vector3Tuple = [number, number, number]
 export type NodeKind = 'group' | 'box' | 'sphere' | 'cylinder' | 'torus' | 'roundedBox' | 'cone' | 'torusKnot' | 'extrude' | 'lathe' | 'tube' | 'mesh'
@@ -68,7 +69,7 @@ export const musicPresets = ['auto', 'none', 'calm', 'adventure', 'mystery', 'te
 export interface SceneAudio { ambience: typeof ambiencePresets[number]; music: typeof musicPresets[number]; volume: number }
 export const weatherKinds = ['none', 'rain', 'snow', 'embers', 'fireflies', 'dust', 'bubbles', 'leaves', 'ash'] as const
 export const gradePresets = ['none', 'warm', 'cool', 'cinematic', 'vivid', 'noir', 'dreamy', 'retro'] as const
-export const weaponKinds = ['none', 'sword', 'axe', 'blaster', 'bow', 'staff'] as const
+export const weaponKinds = ['none', 'sword', 'axe','pickaxe', 'blaster', 'bow', 'staff'] as const
 export const avatarKinds = ['explorer', 'knight', 'wizard', 'astronaut', 'robot'] as const
 export const grassDensities = ['auto', 'none', 'dense'] as const
 export const faunaDensities = ['auto', 'none', 'rich'] as const
@@ -104,6 +105,7 @@ export interface SceneNode {
   sound?: SceneSound
   emitter?: SceneEmitter
   resource?: SceneResource
+  liquid?:LiquidSpec
   /** Authored purpose, used by terrain preparation and presentation without guessing from localized names. */
   role?: 'structure' | 'vegetation' | 'prop' | 'path'
 }
@@ -340,7 +342,7 @@ export function validateScene(value: unknown): ThreeSceneDocument {
       animation: validateAnimation(node.animation),
       geometry: validateGeometry(node.geometry, node.kind),
       overlapWith: node.overlapWith === undefined ? [] : (() => { if (!Array.isArray(node.overlapWith) || node.overlapWith.length > 32) throw new Error('Até 32 contatos intencionais por objeto.'); return Array.from(new Set(node.overlapWith.map((v) => text(v, 'Contato')))) })(),
-      material: validateMaterial(material),
+      material: validateMaterial(node.liquid?liquidMaterial(validateLiquid(node.liquid)!,material):material),
       collidable: node.collidable === undefined ? true : boolean(node.collidable, 'Colisão'),
       ...(node.kind === 'light' ? { light: validateLight(node.light) } : {}),
       ...(interaction ? { interaction } : {}),
@@ -348,6 +350,7 @@ export function validateScene(value: unknown): ThreeSceneDocument {
       ...(sound ? { sound } : {}),
       ...(emitter ? { emitter } : {}),
       ...(node.resource == null ? {} : { resource: validateResource(node.resource) }),
+      ...(node.liquid==null?{}:{liquid:validateLiquid(node.liquid)}),
       ...(node.asset == null ? {} : { asset: (() => { if (node.kind !== 'group') throw new Error('Asset deve pertencer a um grupo.'); const spec = prefabSpec(node.asset); if (!spec) throw new Error('Asset desconhecido.'); return spec })() }),
       ...(node.assetPart == null ? {} : {assetPart:text(node.assetPart,'Peça gerada')}),
       ...(node.path == null ? {} : {path:validatePath(node.path)}),

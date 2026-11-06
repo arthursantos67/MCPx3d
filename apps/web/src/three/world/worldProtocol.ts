@@ -6,7 +6,7 @@ import type { GroundWindow } from './worldGround.ts'
 import type { AtlasLocationIntent } from './worldGeneration.ts'
 
 /** Macro grids a worker keeps per world: relief for heights, biome and water for vegetation. */
-export type MacroFields = Pick<WorldMacro, 'delta' | 'cell' | 'points' | 'origin' | 'biome' | 'water' | 'river' | 'ground' | 'clear' | 'pads'>
+export type MacroFields = Pick<WorldMacro, 'delta' | 'cell' | 'points' | 'origin' | 'biome' | 'water' | 'river' | 'channels' | 'ground' | 'clear' | 'pads'>
 
 /** Messages between the main thread and world workers. Results carry only transferable typed arrays and numbers. */
 export type WorldSeed = Pick<ThreeWorldDocument, 'seed' | 'terrain'>

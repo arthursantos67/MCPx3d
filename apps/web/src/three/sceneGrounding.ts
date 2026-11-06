@@ -1,5 +1,6 @@
 ﻿import type { SceneNode, ThreeSceneDocument } from './sceneDocument.ts'
 import { compileTerrainRoads, legacyRoadSource } from './sceneRoads.ts'
+import {compileFluidPath} from './sceneFluidPaths.ts'
 
 /** Rebuild compiler routes against final terrain topology; arbitrary meshes stay untouched. */
 export function conformTerrainPaths(doc:ThreeSceneDocument):ThreeSceneDocument {
@@ -26,9 +27,9 @@ export function conformTerrainPaths(doc:ThreeSceneDocument):ThreeSceneDocument {
   }
   const replacements=new Map<string,SceneNode>()
   for(const [supportId,network] of networks) {
-    const compiled=compileTerrainRoads(network,byId.get(supportId)!)
+    const compiled=compileTerrainRoads(network.filter(node=>!node.liquid&&node.material.texture!=='water'),byId.get(supportId)!)
     for(const source of network) {
-      const geometry=compiled.get(source.id),original=byId.get(source.id)!
+      const geometry=source.liquid||source.material.texture==='water'?compileFluidPath(source,byId.get(supportId)!):compiled.get(source.id),original=byId.get(source.id)!
       if(!geometry) {
         replacements.set(source.id,{...source,visible:false,collidable:false})
         continue

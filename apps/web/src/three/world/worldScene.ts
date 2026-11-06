@@ -28,6 +28,7 @@ export function composeWorldScene(world: ThreeWorldDocument): { scene: ThreeScen
       if (!authoredQuests) gameplay.quests.push(...part.quests)
       gameplay.recipes.push(...part.recipes)
       gameplay.startingItems.push(...part.startingItems)
+      if(part.stations?.length)gameplay.stations=[...gameplay.stations??[],...part.stations]
       for (const item of part.items ?? []) { gameplay.items ??= []; if (!gameplay.items.some(other => itemKey(other.name) === itemKey(item.name))) gameplay.items.push(item) }
       gameplay.naturalResources ||= part.naturalResources
     }

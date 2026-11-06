@@ -1,0 +1,103 @@
+{
+  "date": "2026-11-03",
+  "timezone": "America/Fortaleza",
+  "codeRevision": "386f06b42e01080abe04f63f674b5f9390472319",
+  "environment": {
+    "os": "Windows",
+    "shell": "PowerShell",
+    "node": "24.20.0",
+    "apiPython": "3.12.14",
+    "pythonEnvironment": "apps/api/.venv",
+    "x3dSubmodule": "74da0ec46f477f0048aee813ecfc5fc87e655537"
+  },
+  "checks": [
+    {
+      "command": "npm.cmd test",
+      "exitCode": 0,
+      "web": {
+        "passed": 449,
+        "durationMs": 72862.1284
+      },
+      "agent": {
+        "passed": 363,
+        "durationMs": 10883.788
+      },
+      "domainTypeScript": {
+        "passed": 82,
+        "durationMs": 2374.9252
+      },
+      "golden": {
+        "passed": 12,
+        "durationMs": 264.8033
+      },
+      "totalPassed": 906,
+      "failed": 0
+    },
+    {
+      "command": "npm.cmd run typecheck",
+      "exitCode": 0,
+      "scope": "web, agent, domain TypeScript"
+    },
+    {
+      "command": "npm.cmd run lint:web",
+      "exitCode": 0
+    },
+    {
+      "command": "npm.cmd run build",
+      "exitCode": 0,
+      "warnings": [
+        "Chunks larger than 500 kB after minification",
+        "Vite plugin timing notice"
+      ]
+    },
+    {
+      "command": "apps/api/.venv/Scripts/python.exe -m pytest packages/domain/python/tests -q",
+      "exitCode": 0,
+      "passed": 123,
+      "durationSeconds": 6.42
+    },
+    {
+      "command": "apps/api/.venv/Scripts/python.exe scripts/run-cad-tests.py --timeout 180 apps/api/tests/test_local_x3d.py apps/api/tests/test_cad_fastener_regression.py apps/api/tests/test_cad_finish_selection.py -q",
+      "exitCode": 0,
+      "passed": 11,
+      "durationSeconds": 62.98,
+      "warnings": [
+        "Starlette TestClient: httpx integration deprecated",
+        "anyio.abc.BlockingPortal alias deprecated"
+      ]
+    }
+  ],
+  "notRepeated": [
+    "Live AI generation",
+    "GPU performance benchmark and full 0.7 acceptance gate",
+    "Full browser test suite",
+    "Full API test suite",
+    "Independent FreeCAD validation"
+  ],
+  "pdf": {
+    "filename": "Forma-Modelagem_3d.pdf",
+    "pages": 45,
+    "sha256": "af9a2b013455b475655d8e2211c21514969e9c454c922bb78322935b928fbddd"
+  },
+  "interpretation": "Local checks for the identified code revision; not a live-AI reliability study, full CI approval, or world-performance acceptance.",
+  "derivedMetrics": {
+    "source": "docs/benchmarks/cad-2026-10-08.json",
+    "observedSuccessRate": 0.9375,
+    "lowerBound95OneSided": 0.7360426027114317,
+    "method": "lowerSuccessBound(15, 16, 0.95) from scripts/cad-benchmark-metrics.mjs; recalculated without inference"
+  },
+  "figures": [
+    {
+      "file": "docs/artigo/figuras/cad-fixacao-roscada.jpeg",
+      "sha256": "d76378fd32f5309e9c8fce3736b346c444e89930a8e69f312eeb5802f9523981"
+    },
+    {
+      "file": "docs/artigo/figuras/threejs-vale-dos-ventos.jpeg",
+      "sha256": "9c4b8b8530876c32b2c597239b94a1c86e67fa561c6c37c81cc6f0cdb0e87a21"
+    },
+    {
+      "file": "docs/artigo/figuras/x3d-cozinha.jpeg",
+      "sha256": "3ac13f0ded4e17cdc006274cec0f5c6dfbb242c916cfa08c5560bc1e44bcd9a5"
+    }
+  ]
+}

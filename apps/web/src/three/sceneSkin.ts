@@ -1,15 +1,17 @@
 import * as THREE from 'three'
 import { buildAvatar, isCharacterType } from './sceneCharacters.ts'
-import type { avatarKinds, ThreeSceneDocument } from './sceneDocument.ts'
+import { hasSurface, validateMaterial, type avatarKinds, type ThreeSceneDocument, type SceneNode } from './sceneDocument.ts'
+import { defaultGeometry, validateGeometry } from './sceneGeometrySpec.ts'
 import { prefabParts, type PrefabPart, type PrefabSpec } from './scenePrefabs.ts'
 import type { CharacterSkin, FaceState, HandPose, QualityLevel, SpringChainSpec } from './sceneRuntimeTypes.ts'
 import { MATERIAL_BODY, MATERIAL_EYE, MATERIAL_HAIR, MATERIAL_SHELL } from './sceneSkinMesh.ts'
 import { eyeMaterial, slotMaterial } from './sceneSkinMaterial.ts'
 import { buildSkinModel, type SkinLod, type SkinModel } from './sceneSkinModel.ts'
 import type { AnimState } from './sceneCharacterAnimator.ts'
+import { libraryCharacter } from './sceneModelLibrary.ts'
 
 export type AvatarKind = typeof avatarKinds[number]
-export interface SkinOptions { quality: QualityLevel; shadows: boolean; avatar?: AvatarKind; parts?: PrefabPart[] }
+export interface SkinOptions { quality: QualityLevel; shadows: boolean; avatar?: AvatarKind; parts?: PrefabPart[]; native?: boolean }
 export function poseSkinHands(skin: CharacterSkin, state: AnimState, held: Partial<HandPose> = {}, wave = false): void {
   const hands = { ...skin.restHands, ...held }
   if (state === 'climb' || state === 'attack') { hands.left = 'grip'; hands.right = 'grip' }
@@ -81,6 +83,8 @@ const neutral: FaceState = { blink: 0, jaw: 0, brow: 0, smile: 0, gaze: [0, 0] }
 export function skinCharacter(rootId: string, spec: PrefabSpec, holders: Map<string, THREE.Object3D>, parts: Map<string, string>, options: SkinOptions): CharacterSkin | null {
   const root = holders.get(rootId)
   if (!root || (!options.avatar && !isCharacterType(spec.type))) return null
+  const native = options.native === false ? null : libraryCharacter(rootId, spec, holders, parts, { avatar: options.avatar, shadows: options.shadows, height: (options.avatar ? 1.75 : spec.type === 'wizard' ? 1.9 : 1.8) * spec.size })
+  if (native) return native
   const source = options.parts ?? (options.avatar ? buildAvatar(options.avatar) : prefabParts(spec))
   const overrides = new Map<string, { position: [number, number, number]; quaternion: [number, number, number, number] }>()
   for (const part of source) if (part.kind === 'group' && part.id.startsWith('j_')) {
@@ -206,9 +210,12 @@ export function skinCharacter(rootId: string, spec: PrefabSpec, holders: Map<str
 
 /** Skins for every character root of the document (nested characters are skipped by their own roots). */
 export function buildCharacterSkins(doc: ThreeSceneDocument, holders: Map<string, THREE.Object3D>, options: SkinOptions): CharacterSkin[] {
+  return [...buildCharacterSkinsSteps(doc, holders, options)]
+}
+export function* buildCharacterSkinsSteps(doc: ThreeSceneDocument, holders: Map<string, THREE.Object3D>, options: SkinOptions): Generator<CharacterSkin> {
   const children = new Map<string, string[]>()
   for (const node of doc.nodes) if (node.parentId) children.set(node.parentId, [...children.get(node.parentId) ?? [], node.id])
-  const byId = new Map(doc.nodes.map((node) => [node.id, node])), skins: CharacterSkin[] = []
+  const byId = new Map(doc.nodes.map((node) => [node.id, node]))
   for (const root of doc.nodes) {
     if (!root.asset || !isCharacterType(root.asset.type) || !root.visible) continue
     const parts = new Map<string, string>(), stack = [...children.get(root.id) ?? []]
@@ -218,12 +225,27 @@ export function buildCharacterSkins(doc: ThreeSceneDocument, holders: Map<string
       if (node.assetPart) parts.set(node.assetPart, node.id)
       stack.push(...children.get(node.id) ?? [])
     }
-    const source = prefabParts(root.asset).flatMap((part): PrefabPart[] => {
+    const stock = prefabParts(root.asset)
+    const source = stock.flatMap((part): PrefabPart[] => {
       const node = byId.get(parts.get(part.id) ?? '')
       return node ? [{ ...part, kind: node.kind, position: node.position, rotation: node.rotation, dimensions: node.dimensions, material: node.material, geometry: node.geometry }] : part.kind === 'group' && part.id.startsWith('j_') ? [part] : []
     })
-    const skin = skinCharacter(root.id, root.asset, holders, parts, { quality: options.quality, shadows: options.shadows, parts: source })
-    if (skin) skins.push(skin)
+    const unedited = stock.every(part => {
+      const node = byId.get(parts.get(part.id) ?? '')
+      return !!node && node.parentId === (part.parentId ? parts.get(part.parentId) : root.id) && originalCharacterPart(part,node)
+    })
+    const stockIds = new Set(stock.map(part=>part.id)), bodyParts = new Map([...parts].filter(([id])=>stockIds.has(id)))
+    const skin = skinCharacter(root.id, root.asset, holders, bodyParts, { quality: options.quality, shadows: options.shadows, parts: source, native: options.native !== false && unedited })
+    if (skin) yield skin
   }
-  return skins
+}
+
+/** Direct edits of a generated limb/material must remain visible instead of being hidden by a stock GLB. */
+function originalCharacterPart(part: PrefabPart, node: SceneNode): boolean {
+  if (part.kind !== node.kind || node.scale.some(value=>Math.abs(value-1)>1e-6)) return false
+  for (const [a,b] of [[part.position,node.position],[part.rotation??[0,0,0],node.rotation],[part.dimensions,node.dimensions]]) if (a.some((value,i)=>Math.abs(value-b[i])>1e-5)) return false
+  if (!hasSurface(part.kind)) return true
+  const material = validateMaterial({ color: '#cccccc', metalness: 0, roughness: 0.6, ...part.material })
+  const geometry = validateGeometry({ ...defaultGeometry(part.kind), ...part.geometry },part.kind)
+  return JSON.stringify(material) === JSON.stringify(node.material) && JSON.stringify(geometry) === JSON.stringify(node.geometry)
 }

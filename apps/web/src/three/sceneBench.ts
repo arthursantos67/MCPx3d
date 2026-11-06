@@ -30,6 +30,7 @@ export interface SceneBench {
   speed: number | null
   /** Terrain height for terrain-following flight, set by the viewport when a world is open. */
   ground: ((x: number, z: number) => number) | null
+  liquid:((x:number,z:number)=>{kind:string;level:number;viscosity:number;damage:number}|null)|null
   /** Brackets one composed frame with a GPU timer query (EXT_disjoint_timer_query_webgl2), read back a few frames later. */
   gpuBegin(): void
   gpuEnd(game: boolean): void
@@ -140,7 +141,7 @@ export function createSceneBench(search: string): SceneBench | null {
     fixedRoute: points.length ? { points, sweep: 6, sprint: params.get('sprint') === '1', ...(params.get('fly') ? { altitude: Number(params.get('fly')) } : {}) } : null,
     driving: params.get('drive') === '1' || points.length > 0,
     speed: Number(params.get('speed')) > 0 ? Number(params.get('speed')) : null,
-    ground: null,
+    ground: null,liquid:null,
     attach(nextRenderer, nextScene) {
       renderer = nextRenderer; scene = nextScene
       gl = nextRenderer.getContext() as WebGL2RenderingContext

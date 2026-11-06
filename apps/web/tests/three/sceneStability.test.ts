@@ -31,6 +31,18 @@ test('draft references reject corrupt IDs and expanded payloads before cloning g
   assert.throws(()=>expandSceneDraft({...raw,nodes:Array.from({length:20},()=>raw.nodes[0])},2000,2000),/expandido/)
 })
 
+test('native crypt palettes and meshes fit browser storage, round trip and enforce expanded material limits',async()=>{
+  const {createCryptScene}=await import('../../src/three/sceneExperiences.ts'),scene=createCryptScene(),draft=serializeSceneDraft(scene)
+  assert.ok(draft.length*2<5*1024*1024)
+  assert.equal(JSON.stringify(parseScene(draft)),JSON.stringify(scene))
+  const raw=JSON.parse(draft);assert.ok(raw.materialLibrary.length>0)
+  const reference=raw.nodes.find((node:{material:{draftMaterial?:number}})=>node.material.draftMaterial!==undefined)
+  reference.material.draftMaterial=raw.materialLibrary.length
+  assert.throws(()=>parseScene(JSON.stringify(raw)),/Referência/)
+  const node=createNode('box'),material={...node.material,textureImage:'x'.repeat(2000)}
+  assert.throws(()=>expandSceneDraft({...createEmptyScene(),nodes:Array.from({length:10},()=>({...node,material:{draftMaterial:0}})),materialLibrary:[material]},2000,6000),/expandido/)
+})
+
 test('a repair cannot claim to remove coplanar conflicts when its surface coverage is incomplete',()=>{
   const report:SceneInspection={intersections:[],sampledTimes:[0],checkedPairs:0,skippedContacts:0,assemblyContacts:0,complete:true,elapsedMs:0,surfaceCheckComplete:true,
     surfaceConflicts:[{a:'floor',b:'stone',nameA:'Piso',nameB:'Pedra',area:36,point:[0,0.22,0]}]}

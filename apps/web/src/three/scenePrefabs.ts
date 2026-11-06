@@ -4,6 +4,7 @@ import type { NodeKind, SceneAnimation, SceneBehavior, SceneInteraction, SceneLi
 import { hashNoise, type GeometrySpec } from './sceneGeometrySpec.ts'
 import { buildCharacter, characterBehavior, characterLabels, characterTypes, isCharacterType } from './sceneCharacters.ts'
 import { readCharacter, type CharacterSpec } from './sceneCharacterArchetype.ts'
+import { characterModels, type CharacterModelId } from './sceneCharacterModels.ts'
 import { buildWorldPrefab, worldNaturalPrefabs, worldPrefabBehavior, worldPrefabLabels, worldPrefabTypes, worldStructurePrefabs, type WorldPrefabType } from './scenePrefabsWorld.ts'
 
 const basePrefabTypes = ['house', 'tree', 'pine', 'bush', 'rock', 'lampPost', 'torch', 'fence', 'bench', 'table', 'chair', 'barrel', 'crate', 'well', 'tower', 'campfire', 'sign',
@@ -26,7 +27,7 @@ export const naturalPrefabs: readonly PrefabType[] = ['tree', 'pine', 'bush', 'r
 export const characterPrefabs: readonly PrefabType[] = characterTypes
 export const vegetationPrefabs: readonly PrefabType[] = ['tree', 'pine', 'bush', 'flowerBed', 'mushroom', 'log', 'stump', 'palm', 'cactus', 'coral', 'seaweed']
 export const structurePrefabs: readonly PrefabType[] = ['house', 'windmill', 'tower', 'bridge', 'well', 'portal', 'spaceStation', 'rocket', 'skyscraper', 'column', 'tent', ...worldStructurePrefabs]
-export interface PrefabSpec { building?: BuildingSpec; character?: CharacterSpec; type: PrefabType; size: number; seed: number; primary: string | null; secondary: string | null; text: string; lit: boolean; interactive: boolean }
+export interface PrefabSpec { building?: BuildingSpec; character?: CharacterSpec; model?: CharacterModelId; type: PrefabType; size: number; seed: number; primary: string | null; secondary: string | null; text: string; lit: boolean; interactive: boolean }
 /** One part relative to the prefab origin, which sits on the ground at the footprint center. */
 export interface PrefabPart {
   id: string; parentId: string | null; name: string; kind: NodeKind; position: Vector3Tuple; rotation?: Vector3Tuple; dimensions: Vector3Tuple
@@ -499,7 +500,9 @@ export function prefabSpec(value: unknown, adjust?: (label: string) => void): Pr
     else fix('arquétipo de personagem')
   }
   const text = typeof source.text === 'string' ? source.text.slice(0, 160) : ''
-  return { ...(building ? { building } : {}), ...(character ? { character } : {}), type, size: number(source.size, 0.3, 5, 1, 'tamanho'), seed: number(source.seed, 0, 9999, 1, 'semente', true), primary: hex(source.primary, 'cor principal'), secondary: hex(source.secondary, 'cor secundária'),
+  const model = typeof source.model === 'string' && Object.hasOwn(characterModels,source.model) && characterModels[source.model as CharacterModelId] === type ? source.model as CharacterModelId : undefined
+  if (source.model != null && !model) fix('modelo de personagem')
+  return { ...(building ? { building } : {}), ...(character ? { character } : {}), ...(model ? { model } : {}), type, size: number(source.size, 0.3, 5, 1, 'tamanho'), seed: number(source.seed, 0, 9999, 1, 'semente', true), primary: hex(source.primary, 'cor principal'), secondary: hex(source.secondary, 'cor secundária'),
     text, lit: typeof source.lit === 'boolean' ? source.lit : ['lampPost', 'torch', 'campfire'].includes(type), interactive: typeof source.interactive === 'boolean' ? source.interactive : true }
 }
 

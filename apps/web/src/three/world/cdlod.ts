@@ -127,6 +127,8 @@ export interface SelectionInput {
   resident: (level: number, ix: number, iz: number) => boolean
   /** Frustum test on a world box; omitted for selections that must not be culled (collision rings). */
   visible?: (x0: number, y0: number, z0: number, x1: number, y1: number, z1: number) => boolean
+  /** Atmospheric horizon. Unlike frustum culling this also bounds detail requests behind the camera. */
+  maxDistance?: number
   /** Nodes inside the world on each axis at the root level (1 for square worlds smaller than the root). */
   roots: [number, number]
 }
@@ -139,6 +141,7 @@ export interface Selection { draws: QuarterDraw[]; wanted: { level: number; ix: 
  */
 export function selectNodes(input: SelectionInput, prefetch = 1.25): Selection {
   const draws: QuarterDraw[] = [], wanted: Selection['wanted'] = [], [cx, cy, cz] = input.camera
+  const horizon=Math.max(0,input.maxDistance??Infinity),horizonSquared=horizon*horizon
   let deficit = 0
   const box = (level: number, ix: number, iz: number) => {
     const size = nodeSize(level), x0 = input.origin[0] + ix * size, z0 = input.origin[1] + iz * size, bounds = input.bounds(level, ix, iz)
@@ -156,6 +159,8 @@ export function selectNodes(input: SelectionInput, prefetch = 1.25): Selection {
   // Nodes outside the frustum are still walked without drawing, so turning the camera finds them loaded.
   const visit = (level: number, ix: number, iz: number, draw: boolean): boolean => {
     const reach = input.field.reach(level, ix, iz), distance = distanceSq(level, ix, iz)
+    // Outside the atmospheric horizon there is no visible detail debt and no useful high-detail prefetch.
+    if(distance>horizonSquared)return true
     if (level < input.levels - 1 && distance > reach * reach) {
       if (distance <= reach * reach * prefetch * prefetch) want(level, ix, iz)
       return false

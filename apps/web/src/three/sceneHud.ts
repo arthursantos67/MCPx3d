@@ -2,6 +2,7 @@ import type { WeaponKind } from './sceneCombat.ts'
 import type { PowerKind } from './sceneDocument.ts'
 import type { InputDevice } from './sceneGamepad.ts'
 import type { CraftRecipe, GameplayItem } from './sceneGameplay.ts'
+import type {BagCell} from './sceneInventory.ts'
 
 /**
  * HUD contract between the play loop (ThreeViewport) and ThreeHud.
@@ -14,7 +15,7 @@ export type DamageKind = 'dealt' | 'taken' | 'crit' | 'heal'
 export type AnchorKind = 'enemy' | 'npc' | 'boss'
 export type HudIconName = 'fist' | 'sword' | 'axe' | 'blaster' | 'bow' | 'staff' | 'heart' | 'bolt' | 'shield' | 'speed' | 'jump' | 'strength' | 'key' | 'coin' | 'gem' | 'potion' | 'scroll'
   | 'food' | 'herb' | 'relic' | 'gear' | 'bag' | 'star' | 'clock' | 'skull' | 'target' | 'check' | 'pause' | 'exit' | 'settings' | 'volume' | 'mute' | 'eye' | 'wing'
-  | 'flag' | 'banner' | 'speech' | 'sparkle' | 'lock' | 'arrow' | 'diamond' | 'restart' | 'play' | 'trophy' | 'controls'
+  | 'flag' | 'banner' | 'speech' | 'sparkle' | 'lock' | 'arrow' | 'diamond' | 'restart' | 'play' | 'trophy' | 'controls' | 'wood' | 'stone' | 'fiber'
 
 export interface HudPortrait {
   species: 'human' | 'robot' | 'creature' | 'skeleton' | 'beast'
@@ -28,7 +29,7 @@ export interface HudPortrait {
 }
 export interface HudMarker { id: string; kind: MarkerKind; bearing: number; distance: number; label: string }
 export interface HudStats { time: number; score: number; collected: number; total: number; defeated: number; enemyTotal: number; damageTaken: number; falls: number }
-export interface HudPrompt { verb: string; target: string; locked: string | null; enemy: boolean; health: { value: number; max: number } | null }
+export interface HudPrompt { action?:'attack'|'interact'; verb: string; target: string; locked: string | null; enemy: boolean; health: { value: number; max: number } | null }
 export interface HudDialogue { name: string; line: string; index: number; total: number; portrait: HudPortrait | null; options: string[] }
 export interface HudModel {
   phase: HudPhase
@@ -42,6 +43,8 @@ export interface HudModel {
   time: number; limit: number; clock: string | null
   weapon: WeaponKind; weaponLabel: string
   items: { name: string; count: number }[]
+  bagSlots?:BagCell[]
+  inventoryAvailable?: boolean
   quickbar?: { slots: { item: string | null; name: string; count: number; icon: HudIconName }[]; selected: number }
   itemDefinitions?: GameplayItem[]
   playStyle?: 'directed' | 'sandbox'
@@ -49,6 +52,7 @@ export interface HudModel {
   discoveries?: number
   placement?: { name: string; valid: boolean; reason: string }
   storage?: { name: string; items: { name: string; count: number }[] }
+  craftingStation?:string
   recipes?: (CraftRecipe & { available: boolean; missing: string })[]
   questSteps?: { label: string; value: number; count: number }[]
   swimming?: boolean
@@ -226,10 +230,11 @@ export function screenFromNdc(x: number, y: number, z: number, width: number, he
   return { x: (x + 1) / 2 * width, y: (1 - y) / 2 * height }
 }
 
-export const weaponIcon: Record<WeaponKind, HudIconName> = { none: 'fist', sword: 'sword', axe: 'axe', blaster: 'blaster', bow: 'bow', staff: 'staff' }
+export const weaponIcon: Record<WeaponKind, HudIconName> = { none: 'fist', sword: 'sword', axe: 'axe', pickaxe: 'axe', blaster: 'blaster', bow: 'bow', staff: 'staff' }
 export const powerIcon: Record<PowerKind, HudIconName> = { speed: 'speed', jump: 'jump', shield: 'shield', strength: 'strength' }
 export const markerIcon: Record<MarkerKind, HudIconName> = { objective: 'diamond', goal: 'flag', enemy: 'skull', npc: 'speech', item: 'sparkle', checkpoint: 'banner' }
 const iconWords: [RegExp, HudIconName][] = [
+  [/madeira|wood|tronco|tabua/, 'wood'], [/pedra|stone|rocha|minerio/, 'stone'], [/fibra|fiber|corda/, 'fiber'],
   [/chave|key/, 'key'], [/moeda|ouro|coin|dinheiro|tesouro/, 'coin'], [/cristal|gema|joia|rubi|diamante|esmeralda|safira|ametista|perola/, 'gem'],
   [/pocao|elixir|frasco|garrafa|antidoto/, 'potion'], [/mapa|carta|pergaminho|livro|nota|diario|bilhete|runa/, 'scroll'],
   [/maca|pao|comida|fruta|queijo|carne|bolo|doce|peixe|cenoura/, 'food'], [/flor|erva|planta|cogumelo|folha|semente|raiz/, 'herb'],
@@ -244,7 +249,7 @@ export function itemIcon(name: string): HudIconName {
 export const isHudIcon = (name: string): name is HudIconName => hudIconNames.has(name as HudIconName)
 export const hudIconNames = new Set<HudIconName>(['fist', 'sword', 'axe', 'blaster', 'bow', 'staff', 'heart', 'bolt', 'shield', 'speed', 'jump', 'strength', 'key', 'coin', 'gem', 'potion', 'scroll',
   'food', 'herb', 'relic', 'gear', 'bag', 'star', 'clock', 'skull', 'target', 'check', 'pause', 'exit', 'settings', 'volume', 'mute', 'eye', 'wing', 'flag', 'banner', 'speech', 'sparkle',
-  'lock', 'arrow', 'diamond', 'restart', 'play', 'trophy', 'controls'])
+  'lock', 'arrow', 'diamond', 'restart', 'play', 'trophy', 'controls', 'wood', 'stone', 'fiber'])
 
 export const HOTBAR_ITEMS = 5
 /** Inventory slots for the hotbar plus how many did not fit. */

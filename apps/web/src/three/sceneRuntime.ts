@@ -3,6 +3,7 @@ import { subtreeIds, type PowerKind, type SceneBehavior, type SceneInteraction, 
 import { activeQuest, createGameplayProgress, gameplayStatus, gatherItem, talkToQuestGiver, updateQuests, type GameplayProgress, type SceneGameplay } from './sceneGameplay.ts'
 import { createLoadout, type Loadout, type PlacedStructure } from './sceneLoadout.ts'
 import type { WeaponKind } from './sceneCombat.ts'
+import type { BagCell } from './sceneInventory.ts'
 
 interface NodeState { clock: number; active: boolean; progress: number; direction: 1 | -1 }
 export type RuntimeEventKind = 'collect' | 'unlock' | 'locked' | 'heal' | 'powerup' | 'powerdown' | 'hit' | 'defeat' | 'spawn' | 'checkpoint' | 'dialogue' | 'message' | 'toggle'
@@ -25,6 +26,7 @@ export interface SceneRuntime {
   collectibles: number
   /** Inventory: item name → count, filled by collect interactions with `item`. Required items are never consumed. */
   items: Map<string, number>
+  bagSlots:BagCell[]
   gameplay: GameplayProgress
   rules: SceneGameplay | undefined
   loadout: Loadout
@@ -76,7 +78,7 @@ export function createRuntime(doc: ThreeSceneDocument, startTime = 0): SceneRunt
   const pending = new Map(foes.filter((node) => (node.behavior!.delay ?? 0) > 0).map((node) => [node.id, node.behavior!.delay!]))
   for (const id of pending.keys()) hidden.add(id)
   const runtime: SceneRuntime = { byId, nodes: doc.nodes, states, hidden, toggles, collected: new Set(), consumed: new Set(), inside: new Set(), collectibles, items: new Map(), gameplay: createGameplayProgress(), rules: doc.environment.gameplay, blocked: new Set(), unlocked: new Set(), effects: new Map(), dialogue: new Map(),
-    loadout: createLoadout(doc.environment.player?.weapon ?? 'none'), legacyWeapon: doc.environment.player?.weapon ?? 'none', placements: [],
+    loadout: createLoadout(doc.environment.player?.weapon ?? 'none'), legacyWeapon: doc.environment.player?.weapon ?? 'none', placements: [],bagSlots:[],
     health, maxHealth: health, invulnerable: 0, checkpoint: null, checkpoints: new Set(), defeated: new Set(), enemies, enemyHealth: new Map(foes.map((node) => [node.id, node.behavior!.health ?? 1])), pending,
     goals, objective, elapsed: 0, outcome: 'playing', score: 0, events: [] }
   for (const stack of runtime.rules?.startingItems ?? []) gatherItem(runtime.gameplay, runtime.items, stack)

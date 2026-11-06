@@ -41,7 +41,7 @@ export const atlasSchema: JsonSchema = {
 }
 
 export const ATLAS_PROMPT = `Você é a diretora de mundo do Forma. Devolva SOMENTE o JSON do atlas de um mundo de 4×4 km para exploração em primeira pessoa.
-Escolha playStyle directed ou sandbox e hud full ou minimal conforme o gênero. Exploração/sobrevivência livre usa sandbox: recursos com usos distintos, fabricação/construção, pistas e descobertas opcionais, sem missão ou chefe obrigatório. Jogos dirigidos têm desafios e conclusão quando pedidos; puzzles usam controles com efeitos e interface discreta. A primeira região precisa de atividades reais perto da chegada, sem quilômetros vazios. NPCs podem dar rumores e ter rotinas; missões só quando adequadas ao pedido.
+Escolha playStyle directed ou sandbox. Use hud minimal por padrão; full somente quando o usuário pedir interface completa. Controles ficam na ajuda, sem instruções ou resistência de objetos sobre o cenário. Exploração/sobrevivência livre usa sandbox: recursos com usos distintos, fabricação/construção, pistas e descobertas opcionais, sem missão ou chefe obrigatório. Jogos dirigidos têm desafios e conclusão quando pedidos; puzzles usam controles com efeitos e interface discreta. A primeira região precisa de atividades reais perto da chegada, sem quilômetros vazios. NPCs podem dar rumores e ter rotinas; missões só quando adequadas ao pedido.
 Regiões (até ${MAX_ATLAS_REGIONS}): cada uma ocupa uma área do mapa (north, south, east, west, center e diagonais), com bioma (o clima local segue o bioma), perigo 0–5, ambiência, música, clima e premissa curta.
 Locais (até ${MAX_ATLAS_LOCATIONS}): vilas, cidades, castelos, portos, acampamentos, masmorras, ruínas e marcos; diga a região, a regra de terreno onde devem ficar (coast, river, lake, hill, valley, plain, forest, mountain, any), o tamanho (small/medium/large) e uma descrição concreta do que contêm. Marque detail=true nos até ${MAX_DETAILED} locais mais importantes, que serão construídos em detalhe.
 Rotas: estradas (road) entre locais que fazem sentido ligar; trilhas (path) para lugares remotos.
@@ -71,7 +71,7 @@ export function sanitizeAtlas(value: unknown, request: string, seed: number, siz
   const intent = sceneIntent(request), environment = worldEnvironment()
   if (atlas.playStyle === 'sandbox' || atlas.playStyle === 'directed' || intent.sandbox || intent.puzzle) {
     const playStyle = intent.sandbox ? 'sandbox' : intent.quest || intent.survival || intent.puzzle || intent.race || intent.platforms ? 'directed' : pick(atlas.playStyle, ['directed', 'sandbox'] as const, 'directed')
-    environment.gameplay = { playStyle, hud: pick(atlas.hud, ['full', 'minimal'] as const, intent.puzzle ? 'minimal' : 'full'), naturalResources: true, quests: [], recipes: [], startingItems: [], items: [] }
+    environment.gameplay = { playStyle, hud: pick(atlas.hud, ['full', 'minimal'] as const, 'minimal'), naturalResources: true, quests: [], recipes: [], startingItems: [], items: [] }
     if (playStyle === 'sandbox') { environment.objective = { type: 'explore', title: '', timeLimit: 0 }; environment.player!.weapon = 'none' }
   }
   const ids = new Set<string>(), unique = (base: string) => { let candidate = base, n = 2; while (ids.has(candidate)) candidate = `${base}-${n++}`.slice(0, 60); ids.add(candidate); return candidate }

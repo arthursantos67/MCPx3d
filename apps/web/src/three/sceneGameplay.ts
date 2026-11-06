@@ -1,28 +1,30 @@
 export interface ItemStack { item: string; amount: number }
-export interface SceneResource extends ItemStack { health: number }
+export type ResourceKind='wood'|'stone'|'ore'|'plant'|'food'|'custom'
+export interface SceneResource extends ItemStack { health: number; kind?:ResourceKind; method?:'strike'|'gather' }
 export function naturalResource(kind: string): SceneResource | undefined {
-  if (['tree', 'pine', 'palm', 'log'].includes(kind)) return { item: 'Madeira', amount: kind === 'log' ? 2 : 3, health: kind === 'log' ? 2 : 4 }
-  if (kind === 'rock') return { item: 'Pedra', amount: 3, health: 4 }
-  if (kind === 'bush' || kind === 'cactus') return { item: 'Fibra', amount: 2, health: 2 }
-  if (kind === 'mushroom') return { item: 'Cogumelo', amount: 1, health: 1 }
+  if (['tree', 'pine', 'palm', 'log'].includes(kind)) return { item: 'Madeira', amount: kind === 'log' ? 2 : 3, health: kind === 'log' ? 6 : 12,kind:'wood',method:'strike' }
+  if (kind === 'rock') return { item: 'Pedra', amount: 3, health: 12,kind:'stone',method:'strike' }
+  if (kind === 'bush' || kind === 'cactus') return { item: 'Fibra', amount: 2, health: 1,kind:'plant',method:'gather' }
+  if (kind === 'mushroom') return { item: 'Cogumelo', amount: 1, health: 1,kind:'food',method:'gather' }
   return undefined
 }
 export type QuestStepKind = 'gather' | 'craft' | 'talk' | 'interact' | 'visit' | 'defeat'
 export interface QuestStep { kind: QuestStepKind; target: string; count: number; label: string }
 export interface SceneQuest { id: string; title: string; giverId: string | null; steps: QuestStep[]; rewards: ItemStack[] }
-export interface CraftRecipe { id: string; name: string; inputs: ItemStack[]; output: ItemStack; healing: number }
-export const placeableKinds = ['campfire', 'tent', 'chest', 'fence', 'torch'] as const
-export interface GameplayItem { name: string; description: string; equipment?: 'none' | 'sword' | 'axe' | 'blaster' | 'bow' | 'staff'; placeable?: typeof placeableKinds[number]; healing?: number; harvest?: number }
-export interface SceneGameplay { quests: SceneQuest[]; recipes: CraftRecipe[]; startingItems: ItemStack[]; naturalResources: boolean; playStyle?: 'directed' | 'sandbox'; hud?: 'full' | 'minimal'; items?: GameplayItem[] }
+export interface CraftRecipe { id: string; name: string; inputs: ItemStack[]; output: ItemStack; healing: number; station?:string }
+export const placeableKinds = ['campfire', 'tent', 'chest', 'fence', 'torch','workbench'] as const
+export interface GameplayItem { name: string; description: string; equipment?: 'none' | 'sword' | 'axe' | 'pickaxe' | 'blaster' | 'bow' | 'staff'; placeable?: typeof placeableKinds[number]; healing?: number; harvest?: number; damage?:number; station?:string }
+export interface SceneGameplay { quests: SceneQuest[]; recipes: CraftRecipe[]; startingItems: ItemStack[]; naturalResources: boolean; playStyle?: 'directed' | 'sandbox'; hud?: 'full' | 'minimal'; items?: GameplayItem[]; stations?:{id:string;nodeId:string}[] }
 export function expandRecipeSources(spec: SceneGameplay, available: Set<string>): void {
   let changed = true
   while (changed) {
     changed = false
-    for (const recipe of spec.recipes) if (!available.has(itemKey(recipe.output.item)) && recipe.inputs.every(input => available.has(itemKey(input.item)))) { available.add(itemKey(recipe.output.item)); changed = true }
+    const stations=new Set([...(spec.stations??[]).map(station=>station.id),...(spec.items??[]).filter(item=>item.placeable&&available.has(itemKey(item.name))).map(item=>item.station??item.placeable)])
+    for (const recipe of spec.recipes) if ((!recipe.station||stations.has(recipe.station))&&!available.has(itemKey(recipe.output.item)) && recipe.inputs.every(input => available.has(itemKey(input.item)))) { available.add(itemKey(recipe.output.item)); changed = true }
   }
 }
 export function remapGameplay(spec: SceneGameplay, nodeId: (id: string) => string, namespace: (id: string) => string = id => id, defeatScope: string | null = null): SceneGameplay {
-  return { ...structuredClone(spec), quests: spec.quests.map(quest => ({ ...structuredClone(quest), id: namespace(quest.id), giverId: quest.giverId ? nodeId(quest.giverId) : null,
+  return { ...structuredClone(spec),...(spec.stations?{stations:spec.stations.map(station=>({...station,nodeId:nodeId(station.nodeId)}))}:{}), quests: spec.quests.map(quest => ({ ...structuredClone(quest), id: namespace(quest.id), giverId: quest.giverId ? nodeId(quest.giverId) : null,
     steps: quest.steps.map(step => ({ ...step, target: step.kind === 'defeat' && step.target === '*' && defeatScope ? `${defeatScope}/*` : ['visit', 'talk', 'interact', 'defeat'].includes(step.kind) && step.target !== '*' ? nodeId(step.target) : step.target })) })), recipes: spec.recipes.map(recipe => ({ ...structuredClone(recipe), id: namespace(recipe.id) })) }
 }
 export interface GameplayProgress {
@@ -30,6 +32,7 @@ export interface GameplayProgress {
   gathered: Map<string, number>; crafted: Map<string, number>; resourceHealth: Map<string, number>
 }
 export const itemKey = (name: string) => name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase()
+export const stationLabel=(id:string)=>({workbench:'Bancada de criação',campfire:'Fogueira',forge:'Forja',laboratory:'Laboratório'}[id]??id)
 const object = (value: unknown): Record<string, unknown> => { if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Jogabilidade: objeto inválido.'); return value as Record<string, unknown> }
 const label = (value: unknown, max = 100) => { if (typeof value !== 'string' || !value.trim() || value.length > max) throw new Error(`Jogabilidade: texto obrigatório de até ${max} caracteres.`); return value.trim() }
 const count = (value: unknown, min = 1) => { if (typeof value !== 'number' || !Number.isInteger(value) || value < min || value > 1000) throw new Error('Jogabilidade: quantidade inteira entre 1 e 1000.'); return value }
@@ -38,7 +41,9 @@ const stack = (value: unknown): ItemStack => { const data = object(value); retur
 export function validateResource(value: unknown): SceneResource | undefined {
   if (value == null) return undefined
   const data = object(value)
-  return { ...stack(data), health: count(data.health) }
+  if(data.kind!=null&&!['wood','stone','ore','plant','food','custom'].includes(data.kind as string))throw new Error('Material de recurso desconhecido.')
+  if(data.method!=null&&!['strike','gather'].includes(data.method as string))throw new Error('Método de coleta desconhecido.')
+  return { ...stack(data), health: count(data.health),...(data.kind==null?{}:{kind:data.kind as ResourceKind}),...(data.method==null?{}:{method:data.method as SceneResource['method']}) }
 }
 export function validateGameplay(value: unknown): SceneGameplay | undefined {
   if (value == null) return undefined
@@ -55,23 +60,24 @@ export function validateGameplay(value: unknown): SceneGameplay | undefined {
   const recipes = list(data.recipes ?? [], 24).map((entry): CraftRecipe => {
     const recipe = object(entry), inputs = list(recipe.inputs, 8).map(stack)
     if (!inputs.length || new Set(inputs.map(input => itemKey(input.item))).size !== inputs.length) throw new Error('Receitas precisam de ingredientes distintos.')
-    return { id: label(recipe.id), name: label(recipe.name), inputs, output: stack(recipe.output), healing: count(recipe.healing ?? 0, 0) }
+    return { id: label(recipe.id), name: label(recipe.name), inputs, output: stack(recipe.output), healing: count(recipe.healing ?? 0, 0),...(recipe.station==null?{}:{station:label(recipe.station,60)}) }
   })
   if (new Set(quests.map(q => q.id)).size !== quests.length || new Set(recipes.map(r => r.id)).size !== recipes.length) throw new Error('IDs de missões e receitas precisam ser únicos.')
   if (data.naturalResources != null && typeof data.naturalResources !== 'boolean') throw new Error('Recursos naturais: booleano obrigatório.')
   const items = list(data.items ?? [], 64).map((entry): GameplayItem => {
     const item = object(entry)
-    if (item.equipment != null && !['none', 'sword', 'axe', 'blaster', 'bow', 'staff'].includes(item.equipment as string)) throw new Error('Equipamento de item desconhecido.')
+    if (item.equipment != null && !['none', 'sword', 'axe','pickaxe', 'blaster', 'bow', 'staff'].includes(item.equipment as string)) throw new Error('Equipamento de item desconhecido.')
     if (item.placeable != null && !placeableKinds.includes(item.placeable as typeof placeableKinds[number])) throw new Error('Construção de item desconhecida.')
     if (item.equipment != null && item.placeable != null) throw new Error('Um item não pode ser arma e construção ao mesmo tempo.')
     return { name: label(item.name, 40), description: typeof item.description === 'string' ? item.description.slice(0, 300) : '',
       ...(item.equipment == null ? {} : { equipment: item.equipment as GameplayItem['equipment'] }), ...(item.placeable == null ? {} : { placeable: item.placeable as GameplayItem['placeable'] }),
-      ...(item.healing == null ? {} : { healing: count(item.healing, 0) }), ...(item.harvest == null ? {} : { harvest: count(item.harvest) }) }
+      ...(item.healing == null ? {} : { healing: count(item.healing, 0) }), ...(item.harvest == null ? {} : { harvest: count(item.harvest) }),...(item.damage==null?{}:{damage:count(item.damage)}),...(item.station==null?{}:{station:label(item.station,60)}) }
   })
   if (new Set(items.map(item => itemKey(item.name))).size !== items.length) throw new Error('Nomes de itens devem ser únicos.')
   if (data.playStyle != null && !['directed', 'sandbox'].includes(data.playStyle as string)) throw new Error('Estilo de jogo desconhecido.')
   if (data.hud != null && !['full', 'minimal'].includes(data.hud as string)) throw new Error('Interface de jogo desconhecida.')
-  return { quests, recipes, startingItems: list(data.startingItems ?? [], 24).map(stack), naturalResources: data.naturalResources === true,
+  const stations=list(data.stations??[],32).map(entry=>{const station=object(entry);return{id:label(station.id,60),nodeId:label(station.nodeId)}})
+  return { quests, recipes, startingItems: list(data.startingItems ?? [], 24).map(stack), naturalResources: data.naturalResources === true,...(stations.length?{stations}:{}),
     ...(data.playStyle == null ? {} : { playStyle: data.playStyle as SceneGameplay['playStyle'] }), ...(data.hud == null ? {} : { hud: data.hud as SceneGameplay['hud'] }), ...(items.length ? { items } : {}) }
 }
 export const createGameplayProgress = (): GameplayProgress => ({ accepted: new Set(), completed: new Set(), talked: new Set(), interacted: new Set(), visited: new Set(), destroyed: new Set(), gathered: new Map(), crafted: new Map(), resourceHealth: new Map() })
@@ -95,8 +101,8 @@ export function resourceHit(progress: GameplayProgress, items: Map<string, numbe
 export function recipeMissing(recipe: CraftRecipe, items: Map<string, number>): ItemStack[] {
   return recipe.inputs.flatMap(input => { const missing = input.amount - itemCount(items, input.item); return missing > 0 ? [{ item: input.item, amount: missing }] : [] })
 }
-export function craftItem(progress: GameplayProgress, items: Map<string, number>, recipe: CraftRecipe): boolean {
-  if (recipeMissing(recipe, items).length) return false
+export function craftItem(progress: GameplayProgress, items: Map<string, number>, recipe: CraftRecipe,stations:ReadonlySet<string>=new Set()): boolean {
+  if (recipe.station&&!stations.has(recipe.station)||recipeMissing(recipe, items).length) return false
   for (const input of recipe.inputs) {
     let remaining = input.amount
     for (const [key, amount] of items) if (itemKey(key) === itemKey(input.item)) {
@@ -155,5 +161,5 @@ export function snapshotGameplay(progress: GameplayProgress): GameplaySnapshot {
 }
 export function restoreGameplay(progress: GameplayProgress, saved: GameplaySnapshot) {
   for (const name of ['accepted', 'completed', 'talked', 'interacted', 'visited', 'destroyed'] as const) for (const id of Array.isArray(saved[name]) ? saved[name].slice(0, 10000) : []) if (typeof id === 'string' && id.length <= 160) progress[name].add(id)
-  for (const name of ['gathered', 'crafted', 'resourceHealth'] as const) for (const pair of Array.isArray(saved[name]) ? saved[name]!.slice(0, name === 'resourceHealth' ? 10000 : 256) : []) if (Array.isArray(pair) && typeof pair[0] === 'string' && pair[0].length <= 160 && Number.isInteger(pair[1]) && pair[1] > 0 && pair[1] <= 100000) progress[name].set(pair[0], pair[1])
+  for (const name of ['gathered', 'crafted', 'resourceHealth'] as const) for (const pair of Array.isArray(saved[name]) ? saved[name]!.slice(0, name === 'resourceHealth' ? 10000 : 256) : []) if (Array.isArray(pair) && typeof pair[0] === 'string' && pair[0].length <= 160 && (name==='resourceHealth'?Number.isFinite(pair[1]):Number.isInteger(pair[1])) && pair[1] > 0 && pair[1] <= 100000) progress[name].set(pair[0], pair[1])
 }

@@ -181,7 +181,7 @@ test('the builder system prompt documents the new catalogue, mechanics, audio an
   let system=''
   const provider={generateStructured:async(messages:{role:string;content:string}[])=>{system||=messages[0].content;throw new Error('parar')}} as unknown as LLMProvider
   await generateThreeScene(provider,'Uma caixa de madeira',new AbortController().signal).catch(()=>{})
-  for (const expected of ['DIREÇÃO CRIATIVA','pontos de interesse','weapon none|sword|axe|blaster|bow|staff','avatar explorer|knight|wizard|astronaut|robot','villager, knight, wizard, astronaut',
+  for (const expected of ['DIREÇÃO CRIATIVA','pontos de interesse','weapon none|sword|axe|pickaxe|blaster|bow|staff','avatar explorer|knight|wizard|astronaut|robot','villager, knight, wizard, astronaut',
     'dragon','movingPlatform','jumpPad','powerOrb','requires','dialogue','survive','delay','flying','node.sound','weather none|rain','grade none|warm','music calm','castleWall','turret'])
     assert.ok(system.includes(expected),expected)
   assert.ok(!system.includes('disparos/projéteis'),'weapons are no longer described as missing')
@@ -189,7 +189,7 @@ test('the builder system prompt documents the new catalogue, mechanics, audio an
     'activity wander|work|sit|chat|patrol|guard|sleep|perform','marketStall, bench, well','reaction greet','node.emitter={preset fire|smoke|sparks','smoke em chaminés','sparks na bigorna',
     'motion={wind 0–2','fauna auto|none|rich','dayCycle={enabled,duration 60–7200','environment.premise ≤240'])
     assert.ok(system.includes(expected),expected)
-  assert.ok(system.length<17000,`the builder prompt stays compact (${system.length} chars)`)
+  assert.ok(system.length<18000,`the builder prompt stays compact (${system.length} chars)`)
 })
 
 test('the edit prompt lists the 1.4 fields it can change', async () => {

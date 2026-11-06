@@ -38,6 +38,8 @@ export interface WorldMacro {
   lake?: Uint8Array
   /** 0..1 river presence, for wet banks. */
   river: Float32Array
+  /** River centreline segments: ax,az,levelA,bx,bz,levelB,radius,depth. */
+  channels?: Float32Array
   temperature: Float32Array
   humidity: Float32Array
   /** GROUND_LAYERS.length weights per point, 0–255, summing to ~255. */
@@ -176,6 +178,7 @@ export function buildMacro(input: MacroInput): WorldMacro {
     for (const k of component) { if (lake) { water[k] = filled[k]; lakeMask[k] = 1 } else if (component.length < 64) delta[k] += Math.min(1.5, filled[k] - heights[k]) }
     if (lake) lakes++
   }
+  const channelSegments:number[]=[]
   if (input.rivers) {
     // Rivers where more than ~0.35 km² drains; width and depth grow with the root of the drained area.
     const threshold = 350_000, beds: { k: number; width: number; depth: number; level: number }[] = []
@@ -183,6 +186,8 @@ export function buildMacro(input: MacroInput): WorldMacro {
       if (area[k] < threshold || heights[k] <= sea || !Number.isNaN(water[k])) continue
       const width = clamp(3 + 0.008 * Math.sqrt(area[k]), 3, 24), depth = 0.6 + 0.12 * width
       beds.push({ k, width, depth, level: heights[k] })
+      const d=downstream[k]
+      if(d>=0)channelSegments.push(origin[0]+(k%nx)*cell,origin[1]+Math.floor(k/nx)*cell,heights[k],origin[0]+(d%nx)*cell,origin[1]+Math.floor(d/nx)*cell,heights[d],width/2,Math.min(2.2,depth))
       riverCells++
     }
     for (const bed of beds) {
@@ -262,7 +267,7 @@ export function buildMacro(input: MacroInput): WorldMacro {
     for (let l = 0; l < weights.length; l++) ground[k * weights.length + l] = Math.round(255 * weights[l] / (sum || 1))
   }
   const pads = new Float32Array((input.layout?.sites ?? []).flatMap((site, index) => [site.x, site.z, site.radius, siteLevels[index]]))
-  return { cell, points: [nx, nz], origin, delta, water, lake: lakeMask, river, temperature, humidity, ground, biome, drain: downstream, filled, clear, roads, siteLevels, pads, stats: { droplets, lakes, riverCells, ms: performance.now() - started } }
+  return { cell, points: [nx, nz], origin, delta, water, lake: lakeMask, river,channels:new Float32Array(channelSegments), temperature, humidity, ground, biome, drain: downstream, filled, clear, roads, siteLevels, pads, stats: { droplets, lakes, riverCells, ms: performance.now() - started } }
 }
 
 interface LayoutGrid { nx: number; nz: number; cell: number; origin: [number, number]; base: Float32Array; delta: Float32Array; water: Float32Array; river: Float32Array; clear: Float32Array; roads: [number, number][][]; siteLevels: Float32Array }
@@ -390,7 +395,7 @@ export function sampleMacro(field: Float32Array, macro: Pick<WorldMacro, 'cell' 
   return value
 }
 
-export interface WaterMesh { positions: Float32Array; indices: Uint32Array; levels: Float32Array; depths?: Float32Array; triangles?: Uint8Array }
+export interface WaterMesh { positions: Float32Array; indices: Uint32Array; levels: Float32Array; depths?: Float32Array; triangles?: Uint8Array; cellOffsets?: Uint32Array; normals?:Float32Array; patches?:{key:string;indices:Uint32Array;min:[number,number,number];max:[number,number,number]}[] }
 
 /**
  * One mesh for every lake and river of the world: grid points with water keep their level, dry points next to water

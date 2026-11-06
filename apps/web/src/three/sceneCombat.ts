@@ -4,12 +4,13 @@ import { enemyCanSee } from './sceneEnemies.ts'
 import { capsuleTouches, PLAYER_HEIGHT, PLAYER_RADIUS, type PlayerBox, type PlayerCollider } from './scenePlayer.ts'
 
 export type WeaponKind = typeof weaponKinds[number]
-/** Melee range guides targeting; damage requires animated contact. Projectiles fly at `speed` m/s for `range` metres. */
+/** Melee range/arc define the impact volume, independent of a skin's arm length. Projectiles fly at `speed` m/s for `range` metres. */
 export interface WeaponStats { kind: 'melee' | 'projectile'; damage: number; cooldown: number; range: number; arc?: number; speed?: number; radius?: number; color: string; gravity?: number }
 export const weaponStats: Record<WeaponKind, WeaponStats> = {
   none: { kind: 'melee', damage: 1, cooldown: 0.45, range: 0.85, arc: 50, color: '#ffd27a' },
   sword: { kind: 'melee', damage: 2, cooldown: 0.5, range: 1.6, arc: 110, color: '#dfe8ff' },
   axe: { kind: 'melee', damage: 2, cooldown: 0.65, range: 1.4, arc: 95, color: '#b4b8b4' },
+  pickaxe: { kind: 'melee', damage: 1, cooldown: .8, range: 1.4, arc: 70, color: '#c1c6cd' },
   blaster: { kind: 'projectile', damage: 1, cooldown: 0.22, range: 45, speed: 42, radius: 0.08, color: '#5ff2ff' },
   bow: { kind: 'projectile', damage: 2, cooldown: 0.75, range: 60, speed: 30, radius: 0.06, gravity: 12, color: '#d9b98c' },
   staff: { kind: 'projectile', damage: 2, cooldown: 0.9, range: 30, speed: 14, radius: 0.3, color: '#b57bff' },
@@ -129,12 +130,13 @@ export function meleeTargets(origin: THREE.Vector3, forward: THREE.Vector3, rang
   for (const { id, box } of targets) {
     const point = closestOnBox(origin, box), offset = point.clone().sub(origin), distance = offset.length()
     if (distance > range || (best.get(id) ?? Infinity) <= distance) continue
-    if (distance > 0.6) {
+    if (distance > 1e-6) {
       // Aim at the nearest point or at the box centre, so wide bodies stay hittable at their edges.
       const toCenter = box.center.clone().sub(origin).normalize()
       if (offset.divideScalar(distance).dot(aim) < cos && toCenter.dot(aim) < cos) continue
-      if (collider && !enemyCanSee(origin, point, collider)) continue
     }
+    // Even point-blank strikes must not pass through a thin wall.
+    if (collider && !enemyCanSee(origin, point, collider)) continue
     best.set(id, distance)
   }
   return [...best].sort((a, b) => a[1] - b[1]).map(([id]) => id)
