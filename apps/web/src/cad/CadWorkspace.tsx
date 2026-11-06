@@ -18,6 +18,7 @@ import type { CadDraftSnapshot } from '../../../../packages/domain/ts/src/cad-dr
 import type { CadActionStats } from '../../../../packages/agent/src/cad-action-budget.ts'
 import { readCadDraft, storeCadDraft, clearCadDraft } from './cadDraftStorage.ts'
 import CadDraftPanel from './CadDraftPanel.tsx'
+import CadParametricPanel from './CadParametricPanel.tsx'
 
 interface Props {
   readonly provider: AgentProvider
@@ -30,7 +31,10 @@ interface Props {
 
 export default function CadWorkspace({ provider, active, ready, agentDetail, onOpenProviderSettings, onBusyChange }: Props) {
   const [agent] = useState(() => new CadAgentController(provider, api))
-  const [editor, setEditor] = useState<'program' | 'assembly'>(() => localStorage.getItem('modeler:cad-editor') === 'assembly' ? 'assembly' : 'program')
+  const [editor, setEditor] = useState<'program' | 'assembly' | 'parametric'>(() => {
+    const saved = localStorage.getItem('modeler:cad-editor')
+    return saved === 'assembly' || saved === 'parametric' ? saved : 'program'
+  })
   const [program, setProgram] = useState<CadProgramSpec>(initialCadProgram)
   const [programProject, setProgramProject] = useState<api.CadProgramProject | null>(null)
   const [assembly, setAssembly] = useState<CadAssemblySpec | null>(null)
@@ -46,13 +50,13 @@ export default function CadWorkspace({ provider, active, ready, agentDetail, onO
   const [draftPersistenceFailed, setDraftPersistenceFailed] = useState(false)
   const [generationStats, setGenerationStats] = useState<CadActionStats | null>(null)
   const [requireMechanics, setRequireMechanics] = useState(() => localStorage.getItem('modeler:cad-mechanics') !== 'concept')
-  const currentProject = editor === 'program' ? programProject : assemblyProject
-  const currentSpec = draft?.spec ?? (editor === 'program' ? program : assembly)
+  const currentProject = editor === 'assembly' ? assemblyProject : programProject
+  const currentSpec = editor === 'parametric' ? program : draft?.spec ?? (editor === 'program' ? program : assembly)
   const dirty = !currentProject || JSON.stringify(currentProject.spec) !== JSON.stringify(currentSpec)
   const exportableDraft = draft ?? (dirty && currentSpec &&
     (currentSpec.schemaVersion === '4.0' || JSON.stringify(currentSpec) !== JSON.stringify(initialCadProgram))
     ? { spec: currentSpec, request: '' } : null)
-  const preview = useCadPreview(currentSpec, active && recovered && !busy, !!draft || dirty)
+  const preview = useCadPreview(currentSpec, active && recovered && !busy, editor !== 'parametric' && (!!draft || dirty))
   const discardDraft = () => { setDraft(null); clearCadDraft(); setDraftPersistenceFailed(false) }
 
   useEffect(() => () => agent.cancelGeneration(), [agent])
@@ -107,16 +111,21 @@ export default function CadWorkspace({ provider, active, ready, agentDetail, onO
   return <div className="cad-workspace" hidden={!active}>
     <aside className="cad-workspace__sidebar">
       <div className="cad-workspace__tabs" role="group" aria-label="Modo de construção CAD">
+        <button type="button" aria-pressed={editor === 'parametric'} disabled={busy} onClick={() => setEditor('parametric')}>Peças paramétricas</button>
         <button type="button" aria-pressed={editor === 'program'} disabled={busy} onClick={() => setEditor('program')}>Projeto livre</button>
         <button type="button" aria-pressed={editor === 'assembly'} disabled={busy} onClick={() => setEditor('assembly')}>Conjunto composto</button>
       </div>
-      <label className="cad-program__field"><span><input type="checkbox" checked={requireMechanics} disabled={busy}
-        onChange={(event) => { setRequireMechanics(event.target.checked); localStorage.setItem('modeler:cad-mechanics', event.target.checked ? 'mechanical' : 'concept'); clearProgress() }} /> Verificar vínculos mecânicos ao criar</span></label>
-      {!ready && <p className="cad-workspace__notice" role="status">{agentDetail || 'A IA está sendo preparada. Você já pode editar a geometria manualmente.'}</p>}
+      {editor !== 'parametric' && <label className="cad-program__field"><span><input type="checkbox" checked={requireMechanics} disabled={busy}
+        onChange={(event) => { setRequireMechanics(event.target.checked); localStorage.setItem('modeler:cad-mechanics', event.target.checked ? 'mechanical' : 'concept'); clearProgress() }} /> Verificar vínculos mecânicos ao criar</span></label>}
+      {!ready && editor !== 'parametric' && <p className="cad-workspace__notice" role="status">{agentDetail || 'A IA está sendo preparada. Você já pode editar a geometria manualmente.'}</p>}
       {recoveryError && <p className="cad-workspace__notice" role="alert">{recoveryError}</p>}
       {!recovered && <p className="cad-workspace__notice" role="status">Recuperando seus projetos…</p>}
-      {exportableDraft && <CadDraftPanel draft={exportableDraft} busy={busy} persistenceFailed={draftPersistenceFailed} />}
+      {exportableDraft && editor !== 'parametric' && <CadDraftPanel draft={exportableDraft} busy={busy} persistenceFailed={draftPersistenceFailed} />}
       {generationStats && <small>{generationStats.aiCalls}/{generationStats.aiCallLimit} chamadas de IA · {generationStats.cadChecks}/{generationStats.cadCheckLimit} verificações geométricas nesta ação</small>}
+      <div hidden={!recovered || editor !== 'parametric'}><CadParametricPanel spec={program} project={programProject}
+        onApply={(spec) => { clearProgress(); discardDraft(); setProgram(spec) }}
+        onSaved={(saved) => { setProgram(saved.spec); setProgramProject(saved); clearProgress(); discardDraft() }}
+        onBusyChange={reportBusy} /></div>
       <div hidden={!recovered || editor !== 'program'}><CadProgramPanel spec={program} project={programProject} onChange={(spec) => { discardDraft(); setProgram(spec) }} onSaved={(saved) => { setProgramProject(saved); agent.clearCompletedGeneration(); discardDraft() }}
         onBusyChange={reportBusy}
         onNew={() => { api.clearActiveCadProgram(); setProgramProject(null); setProgram(initialCadProgram); clearProgress(); discardDraft() }}

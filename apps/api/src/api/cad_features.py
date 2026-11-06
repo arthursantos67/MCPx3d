@@ -24,6 +24,7 @@ from domain.cad_program import (
 
 from api.cad_adapter import CadGeometryError
 from api.cad_gears import build_rack, build_spur_gear
+from api.cad_material_change import changes_material
 from api.cad_sweeps import build_sweep
 from api.cad_threads import build_thread
 
@@ -69,7 +70,7 @@ def build_feature(step: TubeStep | TorusStep | SlotStep | HoleStep | ThreadStep 
 
 
 def finish_part(part: Any, step: FilletStep | ChamferStep | ShellStep) -> Any:
-    before = part.val().Volume()
+    before = part.solids().val()
     selection = part.faces(_SELECTORS[step.selector]) if isinstance(step, ShellStep) else part.edges(_SELECTORS[step.selector])
     if isinstance(step, (FilletStep, ChamferStep)) and step.selectionBox is not None:
         region = step.selectionBox
@@ -102,6 +103,6 @@ def finish_part(part: Any, step: FilletStep | ChamferStep | ShellStep) -> Any:
     solids = result.solids().vals()
     if len(solids) != 1 or not solids[0].isValid() or solids[0].Volume() <= 0:
         raise CadGeometryError(f"CAD step {step.id} ({step.shape}) must retain one valid connected solid")
-    if math.isclose(before, solids[0].Volume(), rel_tol=1e-9, abs_tol=1e-6):
+    if not changes_material(before, solids[0], "cut"):
         raise CadGeometryError(f"CAD step {step.id} ({step.shape}) does not change the solid; revise selection")
     return result.newObject([solids[0]])

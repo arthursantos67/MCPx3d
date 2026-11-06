@@ -96,6 +96,15 @@ export async function checkCadProgram(spec: CadProgramSpec, signal?: AbortSignal
   }
 }
 
+export async function inspectCadProgram(spec: CadProgramSpec, signal?: AbortSignal): Promise<CadInspection> {
+  validateCadProgram(spec);
+  const response = await fetch(`${baseUrl()}/api/cad/programs/inspect`, {
+    signal, method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(spec),
+  });
+  if (!response.ok) return throwCadApiError(response);
+  return await response.json() as CadInspection;
+}
+
 export async function meshCadProgram(spec: CadProgramSpec, signal?: AbortSignal): Promise<CadProgramMesh> {
   validateCadProgram(spec);
   const response = await fetch(`${baseUrl()}/api/cad/programs/mesh`, {

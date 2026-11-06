@@ -11,6 +11,7 @@
     "dev": "node scripts/dev.mjs",
     "dev:api": "node scripts/run-api.mjs",
     "test:browser": "playwright test",
+    "test:cad:parametric": "node scripts/test-cad-parametric.mjs",
     "build": "npm run build --workspace web",
     "dev:web": "npm run dev --workspace web",
     "lint:web": "npm run lint --workspace web",

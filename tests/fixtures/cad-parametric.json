@@ -1,0 +1,1331 @@
+[
+  {
+    "id": "plate-0",
+    "document": {
+      "format": "forma-parametric-1",
+      "kind": "plate",
+      "partId": "parametric_plate",
+      "parameters": {
+        "width": 80,
+        "depth": 60,
+        "thickness": 6,
+        "holeDiameter": 5.5,
+        "edgeOffset": 12
+      }
+    },
+    "spec": {
+      "schemaVersion": "3.0",
+      "units": "mm",
+      "partId": "parametric_plate",
+      "steps": [
+        {
+          "id": "plate",
+          "op": "base",
+          "shape": "box",
+          "width": 80,
+          "depth": 60,
+          "height": 6,
+          "position": {
+            "x": 0,
+            "y": 0,
+            "z": 3
+          },
+          "rotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          }
+        },
+        {
+          "id": "mount_row_1",
+          "op": "cut",
+          "shape": "hole",
+          "diameter": 5.5,
+          "height": 6.5,
+          "holeType": "plain",
+          "headDiameter": 0,
+          "headDepth": 0,
+          "termination": "through",
+          "minBottomThickness": 1,
+          "position": {
+            "x": -28,
+            "y": -18,
+            "z": 6
+          },
+          "rotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "pattern": {
+            "kind": "linear",
+            "count": 2,
+            "offset": {
+              "x": 56,
+              "y": 0,
+              "z": 0
+            }
+          }
+        },
+        {
+          "id": "mount_row_2",
+          "op": "cut",
+          "shape": "hole",
+          "diameter": 5.5,
+          "height": 6.5,
+          "holeType": "plain",
+          "headDiameter": 0,
+          "headDepth": 0,
+          "termination": "through",
+          "minBottomThickness": 1,
+          "position": {
+            "x": -28,
+            "y": 18,
+            "z": 6
+          },
+          "rotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "pattern": {
+            "kind": "linear",
+            "count": 2,
+            "offset": {
+              "x": 56,
+              "y": 0,
+              "z": 0
+            }
+          }
+        }
+      ]
+    },
+    "expectedBoundsMm": [
+      80,
+      60,
+      6
+    ],
+    "expectedVolumeMm3": 28229.80093337345
+  },
+  {
+    "id": "plate-1",
+    "document": {
+      "format": "forma-parametric-1",
+      "kind": "plate",
+      "partId": "parametric_plate",
+      "parameters": {
+        "width": 120,
+        "depth": 45,
+        "thickness": 3,
+        "holeDiameter": 4.2,
+        "edgeOffset": 9
+      }
+    },
+    "spec": {
+      "schemaVersion": "3.0",
+      "units": "mm",
+      "partId": "parametric_plate",
+      "steps": [
+        {
+          "id": "plate",
+          "op": "base",
+          "shape": "box",
+          "width": 120,
+          "depth": 45,
+          "height": 3,
+          "position": {
+            "x": 0,
+            "y": 0,
+            "z": 1.5
+          },
+          "rotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          }
+        },
+        {
+          "id": "mount_row_1",
+          "op": "cut",
+          "shape": "hole",
+          "diameter": 4.2,
+          "height": 3.5,
+          "holeType": "plain",
+          "headDiameter": 0,
+          "headDepth": 0,
+          "termination": "through",
+          "minBottomThickness": 1,
+          "position": {
+            "x": -51,
+            "y": -13.5,
+            "z": 3
+          },
+          "rotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "pattern": {
+            "kind": "linear",
+            "count": 2,
+            "offset": {
+              "x": 102,
+              "y": 0,
+              "z": 0
+            }
+          }
+        },
+        {
+          "id": "mount_row_2",
+          "op": "cut",
+          "shape": "hole",
+          "diameter": 4.2,
+          "height": 3.5,
+          "holeType": "plain",
+          "headDiameter": 0,
+          "headDepth": 0,
+          "termination": "through",
+          "minBottomThickness": 1,
+          "position": {
+            "x": -51,
+            "y": 13.5,
+            "z": 3
+          },
+          "rotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "pattern": {
+            "kind": "linear",
+            "count": 2,
+            "offset": {
+              "x": 102,
+              "y": 0,
+              "z": 0
+            }
+          }
+        }
+      ]
+    },
+    "expectedBoundsMm": [
+      120,
+      45,
+      3
+    ],
+    "expectedVolumeMm3": 16033.746916772026
+  },
+  {
+    "id": "plate-2",
+    "document": {
+      "format": "forma-parametric-1",
+      "kind": "plate",
+      "partId": "parametric_plate",
+      "parameters": {
+        "width": 20,
+        "depth": 20,
+        "thickness": 1,
+        "holeDiameter": 2,
+        "edgeOffset": 3
+      }
+    },
+    "spec": {
+      "schemaVersion": "3.0",
+      "units": "mm",
+      "partId": "parametric_plate",
+      "steps": [
+        {
+          "id": "plate",
+          "op": "base",
+          "shape": "box",
+          "width": 20,
+          "depth": 20,
+          "height": 1,
+          "position": {
+            "x": 0,
+            "y": 0,
+            "z": 0.5
+          },
+          "rotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          }
+        },
+        {
+          "id": "mount_row_1",
+          "op": "cut",
+          "shape": "hole",
+          "diameter": 2,
+          "height": 1.5,
+          "holeType": "plain",
+          "headDiameter": 0,
+          "headDepth": 0,
+          "termination": "through",
+          "minBottomThickness": 1,
+          "position": {
+            "x": -7,
+            "y": -7,
+            "z": 1
+          },
+          "rotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "pattern": {
+            "kind": "linear",
+            "count": 2,
+            "offset": {
+              "x": 14,
+              "y": 0,
+              "z": 0
+            }
+          }
+        },
+        {
+          "id": "mount_row_2",
+          "op": "cut",
+          "shape": "hole",
+          "diameter": 2,
+          "height": 1.5,
+          "holeType": "plain",
+          "headDiameter": 0,
+          "headDepth": 0,
+          "termination": "through",
+          "minBottomThickness": 1,
+          "position": {
+            "x": -7,
+            "y": 7,
+            "z": 1
+          },
+          "rotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "pattern": {
+            "kind": "linear",
+            "count": 2,
+            "offset": {
+              "x": 14,
+              "y": 0,
+              "z": 0
+            }
+          }
+        }
+      ]
+    },
+    "expectedBoundsMm": [
+      20,
+      20,
+      1
+    ],
+    "expectedVolumeMm3": 387.4336293856408
+  },
+  {
+    "id": "bracket-0",
+    "document": {
+      "format": "forma-parametric-1",
+      "kind": "bracket",
+      "partId": "parametric_bracket",
+      "parameters": {
+        "width": 80,
+        "depth": 60,
+        "height": 60,
+        "thickness": 6,
+        "holeDiameter": 5.5,
+        "edgeOffset": 12
+      }
+    },
+    "spec": {
+      "schemaVersion": "3.0",
+      "units": "mm",
+      "partId": "parametric_bracket",
+      "steps": [
+        {
+          "id": "foot",
+          "op": "base",
+          "shape": "box",
+          "width": 80,
+          "depth": 60,
+          "height": 6,
+          "position": {
+            "x": 0,
+            "y": 0,
+            "z": 3
+          },
+          "rotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          }
+        },
+        {
+          "id": "upright",
+          "op": "union",
+          "shape": "box",
+          "width": 80,
+          "depth": 6,
+          "height": 60,
+          "position": {
+            "x": 0,
+            "y": -27,
+            "z": 30
+          },
+          "rotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          }
+        },
+        {
+          "id": "foot_mounts",
+          "op": "cut",
+          "shape": "hole",
+          "diameter": 5.5,
+          "height": 6.5,
+          "holeType": "plain",
+          "headDiameter": 0,
+          "headDepth": 0,
+          "termination": "through",
+          "minBottomThickness": 1,
+          "position": {
+            "x": -28,
+            "y": 3,
+            "z": 6
+          },
+          "rotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "pattern": {
+            "kind": "linear",
+            "count": 2,
+            "offset": {
+              "x": 56,
+              "y": 0,
+              "z": 0
+            }
+          }
+        },
+        {
+          "id": "wall_mounts",
+          "op": "cut",
+          "shape": "hole",
+          "diameter": 5.5,
+          "height": 6.5,
+          "holeType": "plain",
+          "headDiameter": 0,
+          "headDepth": 0,
+          "termination": "through",
+          "minBottomThickness": 1,
+          "position": {
+            "x": -28,
+            "y": -24,
+            "z": 33
+          },
+          "rotation": {
+            "x": -90,
+            "y": 0,
+            "z": 0
+          },
+          "pattern": {
+            "kind": "linear",
+            "count": 2,
+            "offset": {
+              "x": 56,
+              "y": 0,
+              "z": 0
+            }
+          }
+        }
+      ]
+    },
+    "expectedBoundsMm": [
+      80,
+      60,
+      60
+    ],
+    "expectedVolumeMm3": 54149.80093337345
+  },
+  {
+    "id": "bracket-1",
+    "document": {
+      "format": "forma-parametric-1",
+      "kind": "bracket",
+      "partId": "parametric_bracket",
+      "parameters": {
+        "width": 100,
+        "depth": 70,
+        "height": 90,
+        "thickness": 4,
+        "holeDiameter": 8,
+        "edgeOffset": 18
+      }
+    },
+    "spec": {
+      "schemaVersion": "3.0",
+      "units": "mm",
+      "partId": "parametric_bracket",
+      "steps": [
+        {
+          "id": "foot",
+          "op": "base",
+          "shape": "box",
+          "width": 100,
+          "depth": 70,
+          "height": 4,
+          "position": {
+            "x": 0,
+            "y": 0,
+            "z": 2
+          },
+          "rotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          }
+        },
+        {
+          "id": "upright",
+          "op": "union",
+          "shape": "box",
+          "width": 100,
+          "depth": 4,
+          "height": 90,
+          "position": {
+            "x": 0,
+            "y": -33,
+            "z": 45
+          },
+          "rotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          }
+        },
+        {
+          "id": "foot_mounts",
+          "op": "cut",
+          "shape": "hole",
+          "diameter": 8,
+          "height": 4.5,
+          "holeType": "plain",
+          "headDiameter": 0,
+          "headDepth": 0,
+          "termination": "through",
+          "minBottomThickness": 1,
+          "position": {
+            "x": -32,
+            "y": 2,
+            "z": 4
+          },
+          "rotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "pattern": {
+            "kind": "linear",
+            "count": 2,
+            "offset": {
+              "x": 64,
+              "y": 0,
+              "z": 0
+            }
+          }
+        },
+        {
+          "id": "wall_mounts",
+          "op": "cut",
+          "shape": "hole",
+          "diameter": 8,
+          "height": 4.5,
+          "holeType": "plain",
+          "headDiameter": 0,
+          "headDepth": 0,
+          "termination": "through",
+          "minBottomThickness": 1,
+          "position": {
+            "x": -32,
+            "y": -31,
+            "z": 47
+          },
+          "rotation": {
+            "x": -90,
+            "y": 0,
+            "z": 0
+          },
+          "pattern": {
+            "kind": "linear",
+            "count": 2,
+            "offset": {
+              "x": 64,
+              "y": 0,
+              "z": 0
+            }
+          }
+        }
+      ]
+    },
+    "expectedBoundsMm": [
+      100,
+      70,
+      90
+    ],
+    "expectedVolumeMm3": 61595.752280681016
+  },
+  {
+    "id": "bracket-2",
+    "document": {
+      "format": "forma-parametric-1",
+      "kind": "bracket",
+      "partId": "parametric_bracket",
+      "parameters": {
+        "width": 12,
+        "depth": 8,
+        "height": 8,
+        "thickness": 2,
+        "holeDiameter": 2,
+        "edgeOffset": 3
+      }
+    },
+    "spec": {
+      "schemaVersion": "3.0",
+      "units": "mm",
+      "partId": "parametric_bracket",
+      "steps": [
+        {
+          "id": "foot",
+          "op": "base",
+          "shape": "box",
+          "width": 12,
+          "depth": 8,
+          "height": 2,
+          "position": {
+            "x": 0,
+            "y": 0,
+            "z": 1
+          },
+          "rotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          }
+        },
+        {
+          "id": "upright",
+          "op": "union",
+          "shape": "box",
+          "width": 12,
+          "depth": 2,
+          "height": 8,
+          "position": {
+            "x": 0,
+            "y": -3,
+            "z": 4
+          },
+          "rotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          }
+        },
+        {
+          "id": "foot_mounts",
+          "op": "cut",
+          "shape": "hole",
+          "diameter": 2,
+          "height": 2.5,
+          "holeType": "plain",
+          "headDiameter": 0,
+          "headDepth": 0,
+          "termination": "through",
+          "minBottomThickness": 1,
+          "position": {
+            "x": -3,
+            "y": 1,
+            "z": 2
+          },
+          "rotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "pattern": {
+            "kind": "linear",
+            "count": 2,
+            "offset": {
+              "x": 6,
+              "y": 0,
+              "z": 0
+            }
+          }
+        },
+        {
+          "id": "wall_mounts",
+          "op": "cut",
+          "shape": "hole",
+          "diameter": 2,
+          "height": 2.5,
+          "holeType": "plain",
+          "headDiameter": 0,
+          "headDepth": 0,
+          "termination": "through",
+          "minBottomThickness": 1,
+          "position": {
+            "x": -3,
+            "y": -2,
+            "z": 5
+          },
+          "rotation": {
+            "x": -90,
+            "y": 0,
+            "z": 0
+          },
+          "pattern": {
+            "kind": "linear",
+            "count": 2,
+            "offset": {
+              "x": 6,
+              "y": 0,
+              "z": 0
+            }
+          }
+        }
+      ]
+    },
+    "expectedBoundsMm": [
+      12,
+      8,
+      8
+    ],
+    "expectedVolumeMm3": 310.8672587712816
+  },
+  {
+    "id": "flange-0",
+    "document": {
+      "format": "forma-parametric-1",
+      "kind": "flange",
+      "partId": "parametric_flange",
+      "parameters": {
+        "diameter": 90,
+        "thickness": 6,
+        "boreDiameter": 24,
+        "boltCircleDiameter": 62,
+        "holeDiameter": 5.5,
+        "holeCount": 6
+      }
+    },
+    "spec": {
+      "schemaVersion": "3.0",
+      "units": "mm",
+      "partId": "parametric_flange",
+      "steps": [
+        {
+          "id": "disc",
+          "op": "base",
+          "shape": "cylinder",
+          "diameter": 90,
+          "height": 6,
+          "position": {
+            "x": 0,
+            "y": 0,
+            "z": 3
+          },
+          "rotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          }
+        },
+        {
+          "id": "center_bore",
+          "op": "cut",
+          "shape": "hole",
+          "diameter": 24,
+          "height": 6.5,
+          "holeType": "plain",
+          "headDiameter": 0,
+          "headDepth": 0,
+          "termination": "through",
+          "minBottomThickness": 1,
+          "position": {
+            "x": 0,
+            "y": 0,
+            "z": 6
+          },
+          "rotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          }
+        },
+        {
+          "id": "bolt_circle",
+          "op": "cut",
+          "shape": "hole",
+          "diameter": 5.5,
+          "height": 6.5,
+          "holeType": "plain",
+          "headDiameter": 0,
+          "headDepth": 0,
+          "termination": "through",
+          "minBottomThickness": 1,
+          "position": {
+            "x": 31,
+            "y": 0,
+            "z": 6
+          },
+          "rotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "pattern": {
+            "kind": "circular",
+            "count": 6,
+            "axis": "z",
+            "center": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            },
+            "sweepAngle": 360
+          }
+        }
+      ]
+    },
+    "expectedBoundsMm": [
+      90,
+      90,
+      6
+    ],
+    "expectedVolumeMm3": 34600.71608847458
+  },
+  {
+    "id": "flange-1",
+    "document": {
+      "format": "forma-parametric-1",
+      "kind": "flange",
+      "partId": "parametric_flange",
+      "parameters": {
+        "diameter": 140,
+        "thickness": 12,
+        "boreDiameter": 40,
+        "boltCircleDiameter": 96,
+        "holeDiameter": 9,
+        "holeCount": 8
+      }
+    },
+    "spec": {
+      "schemaVersion": "3.0",
+      "units": "mm",
+      "partId": "parametric_flange",
+      "steps": [
+        {
+          "id": "disc",
+          "op": "base",
+          "shape": "cylinder",
+          "diameter": 140,
+          "height": 12,
+          "position": {
+            "x": 0,
+            "y": 0,
+            "z": 6
+          },
+          "rotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          }
+        },
+        {
+          "id": "center_bore",
+          "op": "cut",
+          "shape": "hole",
+          "diameter": 40,
+          "height": 12.5,
+          "holeType": "plain",
+          "headDiameter": 0,
+          "headDepth": 0,
+          "termination": "through",
+          "minBottomThickness": 1,
+          "position": {
+            "x": 0,
+            "y": 0,
+            "z": 12
+          },
+          "rotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          }
+        },
+        {
+          "id": "bolt_circle",
+          "op": "cut",
+          "shape": "hole",
+          "diameter": 9,
+          "height": 12.5,
+          "holeType": "plain",
+          "headDiameter": 0,
+          "headDepth": 0,
+          "termination": "through",
+          "minBottomThickness": 1,
+          "position": {
+            "x": 48,
+            "y": 0,
+            "z": 12
+          },
+          "rotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "pattern": {
+            "kind": "circular",
+            "count": 8,
+            "axis": "z",
+            "center": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            },
+            "sweepAngle": 360
+          }
+        }
+      ]
+    },
+    "expectedBoundsMm": [
+      140,
+      140,
+      12
+    ],
+    "expectedVolumeMm3": 163538.74717527028
+  },
+  {
+    "id": "flange-2",
+    "document": {
+      "format": "forma-parametric-1",
+      "kind": "flange",
+      "partId": "parametric_flange",
+      "parameters": {
+        "diameter": 30,
+        "thickness": 1,
+        "boreDiameter": 8,
+        "boltCircleDiameter": 20,
+        "holeDiameter": 2,
+        "holeCount": 12
+      }
+    },
+    "spec": {
+      "schemaVersion": "3.0",
+      "units": "mm",
+      "partId": "parametric_flange",
+      "steps": [
+        {
+          "id": "disc",
+          "op": "base",
+          "shape": "cylinder",
+          "diameter": 30,
+          "height": 1,
+          "position": {
+            "x": 0,
+            "y": 0,
+            "z": 0.5
+          },
+          "rotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          }
+        },
+        {
+          "id": "center_bore",
+          "op": "cut",
+          "shape": "hole",
+          "diameter": 8,
+          "height": 1.5,
+          "holeType": "plain",
+          "headDiameter": 0,
+          "headDepth": 0,
+          "termination": "through",
+          "minBottomThickness": 1,
+          "position": {
+            "x": 0,
+            "y": 0,
+            "z": 1
+          },
+          "rotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          }
+        },
+        {
+          "id": "bolt_circle",
+          "op": "cut",
+          "shape": "hole",
+          "diameter": 2,
+          "height": 1.5,
+          "holeType": "plain",
+          "headDiameter": 0,
+          "headDepth": 0,
+          "termination": "through",
+          "minBottomThickness": 1,
+          "position": {
+            "x": 10,
+            "y": 0,
+            "z": 1
+          },
+          "rotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "pattern": {
+            "kind": "circular",
+            "count": 12,
+            "axis": "z",
+            "center": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            },
+            "sweepAngle": 360
+          }
+        }
+      ]
+    },
+    "expectedBoundsMm": [
+      30,
+      30,
+      1
+    ],
+    "expectedVolumeMm3": 618.8937527571893
+  },
+  {
+    "id": "enclosure-0",
+    "document": {
+      "format": "forma-parametric-1",
+      "kind": "enclosure",
+      "partId": "parametric_enclosure",
+      "parameters": {
+        "width": 80,
+        "depth": 60,
+        "height": 35,
+        "wall": 3
+      }
+    },
+    "spec": {
+      "schemaVersion": "3.0",
+      "units": "mm",
+      "partId": "parametric_enclosure",
+      "steps": [
+        {
+          "id": "outside",
+          "op": "base",
+          "shape": "box",
+          "width": 80,
+          "depth": 60,
+          "height": 35,
+          "position": {
+            "x": 0,
+            "y": 0,
+            "z": 17.5
+          },
+          "rotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          }
+        },
+        {
+          "id": "cavity",
+          "op": "cut",
+          "shape": "box",
+          "width": 74,
+          "depth": 54,
+          "height": 33,
+          "position": {
+            "x": 0,
+            "y": 0,
+            "z": 19.5
+          },
+          "rotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          }
+        }
+      ]
+    },
+    "expectedBoundsMm": [
+      80,
+      60,
+      35
+    ],
+    "expectedVolumeMm3": 40128
+  },
+  {
+    "id": "enclosure-1",
+    "document": {
+      "format": "forma-parametric-1",
+      "kind": "enclosure",
+      "partId": "parametric_enclosure",
+      "parameters": {
+        "width": 110,
+        "depth": 75,
+        "height": 50,
+        "wall": 2.4
+      }
+    },
+    "spec": {
+      "schemaVersion": "3.0",
+      "units": "mm",
+      "partId": "parametric_enclosure",
+      "steps": [
+        {
+          "id": "outside",
+          "op": "base",
+          "shape": "box",
+          "width": 110,
+          "depth": 75,
+          "height": 50,
+          "position": {
+            "x": 0,
+            "y": 0,
+            "z": 25
+          },
+          "rotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          }
+        },
+        {
+          "id": "cavity",
+          "op": "cut",
+          "shape": "box",
+          "width": 105.2,
+          "depth": 70.2,
+          "height": 48.6,
+          "position": {
+            "x": 0,
+            "y": 0,
+            "z": 26.7
+          },
+          "rotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          }
+        }
+      ]
+    },
+    "expectedBoundsMm": [
+      110,
+      75,
+      50
+    ],
+    "expectedVolumeMm3": 60972.09599999996
+  },
+  {
+    "id": "enclosure-2",
+    "document": {
+      "format": "forma-parametric-1",
+      "kind": "enclosure",
+      "partId": "parametric_enclosure",
+      "parameters": {
+        "width": 4,
+        "depth": 4,
+        "height": 3,
+        "wall": 1
+      }
+    },
+    "spec": {
+      "schemaVersion": "3.0",
+      "units": "mm",
+      "partId": "parametric_enclosure",
+      "steps": [
+        {
+          "id": "outside",
+          "op": "base",
+          "shape": "box",
+          "width": 4,
+          "depth": 4,
+          "height": 3,
+          "position": {
+            "x": 0,
+            "y": 0,
+            "z": 1.5
+          },
+          "rotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          }
+        },
+        {
+          "id": "cavity",
+          "op": "cut",
+          "shape": "box",
+          "width": 2,
+          "depth": 2,
+          "height": 3,
+          "position": {
+            "x": 0,
+            "y": 0,
+            "z": 2.5
+          },
+          "rotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          }
+        }
+      ]
+    },
+    "expectedBoundsMm": [
+      4,
+      4,
+      3
+    ],
+    "expectedVolumeMm3": 40
+  },
+  {
+    "id": "spacer-0",
+    "document": {
+      "format": "forma-parametric-1",
+      "kind": "spacer",
+      "partId": "parametric_spacer",
+      "parameters": {
+        "diameter": 24,
+        "boreDiameter": 10,
+        "height": 20
+      }
+    },
+    "spec": {
+      "schemaVersion": "3.0",
+      "units": "mm",
+      "partId": "parametric_spacer",
+      "steps": [
+        {
+          "id": "sleeve",
+          "op": "base",
+          "shape": "tube",
+          "diameter": 24,
+          "innerDiameter": 10,
+          "height": 20,
+          "position": {
+            "x": 0,
+            "y": 0,
+            "z": 10
+          },
+          "rotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          }
+        }
+      ]
+    },
+    "expectedBoundsMm": [
+      24,
+      24,
+      20
+    ],
+    "expectedVolumeMm3": 7476.990515543707
+  },
+  {
+    "id": "spacer-1",
+    "document": {
+      "format": "forma-parametric-1",
+      "kind": "spacer",
+      "partId": "parametric_spacer",
+      "parameters": {
+        "diameter": 45,
+        "boreDiameter": 32,
+        "height": 12.5
+      }
+    },
+    "spec": {
+      "schemaVersion": "3.0",
+      "units": "mm",
+      "partId": "parametric_spacer",
+      "steps": [
+        {
+          "id": "sleeve",
+          "op": "base",
+          "shape": "tube",
+          "diameter": 45,
+          "innerDiameter": 32,
+          "height": 12.5,
+          "position": {
+            "x": 0,
+            "y": 0,
+            "z": 6.25
+          },
+          "rotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          }
+        }
+      ]
+    },
+    "expectedBoundsMm": [
+      45,
+      45,
+      12.5
+    ],
+    "expectedVolumeMm3": 9827.294519510571
+  },
+  {
+    "id": "spacer-2",
+    "document": {
+      "format": "forma-parametric-1",
+      "kind": "spacer",
+      "partId": "parametric_spacer",
+      "parameters": {
+        "diameter": 3,
+        "boreDiameter": 1,
+        "height": 1
+      }
+    },
+    "spec": {
+      "schemaVersion": "3.0",
+      "units": "mm",
+      "partId": "parametric_spacer",
+      "steps": [
+        {
+          "id": "sleeve",
+          "op": "base",
+          "shape": "tube",
+          "diameter": 3,
+          "innerDiameter": 1,
+          "height": 1,
+          "position": {
+            "x": 0,
+            "y": 0,
+            "z": 0.5
+          },
+          "rotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          }
+        }
+      ]
+    },
+    "expectedBoundsMm": [
+      3,
+      3,
+      1
+    ],
+    "expectedVolumeMm3": 6.283185307179586
+  }
+]

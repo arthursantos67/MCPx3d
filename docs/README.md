@@ -1,5 +1,7 @@
 # Documentação atual
 
+- [Bancada paramétrica CAD — 2026-11-06](cad-parametric-workbench.md): cinco famílias construídas por medidas sem IA, validação dimensional/volumétrica e correção de detalhes pequenos em peças grandes.
+
 - [Mundos vastos — Three.js 0.7](threejs-worlds.md): medição reproduzível, linha de base, contrato ThreeWorldDocument 2.0, terreno em blocos com LOD de 1 px, streaming em workers e colisão.
 - [Personagens e skins — Three.js 0.6](threejs-characters-hud.md): implementação atual, avatar, dedos, face, LOD, cache e exportação de esqueletos/clipes.
 

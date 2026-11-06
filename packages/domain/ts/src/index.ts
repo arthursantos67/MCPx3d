@@ -7,3 +7,4 @@ export * from "./cad-assembly.ts";
 export * from "./cad-assembly-diagnostics.ts";
 export * from './cad-features.ts'
 export * from './cad-mechanics.ts'
+export * from './cad-parametric.ts'

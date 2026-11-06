@@ -1,6 +1,6 @@
 .cad-workspace { width: 100%; display: flex; min-height: 0; }
 .cad-workspace__sidebar { width: 390px; flex-shrink: 0; overflow-y: auto; background: var(--bg); border-right: 1px solid var(--border); }
-.cad-workspace__tabs { display: flex; gap: 6px; padding: 16px 22px 0; }
+.cad-workspace__tabs { display: flex; flex-wrap: wrap; gap: 6px; padding: 16px 22px 0; }
 .cad-workspace__tabs button { flex: 1; font-size: 12px; padding: 8px 10px; }
 .cad-workspace__tabs button[aria-pressed='true'] { color: var(--accent); background: var(--accent-bg); border-color: var(--accent-border); }
 .cad-program { display: grid; gap: 16px; padding: 24px 22px; font-size: 13px; }
@@ -39,11 +39,18 @@
 .cad-progress__active { font-weight: 700; }
 .cad-progress small { color: var(--text); font-size: 11px; }
 .cad-mesh { position: relative; display: flex; flex-direction: column; }
-.cad-mesh__controls { position: absolute; bottom: 14px; left: 14px; display: flex; gap: 6px; }
+.cad-mesh__controls { position: absolute; bottom: 14px; left: 14px; right: 14px; display: flex; flex-wrap: wrap; gap: 6px; }
 .cad-mesh__controls button { padding: 6px 10px; font-size: 11px; background: #fffffff0; }
 .cad-mesh__legend { position: absolute; top: 14px; left: 14px; display: flex; flex-wrap: wrap; gap: 8px 14px; max-width: calc(100% - 28px); font-size: 11px; }
 .cad-mesh__legend span { display: flex; align-items: center; gap: 5px; }
 .cad-mesh__legend i { width: 8px; height: 8px; border-radius: 2px; }
+.cad-parametric fieldset { min-width: 0; border: 0; padding: 0; margin: 0; display: grid; gap: 12px; }
+.cad-parametric__description, .cad-parametric__limit { color: var(--text); font-size: 12px; line-height: 1.6; }
+.cad-parametric__measurements { display: grid; gap: 8px; padding: 14px; background: var(--accent-bg); border: 1px solid var(--accent-border); border-radius: 10px; }
+.cad-parametric__measurements span { display: grid; gap: 4px; }
+.cad-parametric__issues { padding: 12px; border: 1px solid #f6cbc7; border-radius: 10px; color: #b42318; background: #fff4f2; font-size: 12px; }
+.cad-parametric__issues ul { padding-left: 18px; margin-bottom: 0; }
+.cad-parametric details p { margin: 12px 0; }
 @media (max-width: 900px) { .cad-workspace__sidebar { width: 340px; } .cad-workspace__viewer { padding: 18px 16px 0; } }
 @media (max-width: 700px) {
   .cad-workspace { flex-direction: column; overflow-y: auto; }

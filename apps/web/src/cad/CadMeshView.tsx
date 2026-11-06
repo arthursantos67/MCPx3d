@@ -238,6 +238,9 @@ export default function CadMeshView({ mesh }: { readonly mesh: CadProgramMesh | 
       onPointerCancel={() => { dragRef.current = null }}
       onWheel={(event) => { event.preventDefault(); setZoom((value) => Math.max(0.25, Math.min(4, value * (event.deltaY > 0 ? 0.9 : 1.1)))) }} />
     {mesh && <div className="cad-mesh__controls" aria-label="Controles da câmera CAD">
+      <button type="button" title="Vista superior · plano XY" onClick={() => { setZoom(1); setAngles({ azimuth: 0, elevation: Math.PI / 2 }) }}>Superior</button>
+      <button type="button" title="Vista frontal · plano XZ" onClick={() => { setZoom(1); setAngles({ azimuth: 0, elevation: 0 }) }}>Frontal</button>
+      <button type="button" title="Vista lateral · plano YZ" onClick={() => { setZoom(1); setAngles({ azimuth: Math.PI / 2, elevation: 0 }) }}>Lateral</button>
       <button type="button" onClick={() => setZoom((value) => Math.min(4, value * 1.2))}>Aproximar</button>
       <button type="button" onClick={() => setZoom((value) => Math.max(0.25, value / 1.2))}>Afastar</button>
       <button type="button" onClick={() => { setZoom(1); setAngles({ azimuth: -0.65, elevation: 0.55 }) }}>Enquadrar</button>

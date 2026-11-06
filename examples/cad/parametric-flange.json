@@ -1,0 +1,13 @@
+{
+  "format": "forma-parametric-1",
+  "kind": "flange",
+  "partId": "flange_140mm",
+  "parameters": {
+    "diameter": 140,
+    "thickness": 12,
+    "boreDiameter": 40,
+    "boltCircleDiameter": 96,
+    "holeDiameter": 9,
+    "holeCount": 8
+  }
+}

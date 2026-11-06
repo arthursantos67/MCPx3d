@@ -41,6 +41,7 @@ from api.cad_adapter import (
 )
 from api.cad_features import build_feature, finish_part
 from api.cad_holes import check_hole_terminations
+from api.cad_material_change import changes_material
 from api.cad_mesh import preview_tessellation
 from api.cad_program_adapter_helpers import pattern_instances as _instances
 from api.cad_program_adapter_helpers import place_feature
@@ -168,7 +169,6 @@ def build_program_solid(spec: CadProgramSpec, cq: Any | None = None, on_step: Ca
                 instances = _instances(feature, step.pattern)
                 for number, instance in enumerate(instances, start=1):
                     current = part.solids().val()
-                    before = current.Volume()
                     part = part.union(instance) if step.op == "union" else part.cut(instance)
                     solid_count = len(part.solids().vals())
                     if solid_count > 1:
@@ -191,8 +191,8 @@ def build_program_solid(spec: CadProgramSpec, cq: Any | None = None, on_step: Ca
                             f"current solid bounds: {_bounds(before_bounds)}; "
                             f"tool bounds: {_bounds(tool_bounds)}; {hint}"
                         )
-                    after = _one_solid(part, f"step {step.id}{f' instance {number}' if step.pattern else ''} ({step.op})").Volume()
-                    if not math.isfinite(after) or abs(after - before) <= max(1e-6, before * 1e-9):
+                    result = _one_solid(part, f"step {step.id}{f' instance {number}' if step.pattern else ''} ({step.op})")
+                    if not changes_material(current, result, "union" if step.op == "union" else "cut"):
                         before_bounds = current.BoundingBox()
                         duplicate_hint = ""
                         if step.pattern and number > 1:

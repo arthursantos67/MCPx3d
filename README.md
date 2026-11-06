@@ -26,6 +26,8 @@ Para assinaturas, instale o cliente oficial e execute `codex login` ou `claude a
 
 No CAD, descreva uma peça ou conjunto no **Projeto livre**. O agente escolhe um sólido ou planeja componentes independentes; **Conjunto composto** permite pedir uma montagem diretamente. A proposta aprovada é salva automaticamente e libera STEP/STL. Cada componente também pode ser exportado nos dois formatos. Ajustes manuais e movimentos pedem uma nova revisão antes do download.
 
+Para construir por medidas, sem IA, abra **CAD → Peças paramétricas**: placa de fixação, cantoneira, flange, caixa aberta e bucha. Os furos acompanham as dimensões e relações incompatíveis são bloqueadas antes da construção. Aplique as medidas, valide/salve e baixe STEP/STL; o projeto paramétrico JSON conserva as medidas para reabrir e editar. A [revisão do CAD](docs/cad-parametric-workbench.md) explica as verificações e a correção de detalhes pequenos rejeitados incorretamente em peças grandes.
+
 Se a geração falhar, **Baixar rascunho STEP/STL (ZIP)** exporta os sólidos disponíveis com a receita original e um relatório de etapas/peças omitidas. Rascunhos não recebem aprovação de montagem e ficam guardados no navegador para prévia/download após reload. [Recuperação CAD](docs/cad-drafts.md) explica os limites e a retomada.
 
 No X3D, descreva a cena, peça alterações ou aplique uma receita da biblioteca. Baixe X3D, HTML, ClassicVRML ou JSON do projeto. O JSON permite importar a cena depois de reiniciar a API. A prévia HTML utiliza X3DOM e precisa de internet para carregar esse visualizador.
