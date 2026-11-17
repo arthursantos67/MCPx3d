@@ -6,8 +6,11 @@ from pydantic import ValidationError
 from api.config import Settings
 
 
-def test_settings_have_expected_defaults() -> None:
-    settings = Settings()
+def test_settings_have_expected_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Defaults must be independent of developer/CI runtime overrides.
+    for name in Settings.model_fields:
+        monkeypatch.delenv(name.upper(), raising=False)
+    settings = Settings(_env_file=None)
 
     assert settings.environment == "development"
     assert str(settings.mcp_base_url) == "http://localhost:8000/"

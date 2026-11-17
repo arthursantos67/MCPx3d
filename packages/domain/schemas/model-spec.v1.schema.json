@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://ai-web3d-modeler.dev/schemas/model-spec.v1.schema.json",
   "title": "ModelSpec",
-  "description": "Renderer-independent semantic description of the current model. PRD §8.2. Cross-field rules the schema cannot express (unique object IDs) are enforced by domain validators, not here.",
+  "description": "Renderer-independent semantic description of the current model. Cross-field rules the schema cannot express (unique object IDs) are enforced by domain validators, not here.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schemaVersion", "projectId", "revision", "units", "scene", "objects"],

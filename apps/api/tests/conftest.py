@@ -18,11 +18,7 @@ def anyio_backend() -> str:
 
 
 def _find_uv() -> str | None:
-    found = shutil.which("uv")
-    if found:
-        return found
-    fallback = Path.home() / "AppData" / "Roaming" / "Python" / "Python313" / "Scripts" / "uv.exe"
-    return str(fallback) if fallback.exists() else None
+    return os.environ.get("UV_EXECUTABLE") or shutil.which("uv")
 
 
 def _wait_for_pulse(base_url: str, process: subprocess.Popen[bytes], timeout: float = 60.0) -> None:

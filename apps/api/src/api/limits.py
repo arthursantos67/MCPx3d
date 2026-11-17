@@ -1,10 +1,4 @@
-"""Configurable MVP resource guards (PRD FR-32, NFR-12, §11.6, Issue #24).
-
-Every specific limit (prompt length, operation count, object count, artifact
-size) raises this one exception type so `error_handlers.py` can map all of
-them to PRD §9.4's single `COMPLEXITY_LIMIT` code regardless of which
-specific limit tripped.
-"""
+"""Configurable resource limits with structured complexity diagnostics."""
 
 from __future__ import annotations
 

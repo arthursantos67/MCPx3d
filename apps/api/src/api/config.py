@@ -21,7 +21,7 @@ class Settings(BaseSettings):
 
     default_units: Units = "mm"
     # X3D's implicit native unit is meters; 0.001 keeps mm-authored scenes at a
-    # sane on-screen scale by default (PRD §3.10).
+    # sane on-screen scale by default.
     default_display_scale: float = Field(default=0.001, gt=0)
 
     max_objects_per_project: int = Field(default=300, gt=0)

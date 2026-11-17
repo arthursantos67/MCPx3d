@@ -1,4 +1,4 @@
-"""Protocol-level regression coverage for the pinned x3d_mcp service (Issues #42 and #64)."""
+"""Protocol regression coverage for the pinned X3D MCP service."""
 
 import time
 

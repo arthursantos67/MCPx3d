@@ -1,25 +1,4 @@
-"""ModelSpec -> X3D primitive adapter (PRD FR-12, FR-38, §10.6, Issue #9).
-
-`apply_model_spec` rebuilds an `X3DMcpClient` session's scene from scratch to
-match a `ModelSpec`, one `create_primitive` tool call per object. The LLM
-never sees or produces X3D/XML -- only this module (and `X3DMcpClient`, which
-it delegates to) knows the X3D node/field shapes involved (FR-12, NFR-08).
-
-Two conversions are not 1:1 with the ModelSpec fields, and are the reason this
-module exists rather than passing ModelSpec straight to `create_primitive`:
-
-- `ModelObject.dimensions` keys are kind-specific by convention (see
-  `packages/domain/README.md`) and mostly already match X3D field names
-  (`radius`, `height`, `bottomRadius`) -- except `box`, whose three separate
-  `width`/`height`/`depth` keys must be combined into X3D `Box.size`, a single
-  SFVec3f. `scene.displayScale` (PRD §3.10, §10.6: "positions in semantic
-  project units before displayScale") is applied to dimensions and position,
-  not to `transform.scale`, which is already a unitless multiplier.
-- `ModelObject.transform.rotation` is three per-axis radian values (see
-  `domain.model_plan`'s `rotate_object` docstring), not X3D's SFRotation
-  axis-angle. It is interpreted as intrinsic rotations applied in X, then Y,
-  then Z order and composed into one SFRotation via quaternion multiplication.
-"""
+"""Maps ModelSpec primitives, materials, units and transforms to X3D nodes."""
 
 from __future__ import annotations
 

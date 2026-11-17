@@ -1,18 +1,4 @@
-"""Full candidate X3D validation pipeline (PRD FR-14/15/16, NFR-06, Issue #10).
-
-`build_and_validate_candidate` is the only code path that turns a `ModelSpec`
-into a *committable* X3D candidate: it builds the scene through the Issue #9
-adapter, runs schema (XSD) and semantic validation, attempts the upstream
-`autofix_x3d` containerField autofix on failure, and revalidates. It returns
-a result only when the candidate is valid; otherwise it raises
-`X3DValidationError` and returns nothing, so -- like `mutation.apply_plan`'s
-never-write-until-success contract -- an invalid candidate cannot overwrite
-whatever the caller already holds as the last valid revision (PRD FE-08).
-
-`validate_current_scene`/`validate_scene_content` are exposed separately
-because the pipeline's validate/autofix/revalidate steps are also useful on
-their own (e.g. validating a scene built without going through a ModelSpec).
-"""
+"""Builds candidate X3D and applies schema, semantic and spatial validation without replacing the last valid revision on failure."""
 
 from __future__ import annotations
 
@@ -59,7 +45,7 @@ class Diagnostic:
 
 @dataclasses.dataclass(frozen=True)
 class ValidationResult:
-    """Structured validation state (PRD FR-23)."""
+    """Structured validation state."""
 
     schema_valid: bool
     schema_errors: tuple[str, ...]
@@ -84,7 +70,7 @@ class ValidationResult:
         return tuple(d for d in self.semantic_diagnostics if d.level == "warning")
 
     def to_summary(self) -> dict[str, object]:
-        """FR-23's `{schemaValid, semanticValid, warnings, autofixes}` shape."""
+        """`{schemaValid, semanticValid, warnings, autofixes}` shape."""
         return {
             "schemaValid": self.schema_valid,
             "semanticValid": self.semantic_valid,
@@ -164,7 +150,7 @@ async def autofix_and_revalidate(
     """Attempts the upstream containerField autofix on an invalid `result` and revalidates.
 
     Returns `result` unchanged if it is already valid or autofix made no changes.
-    Autofixes actually applied are recorded on the returned result (FR-16); an
+    Autofixes actually applied are recorded on the returned result; an
     issue autofix cannot address (e.g. a ROUTE error) is left as-is for the
     caller to see as a remaining error.
     """
@@ -180,7 +166,7 @@ async def autofix_and_revalidate(
 async def build_and_validate_candidate(
     client: X3DBackend, spec: ModelSpec, timings: dict[str, int] | None = None
 ) -> tuple[dict[str, str], ValidationResult]:
-    """Builds `spec` as X3D and runs the full validation pipeline (Issue #10).
+    """Builds `spec` as X3D and runs the full validation pipeline.
 
     Returns `(def_names, result)` when the candidate is valid. Raises
     `X3DValidationError` -- without returning anything -- when it remains

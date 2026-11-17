@@ -1,19 +1,4 @@
-/**
- * Turns one provider completion into a JSON value, classifying why it could
- * not when it fails (Issue #71). Shared by every `LLMProvider` so truncation
- * is recognized the same way everywhere: `finish_reason: "length"` or JSON
- * that ends while an object, array, or string is still open is `truncated`,
- * never a generic parse failure.
- *
- * Local repair is lossless only -- stripping a code fence or surrounding
- * prose and dropping trailing commas. Nothing here closes an unterminated
- * object or drops a trailing operation, so a truncated response is never
- * turned into a shorter plan that looks complete. The repaired value still
- * goes through `generateModelPlan`'s normal schema/domain validation.
- *
- * The raw text never leaves this function: the thrown `StructuredOutputError`
- * and the reported `CompletionMetadata` carry only a classification and sizes.
- */
+/** Parses structured provider completions and distinguishes truncation from invalid JSON. */
 
 import {
   StructuredOutputError,

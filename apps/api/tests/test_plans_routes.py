@@ -1,12 +1,4 @@
-"""HTTP-layer tests for the apply-ModelPlan orchestration endpoint (Issue #22).
-
-Most error paths (`AMBIGUOUS_TARGET`, `UNKNOWN_TARGET`, `DOMAIN_VALIDATION_FAILED`,
-`REVISION_CONFLICT`, `PROJECT_NOT_FOUND`, `INVALID_PLAN`) are proven to short-circuit
-*before* any MCP call by pointing `mcp_base_url` at a closed port -- if the
-endpoint tried to reach it, the request would fail with `MCP_UNAVAILABLE`
-instead of the expected code. The happy path and `X3D_VALIDATION_FAILED` use
-the real vendored `x3d_mcp` server (`x3d_mcp_server` fixture, `conftest.py`).
-"""
+"""HTTP tests for ModelPlan application, validation and revision preservation."""
 
 from collections.abc import Iterator
 
@@ -407,7 +399,7 @@ def test_infinite_dimension_is_rejected_as_invalid_plan_before_touching_mcp(
     """`httpx`'s own JSON encoder refuses non-finite floats outright (`allow_nan=False`),
     so this posts a raw body containing a literal `Infinity` token -- valid input to
     Python's (permissive) `json.loads`, which is what the server actually parses with --
-    to prove the domain layer's finiteness check (Issue #24), not just the transport
+    to prove the domain layer's finiteness check, not just the transport
     client, is what rejects it."""
     session = project_service.create_project()
     raw_body = (

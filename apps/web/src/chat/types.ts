@@ -1,9 +1,4 @@
-/** Chat UI state (PRD §10.2, Issue #26/#27). Not itself authoritative geometry
- * state -- `modelSpec`/`revision` as returned by the server determine the
- * model (PRD §10.2's "Chat UI state is not itself authoritative geometry
- * state"). Lives here (not in `ChatController.ts`) so presentational
- * components (`ChatPanel` and friends, Issue #26) depend only on this shared
- * shape, not on the controller implementation (Issue #27) that produces it. */
+/** Shared chat UI state. Geometry remains authoritative in the validated project revision. */
 
 import type { ModelSpec } from "../../../../packages/domain/ts/src/model-spec.ts";
 import type { ArtifactDescriptor, ValidationSummary } from "../api/client.ts";
@@ -38,14 +33,14 @@ export type SendGate =
   | { readonly canSend: true }
   | { readonly canSend: false; readonly reason: string };
 
-/** Progress of a request that is continuing in bounded batches (Issue #71). */
+/** Progress of a request that is continuing in bounded batches. */
 export interface SceneBatchStatus {
   readonly batch: number;
   readonly maxBatches: number;
   readonly committedBatches: number;
 }
 
-/** Aggregate, content-free generation outcomes for one provider/model (Issue #71). */
+/** Aggregate, content-free generation outcomes for one provider/model. */
 export interface GenerationStats {
   readonly requests: number;
   readonly truncatedRequests: number;

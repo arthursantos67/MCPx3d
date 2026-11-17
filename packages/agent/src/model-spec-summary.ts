@@ -1,12 +1,4 @@
-/**
- * Minimal `ModelSpec` -> text summary for agent prompt context (PRD §10.5,
- * FR-31 "summarized current ModelSpec"). Deliberately small: this exists so
- * Issue #19's generation loop can give the model existing object
- * ids/names/kinds/dimensions/transforms/colors to target, which is as far as
- * this issue's scope goes. Issue #34 ("Implement ModelSpec summarizer for
- * agent context") replaces this with a bounded, more complete summarizer;
- * callers should not depend on this exact text format remaining stable.
- */
+/** Bounded ModelSpec summaries for agent context, with object IDs, names, dimensions, transforms and materials. */
 
 import type { ModelSpec } from "../../domain/ts/src/model-spec.ts";
 

@@ -136,7 +136,7 @@ async def test_build_html_artifact_rejects_stale_revision_without_calling_mcp() 
 async def test_build_html_artifact_propagates_generation_failure_untouched() -> None:
     """A failure generating HTML surfaces as-is -- build_html_artifact has no stored
     revision state to corrupt, so the failure can never leave a partial/invalid
-    artifact standing in for the requested revision (PRD FE-08, Issue #11)."""
+    artifact standing in for the requested revision."""
 
     class _FailingClient:
         async def generate_x3dom_page(self, content: str, *, title: str = "") -> str:
@@ -175,7 +175,7 @@ async def test_build_converted_artifact_x3dj_raises_on_malformed_upstream_output
     actually parses either). Until that's fixed upstream, `.x3dj` is
     unavailable for every revision; `ArtifactConversionError` is how a caller
     (e.g. the download endpoint) learns to omit the format rather than serve
-    corrupt content, per FR-20's "where upstream conversion succeeds"."""
+    corrupt content, when upstream conversion succeeds."""
     async with X3DMcpClient.connect(x3d_mcp_server) as client:
         x3d_content = await _real_x3d_content(client)
         with pytest.raises(ArtifactConversionError) as excinfo:
@@ -229,7 +229,7 @@ async def test_build_converted_artifact_conversion_failure_does_not_touch_base_a
 ) -> None:
     """A conversion failure isolates itself to the `.x3dj`/`.x3dv` request -- the
     caller's already-built `.x3d` artifact (built separately, before or after)
-    is a plain string it already holds, untouched by this raising (FR-20)."""
+    is a plain string it already holds, untouched by this raising."""
 
     class _FailingConvertClient:
         async def convert_x3d(self, content: str, *, from_encoding: str, to_encoding: str) -> str:

@@ -26,7 +26,7 @@ uv run ruff check .
 uv run mypy src
 ```
 
-No domínio: `uv run pytest`. Na API, execute `uv run python ../../scripts/run-api-tests.py`. O executor roda cada arquivo em processo separado e sequencial, liberando memória nativa entre arquivos; o prazo padrão é de 900 segundos por arquivo. `--group core`/`--group cad` e `--shard 1/2` permitem selecionar grupos sem perder cobertura no conjunto das execuções.
+No domínio: `uv run pytest`. Na API, execute `uv run python ../../scripts/run-api-tests.py`. O executor roda cada arquivo em processo separado e sequencial; `--isolate-cases` libera memória nativa entre casos individuais, inclusive parâmetros. O CI usa essa opção no CAD para não acumular sólidos e caches de roscas. O prazo padrão é de 900 segundos por seleção. `--group core`/`--group cad` e `--shard 1/2` permitem dividir a suíte sem perder cobertura no conjunto das execuções.
 
 Para um teste CAD local pequeno com teto de memória/prazo, após instalar a API:
 
@@ -66,7 +66,7 @@ Falhas geram screenshots/traces em `test-results/`; abra com `npx playwright sho
 
 ## CI
 
-O workflow [CI](../.github/workflows/ci.yml) executa documentação, lint/tipos/testes/build TypeScript, API, domínio Python e navegador. API CAD é dividida em grupos com processos descartáveis. Three.js usa shards em executores distintos e não inicia CadQuery. Cada executor de navegador mantém um worker. Artefatos de falha são anexados à execução no GitHub.
+O workflow [CI](../.github/workflows/ci.yml) executa documentação, lint/tipos/testes/build TypeScript, API, domínio Python e navegador. API CAD é dividida em grupos e cada caso roda em um processo descartável. Three.js usa shards em executores distintos e não inicia CadQuery. Cada executor de navegador mantém um worker. Artefatos de falha são anexados à execução no GitHub.
 
 ## Avaliações opcionais
 

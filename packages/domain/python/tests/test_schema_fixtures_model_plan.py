@@ -1,11 +1,4 @@
-"""Validates the shared ModelPlan fixtures in packages/domain/fixtures/model-plan
-against packages/domain/schemas/model-plan.v1.schema.json. The TypeScript package
-runs the same fixtures against the same schema file (see
-packages/domain/ts/tests/model-plan-schema-fixtures.test.ts) -- both language
-runtimes agreeing on pass/fail for one shared fixture set validated against one
-shared schema is how "TS and Python shapes are tested for compatibility"
-(Issue #6) is satisfied without a bespoke cross-language harness.
-"""
+"""Validates the ModelPlan fixtures shared with TypeScript against the same JSON Schema."""
 
 import json
 from pathlib import Path

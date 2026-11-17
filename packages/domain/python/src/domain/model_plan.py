@@ -1,10 +1,4 @@
-"""ModelPlan v1 Python types (PRD §8.3).
-
-Mirrors `packages/domain/schemas/model-plan.v1.schema.json`. `operations` is a
-discriminated union on `op`: an unrecognized `op` value, or any field not
-declared on its variant (`extra="forbid"` everywhere), fails validation --
-so no executable-code field can ever reach an accepted ModelPlan.
-"""
+"""ModelPlan Python types and cross-field validation for structured scene operations."""
 
 from __future__ import annotations
 

@@ -1,23 +1,4 @@
-"""Standard HTTP error body (PRD §9.4).
-
-Two entry points share the same `{code, message, details, correlationId}`
-body and logging:
-
-- `api_error` builds an `HTTPException`, for the few call sites that still
-  raise directly and let FastAPI's own default `HTTPException` handling
-  render it (e.g. the apply-plan endpoint's `AMBIGUOUS_TARGET` short-circuit,
-  which is route-specific business logic with no natural exception type of
-  its own).
-- `error_response` builds a `Response` directly, for `error_handlers.py`'s
-  centralized exception-to-response mapping (Issue #23): the exceptions it
-  maps are plain domain exceptions (`ProjectNotFoundError`, `MutationError`,
-  ...), not `HTTPException`, so its handlers construct the response
-  themselves instead of raising one.
-
-Issue #23 ("Standardize backend errors") is what added `error_response` and
-`error_handlers.py` -- before it, every route repeated its own
-exception-to-`api_error` mapping inline.
-"""
+"""Shared HTTP error bodies and response helpers for structured API failures."""
 
 from __future__ import annotations
 

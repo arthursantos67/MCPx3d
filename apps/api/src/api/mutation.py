@@ -1,16 +1,4 @@
-"""Deterministic ModelPlan -> ModelSpec mutation engine (PRD NFR-07, Issue #7).
-
-`apply_plan` is the only code path that turns an AI-proposed `ModelPlan` into a
-new `ModelSpec`. It never executes AI-authored code: each operation is a
-closed, schema-validated data shape (see `domain.model_plan`), and this module
-interprets that data deterministically.
-
-`apply_plan` never mutates its `spec` argument -- it only reads from it and
-returns a new `ModelSpec` candidate. If any operation in the plan fails, a
-`MutationError` is raised and the caller's original `spec` is left untouched,
-which gives whole-plan rollback for free (PRD §8.4: "A candidate mutation does
-not alter authoritative state until X3D validation succeeds").
-"""
+"""Deterministic ModelPlan-to-ModelSpec mutation. Builds a candidate and commits only after validation; references respect operation order."""
 
 from __future__ import annotations
 
@@ -100,11 +88,11 @@ def apply_plan(
     """Applies every operation in `plan` to `spec`, in order, returning a new candidate.
 
     `create_object` operations earlier in `plan` may be targeted by later
-    operations in the same plan (PRD §8.4), since both read and write go
+    operations in the same plan, since both read and write go
     through the same working `objects` map as operations are processed.
 
     `max_objects`, when given, is checked once against the final object
-    count (PRD FR-32/NFR-12, Issue #24) -- not after each operation -- so a
+    count -- not after each operation -- so a
     plan that both deletes and creates objects is judged by its net effect,
     consistent with `apply_plan`'s whole-plan rollback contract: a limit
     violation raises `ComplexityLimitError` and returns nothing, leaving the

@@ -91,7 +91,9 @@ def test_threaded_mount_rejects_false_fastening_claims(failure):
         for field in ("pitch", "profile", "handedness", "clearance", "starts", "termination", "minBottomThickness"):
             del thread[field]
     if failure == "filled":
-        raw["components"][0]["steps"].append({"id": "erase_thread", "op": "cut", "shape": "cylinder", "diameter": 4.2, "height": 8.5,
+        # Erase the complete thread with clearance. A tangent cutter exercises
+        # coincident-face kernel behavior instead of the missing-thread check.
+        raw["components"][0]["steps"].append({"id": "erase_thread", "op": "cut", "shape": "cylinder", "diameter": 4.4, "height": 8.5,
                                              "position": thread["position"], "rotation": thread["rotation"], "pattern": thread["pattern"]})
     if failure == "unspecified": thread["termination"] = "unspecified"
     if failure == "profile": thread["profile"] = "trapezoidal"

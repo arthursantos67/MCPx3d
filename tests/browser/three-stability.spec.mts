@@ -19,6 +19,8 @@ async function exported(page:Page) {
 }
 
 test('detailed vegetation saves within the real browser quota and restores the complete playable world',async({page})=>{
+  // Restore, reload and compile an 800-node world using software WebGL.
+  test.setTimeout(180_000)
   await page.addInitScript(draft=>{localStorage.setItem('modeler:workspace','three');localStorage.setItem('modeler:three-scene:v1',draft)},serializeSceneDraft(createValleyScene()))
   const errors=await boot(page)
   await expect.poll(()=>page.evaluate(()=>localStorage.getItem('modeler:three-scene:v1')?.includes('geometryLibrary'))).toBe(true)
@@ -29,7 +31,7 @@ test('detailed vegetation saves within the real browser quota and restores the c
   await expect(page.getByRole('img',{name:'Cena Three.js interativa'})).toBeVisible()
   expect(await exported(page)).toEqual(before)
   await page.getByRole('button',{name:'▶ Jogar',exact:true}).click()
-  await expect(page.getByRole('region',{name:'Modo jogo'})).toContainText('Itens 0/7')
+  await expect(page.getByRole('region',{name:'Modo jogo'})).toContainText('Itens 0/7', { timeout: 90_000 })
   expect(errors).toEqual([])
 })
 

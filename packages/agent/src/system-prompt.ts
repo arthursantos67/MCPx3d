@@ -1,10 +1,4 @@
-/**
- * Agent system prompt composition (PRD §10.5, Appendix D). Assembles the
- * fixed parts of the "geometry planner" contract -- role, allowed
- * operations, the never-emit-code/never-invent-operations/ambiguity rules,
- * coordinate convention, and unit rules -- with the current project's
- * ModelSpec summary, the one part that changes per request.
- */
+/** Composes the agent system prompt from supported operations, contracts and scene context. */
 
 import type { ModelSpec } from "../../domain/ts/src/model-spec.ts";
 import { summarizeModelSpec, type ModelSpecSummaryOptions } from "./model-spec-summary.ts";

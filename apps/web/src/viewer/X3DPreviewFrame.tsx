@@ -20,14 +20,13 @@ interface X3DPreviewFrameProps {
 }
 
 /**
- * Sandboxed XPrévia 3D (PRD §10.3/§11.4, Issue #28): fetches the backend's
+ * Sandboxed XPrévia 3D: fetches the backend's
  * standalone X3DOM HTML, embeds it via a Blob URL in a sandboxed iframe
  * (never `srcDoc`/`dangerouslySetInnerHTML` with raw HTML -- the generated
  * page never touches the parent DOM), and revokes the previous Blob URL only
  * after the new one replaces it. A failed fetch shows an error overlay
  * without clearing whatever was already rendered, so a bad request doesn't
- * blank out the last valid scene (PRD FE-08's last-valid-scene rule; full
- * revision-badge/status polish is Issue #29).
+ * blank out the last valid scene.
  */
 function X3DPreviewFrame({ previewUrl, onStatusChange }: X3DPreviewFrameProps) {
   const trackerRef = useRef<BlobUrlTracker | null>(null)

@@ -1,19 +1,4 @@
-/**
- * BYOK provider configuration, persisted in the browser (PRD §3.12's "UI
- * preferences" browser persistence). `mode: "local"` (the default, when
- * nothing is saved yet) leaves today's behavior unchanged -- `WebLLMProvider`
- * is still what `useChatController.ts` constructs. `mode: "byok"` is only
- * ever chosen explicitly, via `ProviderSettings`.
- *
- * `KeyValueStore` is injected (same DI convention as this codebase's other
- * browser-only integrations, e.g. `viewer/objectUrl.ts`'s `ObjectUrlFactory`)
- * so this is unit-tested without a real `localStorage`. `load`/`save`/`clear`
- * each wrap their storage call in `try`/`catch` themselves (not just the
- * default `localStorage` factory below), so a *throwing* store -- the real
- * `localStorage` in private browsing/blocked-storage, or any other backend a
- * caller injects -- degrades to "the config simply won't persist" instead of
- * crashing the app either way.
- */
+/** Browser-persisted provider settings and normalization. */
 
 export type ProviderConfig =
   | { readonly mode: "local" }
