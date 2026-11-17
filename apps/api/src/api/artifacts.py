@@ -1,21 +1,4 @@
-"""Downloadable revision artifacts: standalone HTML, X3D XML, alternative X3D
-encodings, and the ModelSpec manifest (PRD FR-18/19/20/21/22/36, UC-07/08/09,
-Issues #11, #12, #13, and #14).
-
-All artifact kinds are built from an already-validated revision's X3D content
-(`x3d_validation.ValidationResult.content`) or its `ModelSpec` -- none of
-these functions mutate any stored project/revision state, so a failure here
-(e.g. `generate_x3dom_page` or `convert_x3d` being unreachable) can never
-invalidate or replace the revision it was asked to render (PRD FE-08,
-"generation failure does not invalidate X3D revision"); for the two
-conversion formats, that same isolation-by-construction is also what FR-20
-means by "isolated from the base X3D artifact" -- a failed `.x3dj`/`.x3dv`
-conversion is just an exception the caller can catch to omit that one format,
-with the already-committed `.x3d` artifact untouched. `requested_revision` is
-mandatory, mirroring `ProjectSessionService.commit_revision`'s
-`expected_revision`, so a caller cannot silently receive a stale artifact by
-omitting the check (FR-22).
-"""
+"""Generates revision-specific X3D, HTML, ClassicVRML and manifest artifacts. Converters cannot replace the requested revision; malformed or oversized output is rejected."""
 
 from __future__ import annotations
 
@@ -63,7 +46,7 @@ class StaleArtifactRequestError(ArtifactError):
 
 
 class ArtifactTooLargeError(ArtifactError):
-    """Generated artifact content exceeds the configured size limit (PRD NFR-12, Issue #24)."""
+    """Generated artifact content exceeds the configured size limit."""
 
     def __init__(self, format: str, *, size: int, limit: int) -> None:
         super().__init__(f"{format} artifact too large: {size} bytes > {limit} byte limit")
@@ -81,7 +64,7 @@ class ArtifactConversionError(ArtifactError):
     vendored server's own test suite only checks for substrings like
     `"X3D" in json_out`, never that the result parses). Surfacing that as a
     raised error here, instead of returning corrupt content as if it were a
-    normal `Artifact`, is what makes the `.x3dj` format "isolated" per FR-20:
+    normal `Artifact`, is what makes the `.x3dj` format "isolated" by construction:
     a caller sees a clean failure to treat as "not available for this
     revision" rather than corrupt bytes it has no reason to suspect.
     """
@@ -99,7 +82,7 @@ class Artifact:
 
 
 def normalized_artifact_filename(project_id: str, revision: int, extension: str, *, title: str | None = None) -> str:
-    """`{project_id}-r{revision:04d}.{extension}`, e.g. `chair-r0007.x3d` (FR-21)."""
+    """`{project_id}-r{revision:04d}.{extension}`, e.g. `chair-r0007.x3d`."""
     if title is None:
         return f"{project_id}-r{revision:04d}.{extension}"
     stem = re.sub(r"[^a-z0-9]+", "-", title.strip().lower()).strip("-")[:64] or "model"
@@ -129,7 +112,7 @@ async def build_html_artifact(
     title: str | None = None,
     max_bytes: int | None = None,
 ) -> Artifact:
-    """Standalone X3DOM HTML for `x3d_content` (FR-18, UC-07)."""
+    """Standalone X3DOM HTML for `x3d_content`."""
     _check_revision(project_id, requested_revision, revision)
     html = await client.generate_x3dom_page(x3d_content, title=title or project_id)
     _check_size("html", html, max_bytes)
@@ -149,7 +132,7 @@ def build_x3d_artifact(
     title: str | None = None,
     max_bytes: int | None = None,
 ) -> Artifact:
-    """The validated revision's X3D XML, ready for download (FR-19, UC-08)."""
+    """The validated revision's X3D XML, ready for download."""
     _check_revision(project_id, requested_revision, revision)
     _check_size("x3d", x3d_content, max_bytes)
     return Artifact(
@@ -171,7 +154,7 @@ async def build_converted_artifact(
     max_bytes: int | None = None,
 ) -> Artifact:
     """The validated revision converted to `format` (`x3dj` or `x3dv`), via
-    the upstream `convert_x3d` tool (FR-20). Raises whatever `convert_x3d`
+    the upstream `convert_x3d` tool. Raises whatever `convert_x3d`
     raises on failure -- there is no fallback content -- so callers offering
     these formats as optional downloads should treat that as "not available
     for this revision" rather than retry with stale content.
@@ -202,7 +185,7 @@ def build_model_spec_artifact(
     title: str | None = None,
     max_bytes: int | None = None,
 ) -> Artifact:
-    """The current `ModelSpec` as a downloadable JSON manifest (FR-36, UC-09).
+    """The current `ModelSpec` as a downloadable JSON manifest.
 
     `model_spec.model_dump_json()` only ever serializes `ModelSpec`'s own
     declared fields (its models all set `extra="forbid"`), so the manifest

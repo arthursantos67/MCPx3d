@@ -1,29 +1,4 @@
-"""Centralized exception -> HTTP response mapping (PRD §9.4, Issue #23).
-
-Before this module, every route caught each domain exception itself and
-called `api.errors.api_error` inline (Issues #21/#22) -- correct, but the
-`(exception type) -> (status, code)` mapping was re-derived at every call
-site, and a route that forgot a `try/except` (e.g. `routes/projects.py`'s
-`create_project`/`delete_project`) fell through to FastAPI/Starlette's
-default error handling instead of PRD §9.4's `{code, message, details,
-correlationId}` shape.
-
-`register_error_handlers` fixes both: a route now only needs to let the
-right exception type propagate (or raise it directly), and FastAPI finds the
-most specific handler registered for that exception's MRO -- e.g.
-`UnknownTargetError` before its `MutationError` base, `ArtifactTooLargeError`
-before its `ArtifactError` base (Issue #24) -- so subclasses that need a
-distinct code still get one without a dedicated line, and any exception type
-this module doesn't know about still resolves to the base class it does.
-
-The final `Exception` handler is what makes NFR-10 ("a generic server error
-shall not expose Python stack traces...") hold for every route, not just
-ones that remembered to wrap themselves; `HTTPException` (still raised
-directly by e.g. `routes/plans.py`'s `AMBIGUOUS_TARGET` short-circuit) is
-unaffected -- FastAPI's own built-in handler for it is more specific in the
-MRO than this module's `Exception` handler, so it keeps rendering `exc.detail`
-as-is.
-"""
+"""Centralized exception-to-HTTP mapping. Specific handlers preserve status, code and diagnostics; the generic handler hides internal details."""
 
 from __future__ import annotations
 

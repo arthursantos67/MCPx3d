@@ -61,7 +61,7 @@ async def _def_shape(
     client: X3DMcpClient, def_name: str, geometry_type: str, fields: dict[str, object]
 ) -> str:
     """Builds one Transform>Shape>geometry primitive via raw granular tools (no Appearance),
-    bypassing the Issue #9 adapter so a test can shape the scene the adapter never would."""
+    bypassing the primitive adapter so a test can shape the scene the adapter never would."""
     transform_id = await client._create_node("Transform")
     shape_id = await client._create_node("Shape")
     geometry_id = await client._create_node(geometry_type, fields)

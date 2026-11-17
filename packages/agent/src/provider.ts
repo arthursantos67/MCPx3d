@@ -1,12 +1,4 @@
-/**
- * `LLMProvider` abstraction (PRD §3.7, FR-27, Issue #18).
- *
- * Nothing outside this package may call a specific LLM SDK (`@mlc-ai/web-llm`
- * or otherwise) directly -- callers (the ModelPlan generation service in this
- * package, and eventually the chat UI) depend only on this interface, so a
- * future provider (Puter.js, an OpenAI-compatible BYOK provider) is a new
- * class, never a change to call sites.
- */
+/** Provider-independent structured generation contracts, options and safe completion metadata. */
 
 export interface AgentMessage {
   readonly role: "system" | "user" | "assistant";
@@ -24,7 +16,7 @@ export interface CompletionUsage {
   readonly reasoningTokens?: number;
 }
 
-/** Safe, content-free facts about one provider completion (Issue #71). Never
+/** Safe, content-free facts about one provider completion. Never
  * carries the prompt, the raw response text, or credentials. */
 export interface CompletionMetadata {
   readonly finishReason: string | null;

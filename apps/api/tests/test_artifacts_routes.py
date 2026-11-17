@@ -1,12 +1,4 @@
-"""HTTP-layer tests for the standalone HTML artifact endpoint (Issue #11's
-HTTP wiring, added for Issue #28's preview iframe).
-
-Mirrors `test_plans_routes.py`'s conventions: error paths that must
-short-circuit before any MCP call use a closed-port `mcp_base_url` (if the
-endpoint tried to reach it, the request would fail with `MCP_UNAVAILABLE`
-instead of the expected code), and the happy path uses the real vendored
-`x3d_mcp` server (`x3d_mcp_server` fixture, `conftest.py`).
-"""
+"""HTTP tests for HTML artifact generation and sandboxed preview responses."""
 
 from collections.abc import Iterator
 

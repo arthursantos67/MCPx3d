@@ -1,11 +1,4 @@
-/**
- * ModelSpec v1 TypeScript types (PRD §8.2).
- *
- * Mirrors packages/domain/schemas/model-spec.v1.schema.json and
- * packages/domain/python/src/domain/model_spec.py. Rules the type system and
- * JSON Schema cannot express -- unique object IDs, positive dimensions,
- * normalized color format -- are enforced by validateModelSpecDomainRules.
- */
+/** ModelSpec TypeScript types and cross-field validation for X3D scenes. */
 
 export type Units = "mm" | "cm" | "m" | "unitless";
 export type PrimitiveKind = "box" | "sphere" | "cylinder" | "cone";

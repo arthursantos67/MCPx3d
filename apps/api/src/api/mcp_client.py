@@ -1,14 +1,4 @@
-"""Application-facing wrapper around the x3d_mcp Streamable HTTP tool surface.
-
-Encapsulates MCP protocol details (sessions, tool-call plumbing, content
-blocks) behind a small set of typed methods, per PRD ยง9.5. Callers never see
-raw MCP request/response objects.
-
-The underlying x3d_mcp server keeps its granular (in-memory) scene state per
-MCP session (see FR-25), so one X3DMcpClient holds a single session for its
-whole lifetime -- primitives created through it accumulate in that session's
-scene until reset_scene() is called.
-"""
+"""Typed MCP transport for the optional X3D backend. A client owns one session and normalizes protocol responses."""
 
 from __future__ import annotations
 

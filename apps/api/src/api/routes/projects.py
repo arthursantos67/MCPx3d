@@ -1,9 +1,4 @@
-"""Project session REST endpoints (PRD §9.1, Issue #21): create, get, reset/delete.
-
-Session/revision metadata is the `ModelSpec` itself -- it already carries
-`projectId` and `revision` (§8.2) alongside the scene, so create/get return it
-directly rather than a separate wrapper shape.
-"""
+"""X3D session REST endpoints for creating, retrieving, resetting and deleting projects."""
 
 from __future__ import annotations
 
@@ -53,7 +48,7 @@ async def get_project(
     project_service: Annotated[ProjectSessionService, Depends(get_project_service)],
 ) -> ModelSpec:
     # ProjectNotFoundError propagates to the PROJECT_NOT_FOUND handler
-    # (api.error_handlers, Issue #23).
+    # See api.error_handlers for centralized response mapping.
     session = project_service.get_project(project_id)
     return session.model_spec
 

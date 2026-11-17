@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://ai-web3d-modeler.dev/schemas/model-plan.v1.schema.json",
   "title": "ModelPlan",
-  "description": "The only operations the AI agent is allowed to propose. PRD §8.3. Every operation variant is closed (additionalProperties: false) so no executable-code field (script/code/expression/...) can ever be accepted, and an unrecognized op value matches no branch of the operations oneOf and is rejected.",
+  "description": "The only operations the AI agent is allowed to propose. Every operation variant is closed (additionalProperties: false) so no executable-code field (script/code/expression/...) can ever be accepted, and an unrecognized op value matches no branch of the operations oneOf and is rejected.",
   "type": "object",
   "additionalProperties": false,
   "required": ["intent", "operations"],

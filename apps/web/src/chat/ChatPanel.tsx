@@ -15,9 +15,9 @@ interface ChatPanelProps {
 }
 
 /**
- * Chat column: history + composer (Issue #26/#27), filling the
+ * Chat column: history + composer, filling the
  * `.workspace-chat__history`/`.workspace-chat__composer` slots
- * `WorkspaceShell` (Issue #25) already lays out. Takes the chat controller's
+ * `WorkspaceShell` already lays out. Takes the chat controller's
  * state/actions as props (owned by `WorkspaceShell`, via `useChatController`)
  * rather than calling the hook itself, so the same controller instance
  * -- and the single `WebLLMProvider`/project session it owns -- is also the

@@ -1,16 +1,10 @@
-/**
- * Deterministic `LLMProvider` for tests (Issue #18's "mock provider is
- * available for deterministic tests"). Scripted responses are consumed in
- * order, one per `generateStructured` call, so a test can simulate a
- * malformed-then-valid sequence to exercise a caller's repair-retry logic
- * (Issue #19, FR-30) without a real model.
- */
+/** Deterministic LLMProvider for tests. Consumes scripted responses in order to exercise parsing, truncation and repair without a real model. */
 
 import type { AgentMessage, GenerationOptions, JsonSchema, LLMProvider } from "./provider.ts";
 import { parseStructuredCompletion } from "./structured-output.ts";
 
 /** Raw completion text plus the provider's `finish_reason`, parsed exactly
- * as a real provider parses it (Issue #71: scripts truncation). */
+ * as a real provider parses it. */
 export class MockCompletion {
   readonly content: string;
   readonly finishReason: string;

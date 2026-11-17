@@ -1,9 +1,4 @@
-"""HTTP-layer tests for `api.routes.projects` (Issue #21).
-
-Unlike `test_projects.py` (the `ProjectSessionService` unit tests), these go
-through `TestClient(app)` to exercise routing, status codes, and the
-standardized error body (PRD §9.4).
-"""
+"""HTTP tests for X3D sessions, revisions and structured errors."""
 
 from collections.abc import Iterator
 

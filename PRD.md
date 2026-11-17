@@ -144,7 +144,7 @@ Variáveis efetivas e limites configuráveis estão em `apps/api/.env.example` e
 | X3D | Cena passa por validadores; manifesto exportado pode ser importado em outra sessão |
 | Three.js | Exemplo pode ser editado, jogado e exportado sem API; documento autoral permanece preservado após jogo |
 | Provedor | Testar e aplicar são separados; cancelamento/quota não aprovam resultado incompleto |
-| Recursos | Testes CAD liberam processos entre arquivos; navegador usa um worker por executor |
+| Recursos | Testes CAD liberam processos entre casos; navegador usa um worker por executor |
 | Documentação | Links locais válidos e comandos coerentes com scripts e configurações |
 
 Lint, tipos, testes unitários, testes de domínio/API, build e Playwright sustentam esses critérios. Casos automatizados usam respostas programadas para não depender de uma assinatura real. Métricas em software WebGL não são garantias de desempenho em GPU real. Consulte [testes](docs/testing.md).

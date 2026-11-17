@@ -1,41 +1,4 @@
-"""Apply-ModelPlan orchestration endpoint (PRD §9.1/§9.2/§9.3, Issue #22).
-
-The central mutation transaction: validate the incoming request -> check the
-expected revision -> build a candidate `ModelSpec` (Issue #7) -> render and
-validate it as X3D through `x3d_mcp` (Issue #10) -> commit (Issue #8) ->
-describe available artifacts. Every step before `commit_revision` only ever
-reads project state and returns/raises, matching `apply_plan`'s and
-`build_and_validate_candidate`'s own never-mutate-until-success contracts
-(FE-08's "last-valid-scene rule") -- so any failure in this endpoint leaves
-the project's stored revision exactly as it was.
-
-A `ModelPlan` containing a `clarify` operation is rejected with
-`422 AMBIGUOUS_TARGET` before anything else happens (no MCP call, no
-candidate is built, nothing commits) -- `packages/agent`'s Issue #20 already
-keeps the agent from mixing a `clarify` with a mutation, but this endpoint
-does not trust that guarantee from an untrusted caller; it enforces it again
-here as the authoritative boundary, consistent with `apply_plan`'s own
-"clarify/no_change are no-ops, keeping the two apart is agent-layer policy"
-note explicitly leaving this case to a higher layer (§8.4, Issue #7). The
-clarify question(s) are surfaced in the error body's `details` so a caller
-that always POSTs whatever plan the agent produced still gets an actionable
-message to show the user. This is the one error case still raised directly
-as an `HTTPException` (via `api.errors.api_error`) rather than left to
-`api.error_handlers` (Issue #23): it is route-specific business logic with
-no domain exception type of its own, and FastAPI's built-in `HTTPException`
-handling already renders `api_error`'s body exactly as PRD §9.4 requires.
-
-Complexity limits (PRD FR-32, NFR-12, Issue #24) are checked as early as
-possible, before the revision/MCP round trip: `request.plan.intent` length
-is the only free-text field this request shape carries that stands in for
-NFR-12's "prompt text" limit (the raw user prompt itself is never sent to
-this backend -- WebLLM inference is client-side, per PRD §3.6 -- so
-`intent`, the agent's own short summary of what the user asked for, is the
-closest thing to it that reaches this endpoint), and the operation count is
-checked directly against the parsed plan. The object-count limit is
-enforced inside `apply_plan` itself (Issue #7/#24), since only it knows the
-plan's net effect on the object count.
-"""
+"""Applies ModelPlan requests through revision checks, mutation, X3D validation and atomic commit. Invalid candidates preserve the current revision."""
 
 from __future__ import annotations
 
@@ -81,7 +44,7 @@ _ARTIFACT_AVAILABILITY: tuple[tuple[ArtifactFormat, bool, str | None], ...] = (
 
 
 class ApplyPlanRequest(BaseModel):
-    """PRD §9.2."""
+    """Revision-checked plan request with explicit spatial policy."""
 
     model_config = ConfigDict(extra="forbid", strict=True)
 
@@ -90,7 +53,7 @@ class ApplyPlanRequest(BaseModel):
     plan: ModelPlan
     overlapPolicy: Literal["visual", "strict"] = "visual"
     resolveOverlaps: bool = False
-    """Separate penetrating parts deterministically instead of rejecting (Issue #71 follow-up)."""
+    """Separate penetrating parts deterministically instead of rejecting."""
 
 
 class ValidationSummary(BaseModel):
@@ -111,7 +74,7 @@ class PreviewInfo(BaseModel):
 
 
 class ApplyPlanResponse(BaseModel):
-    """PRD §9.3."""
+    """Committed scene state, validation summary and available artifacts."""
 
     projectId: str
     revision: int

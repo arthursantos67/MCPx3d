@@ -74,7 +74,8 @@ test('CAD preserves real threads, finishes, lofts and recessed holes through gen
 })
 
 test('CAD connects shaft rotation to nut translation and keeps threaded components exportable', async ({ page }) => {
-  test.setTimeout(240_000)
+  // Creation, motion validation, STEP export and reload each invoke native work.
+  test.setTimeout(360_000)
   const spec = JSON.parse(await readFile('examples/cad/threaded_drive.json', 'utf8'))
   const responses = [{ kind: 'assembly', reason: 'Threaded shaft and driven nut' },
     { decision: 'create', partId: spec.partId, question: '', assumptions: [], components: spec.components.map((component: typeof spec.components[number]) => ({

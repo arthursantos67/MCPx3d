@@ -14,7 +14,7 @@ import { chromium } from '@playwright/test'
 const args = process.argv.slice(2)
 const option = (name, fallback) => { const index = args.indexOf(`--${name}`); return index >= 0 ? args[index + 1] : fallback }
 const flag = (name) => args.includes(`--${name}`)
-// 0.7 worlds: the same example opened with a fixed traversal (walking with sprint, or terrain-following flight at 36 m/s).
+// World examples use a fixed traversal: sprinting or terrain-following flight.
 const loop = (half) => [[half, 0], [half, half], [-half, half], [-half, -half], [half, -half], [half, 0]].map((point) => point.join(',')).join(';')
 const WORLDS = {
   'Mundo 4 km · a pé': { button: 'Relevo sintético 4 km', query: `route=${loop(600)}&sprint=1` },
@@ -216,7 +216,7 @@ function gate(current, base) {
   for (const [key, entry] of Object.entries(current.summary)) {
     const [mode] = key.split(' · ')
     const scene = key.slice(key.indexOf(' · ') + 3), world = WORLD_SCENES.includes(scene), previous = base?.summary[key]
-    // The frame budget binds 0.7 world scenarios; existing 1.x scenes (some already above it) must not regress.
+    // Worlds use the absolute frame budget; scene comparisons also check for regressions.
     // Absolute frame limits use the resolution-isolated pass, where an entry-level GPU does not dominate.
     if (world && mode === 'cpu' && entry.over100.some((count) => count > 0)) findings.push(`${key}: ${entry.over100.join('/')} quadros > 100 ms em jogo`)
     if (world && entry.gameLongestTaskMs > 100) findings.push(`${key}: tarefa longa de ${entry.gameLongestTaskMs} ms em jogo`)

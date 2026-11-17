@@ -1,11 +1,4 @@
-"""In-memory project/session store (PRD §3.12, FR-01, FR-34, UC-12, Issue #8).
-
-Sessions live only in process memory for the MVP -- no database (PRD §3.12) --
-so state is lost on backend restart unless the user has downloaded an
-artifact. TTL is a sliding idle timeout: any successful lookup or commit
-refreshes `last_active_at`, so an actively-used project does not expire out
-from under the user; an untouched one does.
-"""
+"""In-memory X3D project sessions, revisions and expiry. Updates preserve atomic revision checks."""
 
 from __future__ import annotations
 
@@ -239,8 +232,7 @@ class ProjectSessionService:
     ) -> ProjectSession:
         """Replaces the project's ModelSpec if `expected_revision` is still current.
 
-        On success the project's revision is exactly `expected_revision + 1`
-        (FR-34); `model_spec.revision` is not read as input, it is overwritten
+        On success the project's revision is exactly `expected_revision + 1`; `model_spec.revision` is not read as input, it is overwritten
         to match, so the caller does not need to increment it itself.
         """
         session = self.get_project(project_id)
@@ -320,7 +312,7 @@ class ProjectSessionService:
 
 @lru_cache
 def get_project_service() -> ProjectSessionService:
-    """FastAPI dependency: one process-wide `ProjectSessionService` (Issue #21).
+    """FastAPI dependency: one process-wide `ProjectSessionService`.
 
     Mirrors `api.config.get_settings`'s own `@lru_cache` singleton pattern --
     routes depend on this function, and tests override it the same way

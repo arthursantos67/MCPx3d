@@ -1,11 +1,4 @@
-/**
- * ModelPlan v1 TypeScript types (PRD §8.3).
- *
- * Mirrors packages/domain/schemas/model-plan.v1.schema.json and
- * packages/domain/python/src/domain/model_plan.py. `Operation` is a
- * discriminated union on `op`; every member is a closed interface (no index
- * signature), so no executable-code field can be attached and still type-check.
- */
+/** ModelPlan TypeScript types and cross-field validation for structured scene operations. */
 
 import type { PrimitiveKind, Vec3 } from "./model-spec.ts";
 

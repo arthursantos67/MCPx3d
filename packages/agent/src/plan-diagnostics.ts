@@ -1,17 +1,4 @@
-/**
- * Precise, per-operation ModelPlan validation diagnostics for the repair
- * prompt (Issue #71 follow-up). ajv's raw `oneOf` output reports every
- * operation branch's failure ("must have required property 'target'", "must
- * NOT have additional properties" x13) without naming the offending
- * property; a model given that text tends to regenerate a much smaller
- * scene instead of fixing one field. Here each invalid operation is checked
- * against the one branch its own `op` selects, so the diagnostic names the
- * operation index, its op/id, and the actual property at fault.
- *
- * Only schema-derived text and identifier-shaped values (op names, ids,
- * property names) are echoed; free text from the model output (names,
- * questions, intents) never is.
- */
+/** Converts structured validation failures into focused diagnostics for repair prompts. */
 
 import { Ajv2020, type ErrorObject, type ValidateFunction } from "ajv/dist/2020.js";
 

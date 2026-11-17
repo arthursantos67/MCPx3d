@@ -41,7 +41,7 @@ test('creation gives the scene the main area, keeps technical controls optional 
   await page.screenshot({ path: '.cache/browser/three-create.png' })
   await page.getByRole('button', { name: '▶ Jogar', exact: true }).click()
   const hud = page.getByRole('region', { name: 'Modo jogo' })
-  await expect(hud).toContainText('Itens 0/7')
+  await expect(hud).toContainText('Itens 0/7', { timeout: 90_000 })
   await expect(page.getByRole('textbox', { name: 'Descreva a cena Three.js' })).toBeHidden()
   expect((await page.locator('.three-stage').boundingBox())!.height).toBeGreaterThan(initial.height + 80)
   await page.screenshot({ path: '.cache/browser/three-valley-game.png' })

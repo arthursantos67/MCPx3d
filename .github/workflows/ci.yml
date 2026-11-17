@@ -15,7 +15,6 @@ concurrency:
 
 env:
   UV_PYTHON: '3.12'
-  CAD_KERNEL_THREADS: '1'
   OPENBLAS_NUM_THREADS: '1'
   OMP_NUM_THREADS: '1'
 
@@ -76,10 +75,13 @@ jobs:
         include:
           - group: core
             shard: 1/1
+            isolation: ''
           - group: cad
             shard: 1/2
+            isolation: --isolate-cases
           - group: cad
             shard: 2/2
+            isolation: --isolate-cases
     steps:
       - uses: actions/checkout@v4
         with:
@@ -93,7 +95,7 @@ jobs:
         with:
           version: "0.12.17"
       - run: uv sync --project apps/api --frozen
-      - run: uv run --project apps/api python scripts/run-api-tests.py --group ${{ matrix.group }} --shard ${{ matrix.shard }}
+      - run: uv run --project apps/api python scripts/run-api-tests.py --group ${{ matrix.group }} --shard ${{ matrix.shard }} ${{ matrix.isolation }}
 
   browser:
     name: Browser (CAD and X3D engines)
@@ -127,7 +129,7 @@ jobs:
     timeout-minutes: 40
     strategy:
       fail-fast: false
-      max-parallel: 2
+      max-parallel: 3
       matrix:
         shard: [1, 2, 3]
     steps:

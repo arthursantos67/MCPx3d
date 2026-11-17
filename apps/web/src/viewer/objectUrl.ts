@@ -1,9 +1,4 @@
-/**
- * Blob-URL lifecycle for the sandboxed preview iframe (PRD §10.3/§11.4,
- * Issue #28). `ObjectUrlFactory` is injected so `BlobUrlTracker` is
- * unit-testable with `node --test` against a fake registry -- there is no
- * real `URL.createObjectURL`/Blob registry outside a browser.
- */
+/** Blob URL lifecycle for sandboxed previews. Object URL creation is injectable for testing. */
 
 export interface ObjectUrlFactory {
   create(html: string): string;
@@ -17,10 +12,8 @@ export const browserObjectUrlFactory: ObjectUrlFactory = {
 
 /**
  * Tracks the single current Blob URL for rendered standalone HTML. `set`
- * only revokes the *previous* URL, after the new one has already replaced it
- * (PRD §10.3's "prior Blob URL is revoked after replacement") -- revoking
- * the old URL first would blank the iframe for a frame while the new one
- * loads.
+ * revokes the previous URL after replacement to avoid blanking the iframe
+ * while the new one loads.
  */
 export class BlobUrlTracker {
   private current: string | null = null;

@@ -1,23 +1,4 @@
-/**
- * `OpenAICompatibleProvider`: the optional BYOK `LLMProvider` implementation
- * (PRD §3.7's "future BYOK provider for testing/advanced users"), for users
- * whose device can't run WebLLM (no WebGPU/GPU adapter) and who supply their
- * own API key for any OpenAI-`/chat/completions`-compatible endpoint (e.g. a
- * free tier such as Groq). `WebLLMProvider` remains the required default
- * (PRD §3.6); this is a user-selected alternative, never on by default.
- *
- * `fetchImpl` is injected (mirroring `webllm-provider.ts`'s
- * `detectWebGpu`/`createWorker`/`createEngine` DI pattern) so this is
- * unit-tested without a real network call.
- *
- * The call goes directly from the browser to the configured `baseUrl` --
- * the same client-side pattern WebLLM already uses, just against a remote
- * model instead of a local one. The API key is only ever placed in this
- * request's `Authorization` header; it is never sent to `apps/api` and never
- * included in a thrown error message (error messages include the response
- * status and, at most, an identifier-shaped provider error code -- never the
- * response body, which can echo request content).
- */
+/** Optional endpoint-compatible LLMProvider using a user-supplied URL, API key and model. Network access is injectable for deterministic tests. */
 
 import {
   ProviderRequestError,
@@ -50,14 +31,8 @@ function isConfigComplete(config: OpenAICompatibleConfig): boolean {
   return config.baseUrl.trim().length > 0 && config.apiKey.trim().length > 0 && config.model.trim().length > 0;
 }
 
-/** This provider's declared `maxOutputTokens` ceiling, so
- * `generateModelPlan`'s explicit per-request budget never exceeds it. Raised
- * from 2048 to 8192 (Issue #71 follow-up): a complete multi-part scene with
- * a reasoning model did not fit in 2048 tokens, forcing batch mode for
- * requests the provider could answer in one response. Trade-off: a
- * free-tier endpoint that counts the requested completion budget against a
- * small tokens-per-minute limit (e.g. Groq's 8K TPM) now rejects most
- * requests with 429. */
+/** Declared output ceiling for complete structured plans. Endpoints may count
+ * the requested budget toward rate limits even when the response is shorter. */
 export const DEFAULT_MAX_COMPLETION_TOKENS = 8192;
 const CHAT_COMPLETIONS_PATH = "/chat/completions";
 const MAX_TRANSIENT_RETRIES = 4;

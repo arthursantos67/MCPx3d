@@ -39,6 +39,14 @@ class ApiTestRunnerTests(unittest.TestCase):
         self.assertEqual(result, 7)
         self.assertEqual(len(files), 1)
 
+    def test_case_isolation_launches_each_collected_parameter_once(self):
+        cases = ["tests/test_cad_assembly.py::test_pose[left]", "tests/test_cad_assembly.py::test_pose[right]"]
+        collection = subprocess.CompletedProcess([], 0, stdout="\n".join(cases) + "\n\n2 tests collected", stderr="")
+        with patch.object(runner.subprocess, "run", return_value=collection):
+            result, launched = self.run_selection("--group", "cad", "--shard", "1/100", "--isolate-cases")
+        self.assertEqual(result, 0)
+        self.assertEqual(launched, [Path(case).name for case in cases])
+
     def test_timeout_stops_the_process_tree(self):
         process = Mock(pid=123)
         process.wait.side_effect = [subprocess.TimeoutExpired("pytest", 1), 0]

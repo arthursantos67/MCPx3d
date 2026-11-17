@@ -1,9 +1,4 @@
-"""ModelSpec v1 Python types (PRD §8.2).
-
-Mirrors `packages/domain/schemas/model-spec.v1.schema.json`. Rules the JSON
-Schema cannot express -- unique object IDs across the model -- are enforced
-here as a model validator instead.
-"""
+"""ModelSpec Python types and cross-field validation for X3D scenes."""
 
 from __future__ import annotations
 

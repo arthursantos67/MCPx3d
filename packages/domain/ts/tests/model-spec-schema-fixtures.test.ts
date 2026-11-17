@@ -1,12 +1,4 @@
-/**
- * Validates the shared ModelSpec fixtures in packages/domain/fixtures/model-spec
- * against packages/domain/schemas/model-spec.v1.schema.json -- the same fixture
- * files the Python package validates in
- * packages/domain/python/tests/test_schema_fixtures_model_spec.py. Both language
- * runtimes agreeing on pass/fail for one shared fixture set, validated against
- * one shared schema, is how "TS and Python shapes are tested for compatibility"
- * (Issue #5) is satisfied.
- */
+/** Validates the ModelSpec fixtures shared with Python against the same JSON Schema. */
 
 import assert from "node:assert/strict";
 import { test } from "node:test";

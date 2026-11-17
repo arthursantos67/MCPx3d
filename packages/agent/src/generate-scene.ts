@@ -1,31 +1,4 @@
-/**
- * Plans and commits one user request, continuing in bounded batches when a
- * single ModelPlan does not fit the provider's output budget (Issue #71).
- *
- * The request is first attempted as one ModelPlan, as before. Only when that
- * response is truncated (`ModelPlanTruncatedError`) does this switch to
- * batch mode: each batch asks for at most `SCENE_BATCH_OPERATIONS`
- * operations against the latest committed `ModelSpec`, is validated by
- * `generateModelPlan`, and is committed through the caller's `applyPlan`
- * (the backend's normal schema/domain/overlap/X3D validation) before the
- * next batch is requested. A batch consisting only of `no_change` means the
- * scene is complete. Every committed batch is a real, valid revision, so a
- * later failure or cancellation leaves the last committed batch -- never a
- * partial plan -- as the active scene.
- *
- * Finite limits: one format-repair retry per generated plan (FR-30), up to
- * `MAX_APPLY_REPAIRS` apply-repair rounds per plan when
- * `describeRepairableApplyError` accepts the error, then one final apply
- * with `resolveOverlaps` only when the caller explicitly opted into part
- * displacement; at most `MAX_SCENE_BATCHES` batches per request. An apply
- * repair sends the rejected plan back with the backend's diagnostic, so the
- * model corrects it rather than starting over.
- *
- * A batch that still fails validation after those rounds is skipped and
- * reported in `skippedBatches` rather than discarding the rest of the scene;
- * the request stops only after `MAX_CONSECUTIVE_FAILED_BATCHES` failures in
- * a row, or at once for a non-validation error (provider, MCP, session).
- */
+/** Coordinates bounded ModelPlan batches when a scene exceeds a single response budget. Preserves generation progress and applies validated plans incrementally. */
 
 import type { ModelPlan } from "../../domain/ts/src/model-plan.ts";
 import type { ModelSpec } from "../../domain/ts/src/model-spec.ts";
@@ -42,7 +15,7 @@ import { ProviderRequestError, type CompletionMetadata } from "./provider.ts";
 
 export const SCENE_BATCH_OPERATIONS = 25;
 export const MAX_SCENE_BATCHES = 12;
-/** A single plan that reaches the per-plan operation limit (NFR-12) is
+/** A single plan that reaches the per-plan operation limit is
  * treated as the first part of a larger scene and continued in batches. */
 export const MAX_PLAN_OPERATIONS = 100;
 export const MAX_APPLY_REPAIRS = 3;
