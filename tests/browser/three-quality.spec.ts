@@ -37,7 +37,6 @@ test('detailed procedural scene renders in fullscreen and Escape exits the expan
   expect(Math.round(bounds.height)).toBe(900)
   await expect(page.getByRole('group', { name: 'Reprodução em tela cheia' })).toBeVisible()
   await page.getByRole('button', { name: 'Enquadrar cena', exact: true }).click()
-  await page.screenshot({ path: '.cache/browser/three-helix-fullscreen.png' })
   await page.getByRole('button', { name: 'Sair da tela cheia', exact: true }).click()
   await expect(page.getByRole('button', { name: 'Tela cheia', exact: true })).toBeVisible()
   await page.evaluate(() => { HTMLElement.prototype.requestFullscreen = async () => { throw new Error('Denied in embedded browser') } })

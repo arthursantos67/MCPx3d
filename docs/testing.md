@@ -62,7 +62,7 @@ npm run test:browser:three -- tests/browser/three-studio.spec.ts
 
 A suíte Three.js usa renderer real em SwiftShader, com API/provedor simulados. Isso verifica fluxos e contratos, mas não mede FPS/aparência em GPU real. Se necessário, `PLAYWRIGHT_CHROMIUM_EXECUTABLE` aponta para um navegador já instalado; sem essa variável, usa o Chromium do Playwright.
 
-Falhas geram screenshots/traces em `test-results/`; abra com `npx playwright show-trace <arquivo.zip>`. Capturas auxiliares ficam em `.cache/browser`. Esses diretórios não são versionados.
+Falhas geram screenshots/traces em `test-results/`; abra com `npx playwright show-trace <arquivo.zip>`. Capturas usadas em comparações de animação permanecem nos próprios testes; não são geradas imagens auxiliares em todas as execuções. Resultados e bancos de teste não são versionados.
 
 ## CI
 

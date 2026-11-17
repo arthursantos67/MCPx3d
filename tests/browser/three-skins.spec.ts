@@ -33,7 +33,6 @@ test('organic skin gallery renders and exports portable skeletons, colors and ch
     nodes: [{ ...createNode('box'), id: 'floor', color: '#c5ccd4', metalness: 0, roughness: 0.8, dimensions: [18, 0.2, 10], position: [0, -0.1, 0], repeat },
       ...organic.map((type, i) => actor(type, type, [(i % 5 - 2) * 3, 0, Math.floor(i / 5) * -4], type === 'dragon' ? 0.55 : 1))] })
   await load(page, doc)
-  await page.screenshot({ path: '.cache/browser/three-skins-gallery.png' })
   const original = JSON.parse((await download(page, 'Exportar JSON')).toString())
   const glb = await download(page, 'Exportar GLB'), json = JSON.parse(glb.subarray(20, 20 + glb.readUInt32LE(12)).toString())
   // Clothing and body meshes may export separate skin bindings to the same rig.
@@ -77,7 +76,6 @@ test('skinned avatar and NPC dialogue survive camera changes, quality changes an
   await page.getByRole('button', { name: '▶ Jogar', exact: true }).click()
   const hud = page.getByRole('region', { name: 'Modo jogo' })
   await expect(hud).toContainText('Conversar')
-  await page.screenshot({ path: '.cache/browser/three-skins-avatar.png' })
   await page.keyboard.press('e')
   await expect(page.getByRole('dialog', { name: 'Diálogo com Guia' })).toBeVisible()
   await page.keyboard.press('Escape')

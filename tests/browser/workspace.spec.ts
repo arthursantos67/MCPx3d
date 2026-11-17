@@ -70,7 +70,6 @@ test('CAD preserves real threads, finishes, lofts and recessed holes through gen
   await expect(page.getByRole('button', { name: 'Baixar STEP', exact: true })).toBeEnabled()
   await expect(page.locator('.cad-workspace__footer')).toContainText('100.0 × 70.0 × 29.0 mm', { timeout: 120_000 })
   await expect(page.locator('.cad-workspace__viewer [role="alert"]')).toHaveCount(0)
-  await page.screenshot({ path: '.cache/browser/cad-features.png' })
 })
 
 test('CAD connects shaft rotation to nut translation and keeps threaded components exportable', async ({ page }) => {
@@ -151,7 +150,6 @@ test('CAD generates and saves a compound model, exports each format, edits and r
   await page.getByRole('button', { name: 'Salvar revisão', exact: true }).click()
   await expect(page.getByText('Revisão 1 salva com 2 corpos.', { exact: true })).toBeVisible()
   await expect(page.getByText('Atualizando a geometria da prévia…', { exact: true })).toHaveCount(0)
-  await page.screenshot({ path: '.cache/browser/cad-desktop.png' })
   await page.reload()
   await expect(page.getByRole('button', { name: 'Baixar STEP do conjunto' })).toBeVisible()
   await expect(page.getByRole('slider')).toHaveValue('10')
@@ -242,7 +240,6 @@ test('X3D creates a validated scene and downloads it without an MCP server', asy
   expect(html.data.toString()).toContain('<sphere')
   await expect(page.locator('.viewer-frame__iframe')).toHaveAttribute('sandbox', 'allow-scripts')
   await expect(page.frameLocator('.viewer-frame__iframe').locator('canvas')).toBeVisible()
-  await page.screenshot({ path: '.cache/browser/x3d-desktop.png' })
 })
 
 test('X3D creates a complex connected scene without extra model repairs and keeps its positions on edit', async ({ page }) => {
@@ -286,7 +283,6 @@ test('X3D creates a complex connected scene without extra model repairs and keep
   await expect(page.frameLocator('.viewer-frame__iframe').locator('transform[def="obj_robo_braco"] material'))
     .toHaveAttribute('diffusecolor', /0\.1411/)
   await expect(page.frameLocator('.viewer-frame__iframe').locator('canvas')).toBeVisible()
-  await page.screenshot({ path: '.cache/browser/x3d-industrial.png' })
   expect(errors).toEqual([])
 })
 
@@ -361,5 +357,4 @@ test('mobile workspace fits the viewport and opens AI settings', async ({ page }
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390)
   await page.getByRole('button', { name: 'Configurar IA', exact: true }).first().click()
   await expect(page.getByRole('dialog', { name: 'Configurações da IA' })).toBeVisible()
-  await page.screenshot({ path: '.cache/browser/mobile.png' })
 })

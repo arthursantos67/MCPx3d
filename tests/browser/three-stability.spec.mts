@@ -47,7 +47,6 @@ test('a legacy indoor floor is repaired on opening, rendered and persisted witho
   expect(fixed.nodes.filter((n:{id:string})=>n.id!==stone.id)).toEqual(scene.nodes.filter(n=>n.id!==stone.id))
   await page.getByRole('button',{name:'▶ Jogar',exact:true}).click()
   await expect(page.getByRole('region',{name:'Modo jogo'})).toBeVisible()
-  await page.screenshot({path:'.cache/browser/architecture-ground-floor-fixed.png'})
   await leaveGame(page)
   expect(errors).toEqual([])
 })

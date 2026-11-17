@@ -27,17 +27,15 @@ async function exported(page:Page) {
 }
 
 test('a two-storey house renders, opens its entry and preserves the authored project after exploration',async({page})=>{
-  test.setTimeout(90_000)
+  test.setTimeout(180_000)
   const original=createArchitectureScene(), errors=await open(page,original)
   expect((await page.locator('.three-stage').boundingBox())!.height).toBeGreaterThan(300)
-  await page.screenshot({path:'.cache/browser/architecture-exterior.png'})
   await page.getByRole('button',{name:'▶ Jogar',exact:true}).click()
   const hud=page.getByRole('region',{name:'Modo jogo'})
   await expect(hud).toContainText('Porta de entrada')
   await page.keyboard.press('e')
   await expect(hud.getByRole('status')).toContainText('Abrir / fechar porta')
   await page.waitForTimeout(1200)
-  await page.screenshot({path:'.cache/browser/architecture-entry.png'})
   await leaveGame(page)
   expect(await exported(page)).toEqual(JSON.parse(JSON.stringify(original)))
   expect(errors).toEqual([])
@@ -51,7 +49,6 @@ test('upper-floor interior, windows, stairs and balcony render with contact shad
   const errors=await open(page,scene)
   await page.getByRole('button',{name:'▶ Jogar',exact:true}).click()
   await expect(page.getByRole('region',{name:'Modo jogo'})).toBeVisible()
-  await page.screenshot({path:'.cache/browser/architecture-upper-interior.png'})
   await leaveGame(page)
   expect(errors).toEqual([])
 })

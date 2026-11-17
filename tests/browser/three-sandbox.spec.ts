@@ -63,7 +63,6 @@ test('sandbox harvests, crafts equipment, switches five slots and places, stores
   await expect(hud.getByRole('status').filter({ hasText: 'Construção recolhida' })).toBeVisible()
   await page.keyboard.press('b')
   await expect(inventory.getByRole('button', { name: /^Mochila: Kit de baú,/ })).toBeVisible()
-  await page.screenshot({ path: '.cache/browser/three-sandbox-inventory.png' })
   await page.keyboard.press('Escape')
   await leaveGame(page)
   expect(errors).toEqual([])

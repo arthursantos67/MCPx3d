@@ -5,7 +5,11 @@ import { openAdvancedEditor, leaveGame } from './threeHelpers.ts'
 async function open(page: Page, value: unknown) {
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
-  await page.addInitScript(() => localStorage.setItem('modeler:workspace', 'three'))
+  await page.addInitScript(() => {
+    localStorage.setItem('modeler:workspace', 'three')
+    // Playwright moves the mouse before clicking; keep the camera stable in drag-look mode.
+    HTMLCanvasElement.prototype.requestPointerLock = () => Promise.reject(new Error('drag look'))
+  })
   await page.route('http://127.0.0.1:8011/api/**', route => route.fulfill({ status: 503, body: '{}' }))
   await page.goto('/')
   await openAdvancedEditor(page)
