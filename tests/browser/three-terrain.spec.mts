@@ -36,6 +36,8 @@ async function exported(page:Page) {
 }
 
 for(const biome of ['meadow','alpine']) test(`physical ${biome} terrain layers render with continuous wide paths in first person`,async({page})=>{
+  // Terrain is compiled for play and rebuilt when returning to the editor.
+  test.setTimeout(180_000)
   const scene=expandSceneRecipe(recipe(biome)),ground=scene.nodes.find(n=>n.id==='ground')!
   scene.environment.player!.spawn=[0,terrainHeightAt(ground.geometry,0,16/70)*6+0.07,16]
   scene.environment.player!.yaw=0
