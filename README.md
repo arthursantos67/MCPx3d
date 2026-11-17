@@ -1,79 +1,170 @@
-# Forma
+<div align="center">
 
-Estúdio de modelagem com agentes de IA e um editor visual de cenas: **CAD**, para peças e conjuntos compostos com download STEP/STL, e **X3D**, para cenas editadas por conversa. **Three.js**, para composição visual e geração de cenas animadas. A API constrói e valida a geometria CAD/X3D; a IA propõe somente dados estruturados.
+# Forma · MCPx3d
 
-## Iniciar
+**Crie peças CAD, cenas X3D e mundos interativos com IA e edição visual.**
 
-Requisitos: Node.js 24, Python 3.12+, Git e uv. No Windows, `python -m pip install uv` instala uv; os scripts também funcionam quando apenas `python -m uv` está disponível.
+[![CI](https://github.com/arthursantos67/MCPx3d/actions/workflows/ci.yml/badge.svg)](https://github.com/arthursantos67/MCPx3d/actions/workflows/ci.yml)
+![Node.js 24](https://img.shields.io/badge/Node.js-24-417e38?logo=nodedotjs&logoColor=white)
+![Python 3.12](https://img.shields.io/badge/Python-3.12-3776ab?logo=python&logoColor=white)
+![React](https://img.shields.io/badge/React-19-149eca?logo=react&logoColor=white)
+![Three.js](https://img.shields.io/badge/Three.js-WebGL2-222222?logo=threedotjs&logoColor=white)
 
-Na raiz:
+[Começar](#começar) · [Como usar](#como-usar) · [Configurar IA](#configurar-ia) · [Documentação](docs/README.md) · [PRD](PRD.md)
+
+</div>
+
+O Forma reúne três espaços de criação. A IA propõe dados estruturados; os motores da aplicação constroem e verificam o resultado. Você também pode usar peças paramétricas, exemplos prontos e o editor Three.js sem configurar IA.
+
+| Espaço | O que você faz | O que pode exportar |
+|---|---|---|
+| **CAD** | Peças por medidas ou conversa, conjuntos de 2–8 componentes, movimentos e vínculos mecânicos | STEP, STL e projeto JSON; ZIP de rascunho quando há geometria recuperável |
+| **X3D** | Cenas por conversa, alterações incrementais e receitas reutilizáveis | X3D, HTML, ClassicVRML e manifesto JSON |
+| **Three.js** | Cenas animadas, modelos, terrenos, mundos exploráveis e experiências jogáveis | Projeto JSON, GLB e captura PNG |
+
+<details>
+<summary><strong>Veja o estúdio</strong></summary>
+
+![Bancada de peças paramétricas CAD](docs/images/cad-parametric.png)
+![Biblioteca de modelos do estúdio Three.js](docs/images/three-library.png)
+![Cena jogável com água e terreno](docs/images/three-river.png)
+
+</details>
+
+## Começar
+
+Instale **Git**, **Node.js 24**, **Python 3.12** e **uv**. O uv também pode ser instalado com `python -m pip install uv`; os scripts aceitam `python -m uv` quando o executável não está no PATH.
 
 ```bash
-git submodule update --init --recursive
+git clone --recurse-submodules https://github.com/arthursantos67/MCPx3d.git
+cd MCPx3d
 npm ci
 npm run dev
 ```
 
-Abra **http://127.0.0.1:5173**. A API fica em **http://127.0.0.1:8001**, com contratos interativos em `/docs`. O primeiro início instala as dependências Python, incluindo CadQuery; os seguintes reutilizam o ambiente. `Ctrl+C` encerra os processos iniciados pelo comando. Em PowerShell com scripts bloqueados, use `npm.cmd`.
+Abra **[http://127.0.0.1:5173](http://127.0.0.1:5173)**. A API roda em **[http://127.0.0.1:8001](http://127.0.0.1:8001/api/health)**, com referência interativa em **[OpenAPI /docs](http://127.0.0.1:8001/docs)**. A primeira inicialização instala as dependências Python, incluindo CadQuery. `Ctrl+C` encerra os serviços.
 
-**Não é necessário iniciar um servidor MCP.** O submódulo fornece a biblioteca e os schemas de validação X3D usados localmente. O modo remoto continua opcional: [docs/x3d-mcp.md](docs/x3d-mcp.md).
+Já clonou sem o submódulo? Execute `git submodule update --init --recursive` antes de iniciar. O backend X3D padrão usa a biblioteca local; o [servidor MCP é opcional](docs/x3d-mcp.md).
 
-Em **Configurar IA**, escolha WebLLM, um endpoint compatível com OpenAI, **Codex · assinatura ChatGPT** ou **Claude Code · assinatura Claude**. WebLLM precisa de WebGPU. O endpoint externo recebe os pedidos diretamente do navegador e exige chave, modelo e CORS. Os modos de assinatura usam o cliente oficial instalado e autenticado no computador do servidor; pedidos passam pela API local, sem transferir tokens ao navegador. Os limites da conta continuam valendo.
+> No PowerShell com restrição de scripts, use `npm.cmd` e `npx.cmd` nos comandos que começam por `npm` e `npx`.
 
-Para assinaturas, instale o cliente oficial e execute `codex login` ou `claude auth login` no terminal. Reinicie o servidor após instalar o cliente. Deixe **Modelo** vazio no primeiro teste. **Verificar instalação e login** não gera uma resposta; **Testar conexão** faz uma pequena chamada real, confere JSON e mostra erros antes de qualquer validação CAD/X3D. Testar não salva nem troca o provedor ativo: use **Salvar e aplicar** depois. [Detalhes da integração](docs/ai-providers.md).
+## Como usar
 
-## Usar
+### CAD: da descrição ao arquivo
 
-No CAD, descreva uma peça ou conjunto no **Projeto livre**. O agente escolhe um sólido ou planeja componentes independentes; **Conjunto composto** permite pedir uma montagem diretamente. A proposta aprovada é salva automaticamente e libera STEP/STL. Cada componente também pode ser exportado nos dois formatos. Ajustes manuais e movimentos pedem uma nova revisão antes do download.
+1. Abra **CAD → Projeto livre** e descreva a peça com medidas, unidades e recursos desejados. Use **Conjunto composto** para solicitar uma montagem diretamente.
+2. Acompanhe a construção e inspecione a prévia. Conjuntos recebem verificações de interferência e, quando exigido, dos vínculos mecânicos.
+3. Após aprovação e salvamento, baixe **STEP** ou **STL** do projeto ou de um componente.
+4. Para mudar medidas ou movimentos manualmente, valide e salve uma nova revisão antes de baixar novamente.
 
-Para construir por medidas, sem IA, abra **CAD → Peças paramétricas**: placa de fixação, cantoneira, flange, caixa aberta e bucha. Os furos acompanham as dimensões e relações incompatíveis são bloqueadas antes da construção. Aplique as medidas, valide/salve e baixe STEP/STL; o projeto paramétrico JSON conserva as medidas para reabrir e editar. A [revisão do CAD](docs/cad-parametric-workbench.md) explica as verificações e a correção de detalhes pequenos rejeitados incorretamente em peças grandes.
+**Experimente:** “Crie uma placa de 120 × 80 × 10 mm com quatro furos passantes de 6 mm, a 12 mm das bordas.”
 
-Se a geração falhar, **Baixar rascunho STEP/STL (ZIP)** exporta os sólidos disponíveis com a receita original e um relatório de etapas/peças omitidas. Rascunhos não recebem aprovação de montagem e ficam guardados no navegador para prévia/download após reload. [Recuperação CAD](docs/cad-drafts.md) explica os limites e a retomada.
+**Sem IA:** em **Peças paramétricas**, escolha placa, cantoneira, flange, caixa aberta ou bucha, ajuste as medidas e valide/salve. O projeto JSON conserva os parâmetros para reabrir.
 
-No X3D, descreva a cena, peça alterações ou aplique uma receita da biblioteca. Baixe X3D, HTML, ClassicVRML ou JSON do projeto. O JSON permite importar a cena depois de reiniciar a API. A prévia HTML utiliza X3DOM e precisa de internet para carregar esse visualizador.
+<details>
+<summary>Se a geração CAD parar</summary>
 
-No menu **Three.js · Estúdio de cenas**, descreva um mundo para a IA ou abra **Exemplo jogável** (Ilha do Farol) e pressione **▶ Jogar**/**P** para explorar em primeira pessoa: WASD, mouse, Shift, Espaço, F para voo e E para abrir portas e interagir; cristais são coletados ao se aproximar. O catálogo inclui terreno procedural, luzes pontuais/spot, texto, poliedros, perfis, tubos e malhas; o ambiente oferece céu físico, noite, neblina e bloom. No editor, W/E/R ativam gizmos e **?** lista os atalhos. Use **Importar GLB** para modelos estáticos, **Exportar GLB** para levar a cena animada a outras ferramentas e **Capturar PNG** para imagens.
+Mantenha a aba aberta e retome o mesmo pedido para reutilizar componentes concluídos. **Baixar rascunho STEP/STL (ZIP)** recupera os sólidos disponíveis e inclui um relatório de omissões; esse arquivo não representa uma montagem aprovada. Exporte também o JSON antes de fechar a aba. Veja o [guia CAD](docs/cad.md#recuperação-e-rascunhos).
 
-O pedido determina a ação da IA; **Opções de criação** permite escolher **Criar nova cena**, **Editar cena atual** ou **Corrigir cena** explicitamente. Edição envia contexto e aplica patches por ID, incluindo remoções solicitadas; reparo inspeciona superfícies e movimentos em poses amostradas, preservando os objetos. **Projeto → Verificar cena** funciona localmente, sem IA. Criação/edição guardam a melhor candidata construída e informam problemas restantes; reparo exige melhora sem novos pares. **Atividade** mostra etapa, tempo e histórico; o prazo total é de 2, 5 (padrão) ou 10 minutos.
+</details>
 
-Three.js exporta/importa projeto JSON 1.3 e migra arquivos 1.0–1.2. Edição, reprodução e jogo funcionam sem API/IA; o viewport requer WebGL2. Rascunhos usam o navegador; malhas/texturas grandes podem exceder sua quota, com aviso para exportar JSON. Colisão de objetos móveis é aproximada e não há física de corpos rígidos. [Capacidades, limites e próximos passos](docs/threejs-studio.md).
+### X3D: descreva e refine uma cena
 
-CAD e receitas usam SQLite em `apps/api/data`. Projetos X3D são temporários e expiram após uma hora de inatividade por padrão. A linguagem CAD possui limites explícitos: [formatos e capacidades](docs/cad-readiness.md).
+1. Abra **X3D**, configure a IA e descreva a cena, ou aplique uma receita da biblioteca.
+2. Peça alterações na mesma conversa: posição, tamanho, material, inclusão ou remoção de objetos.
+3. Inspecione a prévia e baixe o formato desejado. Exporte o **manifesto JSON** para importar a cena depois de reiniciar a API.
 
-O catálogo CAD oferece 21 recursos, incluindo roscas reais, engrenagens/cremalheiras, curvas de tubo, molas e trajetórias 3D segmentadas. Acabamentos podem ser limitados por região. [Melhorias e avaliação real de confiabilidade](docs/project-improvements-2026-10-08.md) registram resultados e limitações.
+**Experimente:** “Crie uma sala com mesa central, quatro cadeiras e uma estante na parede do fundo.”
 
-A versão 0.5 acrescenta personagens animados, NPCs com diálogo, inimigos com estilos de ataque, armas (espada, blaster, arco, cajado), chaves e portões, curas e poderes, plataformas móveis, ondas de sobrevivência, som sintetizado (ambiência, música e efeitos; M silencia), clima, gradação de cor e quatro exemplos novos em **Projeto**: Cripta do Rei Esqueleto, Mercado de Valemar, Ilhas Celestes e Ermo dos Saqueadores. Veja [mundos vivos](docs/threejs-living-worlds.md) e o [roteiro até a 1.0](ROADMAP.md).
+O HTML exportado carrega X3DOM pela internet. Sessões X3D são temporárias e expiram após uma hora de inatividade por padrão. [Guia X3D](docs/x3d.md).
 
-O Three.js abre com a cena em destaque e criação por conversa. **Editor avançado** torna os controles manuais opcionais; **Projeto** reúne arquivos e exemplos, e **Atividade** mostra diagnósticos. **Jogar** usa toda a janela. A [revisão de qualidade de 15/10](docs/threejs-production-upgrade.md) documenta terrenos com biomas, detalhamento, revisão do agente, edição por conversa e a referência Vale dos Ventos.
+### Three.js: monte, anime e explore
 
-O [trabalho de confiabilidade de 6/11](docs/threejs-reliability-2026-11-06.md) revisa movimento e colisão, substitui o inventário por slots com arraste e bancada contextual e inclui **Projeto → Biblioteca de modelos**. A [continuação sobre combate, catálogo e água](docs/threejs-combat-catalog-water-2026-11-06.md) amplia a seleção para 23 modelos KayKit (nove personagens animados) e 3.145 modelos estáticos Kenney, corrige o alcance na cripta e a recompilação de shaders ao coletar itens com luz, e escava leitos para os rios. O carregamento ocorre em blocos e a qualidade automática ajusta a resolução durante o jogo.
+1. Abra **Three.js · Estúdio de cenas**. Escolha um exemplo em **Projeto**, descreva uma cena com IA ou ative **Editor avançado** para edição manual.
+2. Use **Criar nova cena**, **Editar cena atual** ou **Corrigir cena** para controlar a ação da IA. **Projeto → Verificar cena** inspeciona localmente, sem IA.
+3. Abra a **Biblioteca de modelos**, importe um GLB estático ou edite objetos, materiais, luzes e animações.
+4. Clique **▶ Jogar** para explorar. Exporte **JSON** para continuar o trabalho, **GLB** para outras ferramentas ou **PNG** para uma imagem.
+
+**Experimente:** “Crie uma ilha com farol, uma trilha até a praia e cristais coletáveis.”
+
+| Durante o jogo | Controle padrão |
+|---|---|
+| Andar / olhar | WASD / mouse |
+| Correr / pular | Shift / Espaço |
+| Interagir / atacar | E / clique; botão direito para ataque pesado |
+| Inventário / atalhos | B / 1–5 ou roda do mouse |
+| Câmera / voo | V / F, quando permitido pela cena |
+| Pausar / ajuda / silenciar | Esc / ? / M |
+
+No editor, **W/E/R** selecionam mover, girar e escalar. O [guia Three.js](docs/threejs.md) explica mundos, persistência e limites. Edição, reprodução e jogo funcionam no navegador sem API; o viewport exige WebGL2.
+
+## Configurar IA
+
+Em **Configurar IA**, escolha o provedor, execute **Testar conexão** e depois **Salvar e aplicar**. O teste faz uma chamada pequena ao modelo e pode consumir uso da conta.
+
+| Opção | Requisito | Onde roda |
+|---|---|---|
+| **WebLLM** | Navegador com WebGPU e recursos para carregar o modelo | No navegador |
+| **Endpoint compatível com OpenAI** | URL, chave, modelo e CORS permitindo a origem do frontend | Pedido direto do navegador ao endpoint |
+| **Codex / Claude Code** | Cliente oficial instalado e autenticado no computador da API | Ponte pela API local, restrita a loopback |
+
+Para os clientes locais, faça login no terminal do servidor e reinicie a API após a instalação. Deixe **Modelo** vazio para usar o padrão do cliente. **Verificar instalação e login** confere disponibilidade; **Testar conexão** verifica uma resposta JSON. [Configuração e diagnóstico](docs/ai-providers.md).
 
 ## Desenvolvimento
 
 ```bash
-npm run dev:api
-npm run dev:web
-npm run typecheck
 npm run lint:web
+npm run typecheck
 npm test
 npm run build
-npm run test:browser
 ```
 
-Para configurar os testes de navegador e executar as suítes Python, consulte [docs/testing.md](docs/testing.md). Os scripts direcionam arquivos temporários e caches Python para `.cache` neste checkout, evitando consumo desnecessário do disco C: neste ambiente.
+Para iniciar cada serviço separadamente: `npm run dev:api` e `npm run dev:web`. Configure variáveis em [apps/api/.env.example](apps/api/.env.example) e [apps/web/.env.example](apps/web/.env.example), copiando o arquivo necessário para `.env` na mesma pasta.
 
-## Organização
+Testes Python, navegador, verificações de documentação e execução com poucos recursos estão em [docs/testing.md](docs/testing.md). Execute as etapas em sequência em máquinas com pouca RAM.
 
-| Pasta | Responsabilidade |
-|---|---|
-| `apps/web/src/cad` | Agente CAD, editores, movimento e visualizador de malha |
-| `apps/web/src/three` | Editor e modo jogo, contrato JSON, motor Three.js e exportação GLB locais |
-| `apps/web/src/chat` e `src/x3d` | Conversa e área X3D |
-| `apps/web/src/ai` e `src/workspace` | Provedor configurado e navegação compartilhada |
-| `apps/api/src/api` | Motores, validação, persistência e rotas |
-| `packages/agent` | Provedores, prompts, planejamento e reparos estruturados |
-| `packages/domain` | Schemas compartilhados e regras TS/Python |
-| `services/x3d-mcp` | Biblioteca upstream fixada e servidor opcional |
-| `scripts`, `tests`, `examples`, `docs` | Execução, testes, exemplos e documentação |
+## Estrutura
 
-Referências atuais: [PRD](PRD.md), [roteiro até a 1.0](ROADMAP.md), [estado e próximos trabalhos](ISSUES.md), [arquitetura](docs/architecture.md). O histórico está em [docs/archive](docs/archive/README.md).
+```text
+apps/web/           Interface React, workspaces e runtime Three.js
+apps/api/           API FastAPI, motores CAD/X3D e persistência
+packages/agent/     Provedores, geração e reparo de dados estruturados
+packages/domain/    Schemas, tipos e validações TypeScript/Python
+services/x3d-mcp/   Biblioteca upstream fixada e servidor opcional
+examples/cad/      Projetos JSON e geradores de exemplos CAD
+scripts/           Desenvolvimento, validação e ferramentas de manutenção
+tests/             Integração de navegador, fixtures e corpus de avaliação
+docs/              Guias de uso e referências técnicas
+```
+
+## Ajuda rápida
+
+<details>
+<summary>A API não inicia ou não encontra a biblioteca X3D</summary>
+
+Confirme Python 3.12 e uv, execute `git submodule update --init --recursive` e depois `npm run dev:api`. Verifique o terminal e `http://127.0.0.1:8001/api/health/engines`.
+
+</details>
+
+<details>
+<summary>A IA está pronta, mas o CAD recusou a proposta</summary>
+
+Conexão com o provedor e validação geométrica são etapas separadas. Confira o diagnóstico da peça/montagem, preserve o JSON e ajuste o pedido. Roscas complexas podem consumir minutos. Uma proposta recusada conserva a última revisão válida.
+
+</details>
+
+<details>
+<summary>Onde ficam os projetos?</summary>
+
+CAD e receitas usam SQLite em `apps/api/data/`. Cenas X3D ficam na memória da API. Rascunhos Three.js e progresso de mundos usam o armazenamento do navegador. Exporte JSON para transportar projetos e faça backup dos bancos CAD antes de trocar de máquina. A API é destinada a uso privado e não possui contas por usuário.
+
+</details>
+
+<details>
+<summary>O navegador avisa sobre WebGL2, WebGPU ou armazenamento</summary>
+
+WebGL2 é necessário para Three.js; WebGPU é necessário apenas para WebLLM. Se o navegador não comportar o modelo local, escolha outro provedor. Projetos grandes podem exceder a quota de armazenamento: exporte JSON. Em máquinas com pouca RAM, evite carregar modelos WebLLM enquanto executa CAD ou testes de navegador.
+
+</details>
+
+**Referências:** [Documentação](docs/README.md) · [Requisitos do produto](PRD.md) · [Arquitetura](docs/architecture.md) · [Exemplos CAD](examples/cad/README.md).

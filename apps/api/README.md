@@ -1,36 +1,29 @@
 # API Forma
 
-Workers CAD são cancelados por desconexão HTTP e serializados entre processos pelo mesmo `CAD_WORKER_LOCK_PATH` (padrão `data/cad-worker.lock`). `CAD_WORKER_QUEUE_TIMEOUT_SECONDS` limita a espera nesse lock a 60 s por padrão. O sistema operacional libera o bloqueio se o dono cair. Use um caminho absoluto comum em checkouts separados quando quiser compartilhar a cota de um worker; teto de memória/prazo por worker permanece configurável. Recursos novos, limites e medições estão em [melhorias gerais](../../docs/project-improvements-2026-10-08.md).
+FastAPI, Python 3.12, CadQuery/OpenCascade e validadores X3D. Na raiz, `npm run dev:api` inicia `127.0.0.1:8001`; a referência completa está em `/docs`. Para iniciar diretamente: `uv run --project apps/api uvicorn api.main:app --host 127.0.0.1 --port 8001`.
 
-FastAPI, Python 3.12+, CadQuery e validação X3D local. Na raiz, `npm run dev:api` inicia em `127.0.0.1:8001`. Nesta pasta, `uv sync` e `uv run api` instalam os mesmos motores. Variáveis em [.env.example](.env.example); contratos completos em `/docs`.
+Inicialize o submódulo antes de instalar. Configure variáveis a partir de [.env.example](.env.example). O padrão X3D é local; servidor MCP é opcional.
 
 | Rota | Função |
 |---|---|
-| `GET /api/health` | Disponibilidade da API |
-| `GET /api/health/engines` | Motores CAD e X3D selecionado |
-| `GET /api/ai/local/status/{client}` | Instalação e autenticação de assinatura (`codex`/`claude`), somente loopback |
-| `POST /api/ai/local/generate` | JSON por cliente oficial, sem ferramentas, com timeout/cancelamento |
-| `POST /api/cad/programs/inspect`, `/mesh` | Validar peça 3.0 e obter prévia |
-| `POST /api/cad/assemblies/inspect`, `/mesh` | Validar conjunto 4.0 e obter prévia |
-| `POST /api/cad/projects` | Salvar projeto CAD, revisão 0 |
-| `GET /api/cad/projects/{id}` | Recuperar spec e inspeção atuais |
-| `POST /api/cad/projects/{id}/spec` | Salvar revisão com `expectedRevision` |
-| `GET /api/cad/projects/{id}/revisions/{revision}/step` ou `/stl` | Exportar revisão salva |
-| `GET /api/cad/projects/{id}/revisions/{revision}/components/{componentId}/step` ou `/stl` | Exportar componente do STEP salvo |
-| `POST /api/projects`, `GET /api/projects/{id}/state` | Criar e recuperar sessão X3D |
-| `POST /api/projects/{id}/plans` | Aplicar plano, construir e validar cena |
-| `POST /api/projects/{id}/import?expectedRevision=N` | Importar manifesto validado |
-| `GET /api/projects/{id}/artifacts/{format}?revision=N` | HTML, X3D, X3DV e manifesto |
-| `GET /api/recipes`, `/match`, `POST /api/recipes` | Catálogo de receitas X3D |
+| `GET /api/health`, `/api/health/engines` | Disponibilidade e motores |
+| `GET /api/ai/local/status/{client}` | Instalação/login de cliente local |
+| `POST /api/ai/local/generate` | JSON por cliente oficial em loopback |
+| `POST /api/cad/programs/inspect`, `/mesh` | Inspeção/prévia de peça |
+| `POST /api/cad/assemblies/inspect`, `/mesh`, `/mechanics` | Inspeção/prévia/vínculos de conjunto |
+| `POST /api/cad/projects` | Criar projeto e revisão |
+| `GET /api/cad/projects/{id}` | Recuperar projeto |
+| `POST /api/cad/projects/{id}/spec` | Nova revisão com `expectedRevision` |
+| `GET /api/cad/projects/{id}/revisions/{revision}/step` ou `/stl` | Exportar revisão |
+| `GET /api/cad/projects/{id}/revisions/{revision}/components/{componentId}/step` ou `/stl` | Exportar componente |
+| `POST /api/projects`, `GET /api/projects/{id}/state` | Criar/recuperar sessão X3D |
+| `POST /api/projects/{id}/plans` | Aplicar e validar plano X3D |
+| `POST /api/projects/{id}/import?expectedRevision=N` | Importar manifesto |
+| `GET /api/projects/{id}/artifacts/{format}?revision=N` | Exportar artefato X3D |
+| `GET /api/recipes`, `/match`, `POST /api/recipes` | Receitas X3D |
 
-CAD aceita `{ "spec": ... }` na criação e `{ "expectedRevision": N, "spec": ... }` na atualização. Revisões obsoletas retornam 409; geometria inválida retorna 422 e preserva o estado salvo. Contratos CAD 2.x e planos antigos continuam compatíveis.
+Criação CAD recebe `{ "spec": ... }`; atualização recebe `{ "expectedRevision": N, "spec": ... }`. Conflito retorna 409; geometria inválida retorna 422 sem substituir a revisão válida. Consulte OpenAPI para corpos completos e demais rotas.
 
-`cad_service.py` centraliza validação/exportação. Adaptadores constroem geometria; `cad_projects.py` e `recipes.py` persistem dados. `x3d_backend.py` seleciona local ou MCP; `x3d_validation.py` conserva a fronteira de validação. Rotas coordenam esses serviços.
+`cad_service.py` centraliza inspeção/exportação, adaptadores constroem sólidos, `cad_mechanics.py` verifica vínculos e `cad_projects.py` persiste revisões. Workers descartáveis têm memória/prazo configuráveis e fila/lock serializados. CAD/receitas usam `data/*.sqlite3`; sessões X3D ficam na memória. Não há contas ou propriedade por usuário.
 
-`cad_features.py` concentra os recursos mecânicos e acabamentos; `cad_threads.py` constrói filetes helicoidais segmentados e verifica sua geometria. `cad_mesh.py` controla o orçamento da prévia sem alterar STEP/STL. Os contratos compartilhados podem ser regenerados com `uv run python ../../scripts/generate-cad-schemas.py`. Veja [capacidades CAD](../../docs/cad-readiness.md) e [exemplos](../../examples/cad/README.md).
-
-CAD e receitas persistem em `data/*.sqlite3`. Sessões X3D ficam em memória; exporte um manifesto entre reinícios. Os bancos são compartilhados entre clientes, sem contas ou propriedade por usuário.
-
-Operações CAD nativas executam em workers descartáveis: `CAD_WORKER_MEMORY_MB=2048`, `CAD_WORKER_TIMEOUT_SECONDS=240`. Limite de memória/prazo encerra o cálculo e conserva o rascunho; veja [estabilidade](../../docs/audit-2026-10-08.md).
-
-Checks: `uv run ruff check .`, `uv run mypy src`, `uv run pytest`. Para testes CAD locais com proteção de memória/prazo, use o [executor limitado](../../scripts/run-cad-tests.py), conforme [testing.md](../../docs/testing.md). Testes MCP iniciam serviço isolado para conservar compatibilidade; não é requisito para a aplicação local.
+[Guia CAD](../../docs/cad.md) · [Guia X3D](../../docs/x3d.md) · [Arquitetura](../../docs/architecture.md) · [Testes](../../docs/testing.md).

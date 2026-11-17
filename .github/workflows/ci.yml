@@ -4,11 +4,26 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  UV_PYTHON: '3.12'
+  CAD_KERNEL_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  OMP_NUM_THREADS: '1'
 
 jobs:
   web:
     name: TypeScript (lint, typecheck, test)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -17,6 +32,7 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
       - run: npm ci
+      - run: npm run docs:check
       - run: npm run lint --workspace web
       - run: npm run typecheck
       - run: npm test
@@ -24,8 +40,9 @@ jobs:
       - run: test -x services/x3d-mcp/run.sh
 
   api:
-    name: API (lint, typecheck, test)
+    name: API (lint, typecheck)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: apps/api
@@ -43,14 +60,45 @@ jobs:
       - uses: astral-sh/setup-uv@v3
         with:
           version: "0.12.17"
-      - run: uv sync
+      - run: uv sync --frozen
       - run: uv run ruff check .
+      - run: uv run python -m unittest discover -s ../../scripts/tests
       - run: uv run mypy src
-      - run: uv run pytest
+
+  api-tests:
+    name: API tests (${{ matrix.group }}, ${{ matrix.shard }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        include:
+          - group: core
+            shard: 1/1
+          - group: cad
+            shard: 1/2
+          - group: cad
+            shard: 2/2
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - uses: astral-sh/setup-uv@v3
+        with:
+          version: "0.12.17"
+      - run: uv sync --project apps/api --frozen
+      - run: uv run --project apps/api python scripts/run-api-tests.py --group ${{ matrix.group }} --shard ${{ matrix.shard }}
 
   browser:
     name: Browser (CAD and X3D engines)
     runs-on: ubuntu-latest
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
         with:
@@ -63,18 +111,45 @@ jobs:
         with:
           version: "0.12.17"
       - run: npm ci
-      - run: uv sync --project apps/api
+      - run: uv sync --project apps/api --frozen
       - run: npx playwright install --with-deps chromium
-      - run: npm run test:browser
+      - run: npm run test:browser -- --project cad-x3d
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
           name: browser-failures
           path: test-results/
+          retention-days: 7
+
+  browser-three:
+    name: Browser Three.js (${{ matrix.shard }}/3)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        shard: [1, 2, 3]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:browser:three -- --shard=${{ matrix.shard }}/3
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: three-failures-${{ matrix.shard }}
+          path: test-results/
+          retention-days: 7
 
   domain-python:
     name: domain-python (lint, typecheck, test)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: packages/domain/python
@@ -83,7 +158,7 @@ jobs:
       - uses: astral-sh/setup-uv@v3
         with:
           version: "0.12.17"
-      - run: uv sync
+      - run: uv sync --frozen
       - run: uv run ruff check .
       - run: uv run mypy src
       - run: uv run pytest

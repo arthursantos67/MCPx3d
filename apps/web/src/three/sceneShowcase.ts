@@ -62,7 +62,7 @@ export function buildValleyScene() {
       color: '#aba99b', surface: { texture: 'rock', textureScale: 5, roughness: 0.95 }, geometry: { variant: 'dodecahedron', detail: 2, bevel: 0.14, seed: i * 13 + 1 }, rotation: [0, i * 31 - 160, 0] })
   }
   const scene = expandSceneRecipe({ name: 'Vale dos Ventos', background: '#c6d8dd', exposure: 1.05, lightIntensity: 1.45, duration: 24,
-    environment: { sky: 'day', sunElevation: 32, sunAzimuth: 125, fog: 0.0012, bloom: 0.12, ambientOcclusion: true, toneMapping: 'agx',
+    environment: { sky: 'day', gameplay: { hud: 'full' }, sunElevation: 32, sunAzimuth: 125, fog: 0.0012, bloom: 0.12, ambientOcclusion: true, toneMapping: 'agx',
       player: { spawn: [0, 10, 29], yaw: 0, speed: 5, jumpHeight: 1.1, mode: 'walk', allowFly: true, health: 100, camera: 'first' },
       objective: { type: 'collectAll', title: 'Encontre os 7 cristais e chegue ao moinho', timeLimit: 0 } },
     roads: [{ name: 'Caminho do moinho', points: [[0, 32], [-1, 19], [1, 7], [-2, -5], [1, -17], [-5, -21], [-5, -30], [0, -34]], width: 3, texture: 'sand', onto: 'ground' },
@@ -94,7 +94,7 @@ export function createArchitectureScene() {
   const single={mode:'linear',count:1,offset:[0,0,0],radius:0,axis:'y'}
   const node=(id:string,kind:NodeKind,position:Vector3Tuple,patch:Record<string,unknown>={})=>({...createNode(kind),id,name:id,position,color:'#d7d0bc',metalness:0,roughness:0.85,repeat:single,...patch})
   return expandSceneRecipe({name:'Casa do artesão',background:'#bed3e3',exposure:1,lightIntensity:1.1,duration:12,
-    environment:{sky:'day',sunElevation:42,sunAzimuth:220,fog:0.001,bloom:0.08,ambientOcclusion:true,toneMapping:'agx',
+    environment:{sky:'day',gameplay:{hud:'full'},sunElevation:42,sunAzimuth:220,fog:0.001,bloom:0.08,ambientOcclusion:true,toneMapping:'agx',
       player:{spawn:[0,0.22,7.3],yaw:0,speed:3.5,jumpHeight:1,mode:'walk',allowFly:true,health:100,camera:'first'},
       objective:{type:'explore',title:'Explore a casa, suba a escada e visite a varanda',timeLimit:0}},
     nodes:[node('jardim','plane',[0,-0.01,0],{dimensions:[48,0.01,48],color:'#c3cbb1',surface:{texture:'grass',textureScale:24}}),

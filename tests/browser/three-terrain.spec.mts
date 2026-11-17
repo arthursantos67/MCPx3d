@@ -11,7 +11,7 @@ const node=(id:string,kind:Parameters<typeof createNode>[0],position:number[],pa
 const prefab=(type:string,patch={})=>({type,size:1,seed:5,primary:null,secondary:null,text:'',lit:true,interactive:true,...patch})
 function recipe(biome='meadow',floors=2,roads=true) {
   return {name:'Clareira habitável',background:'#cbdce2',exposure:1,lightIntensity:1.2,duration:12,
-    environment:{sky:'day',sunElevation:38,ambientOcclusion:true,bloom:0.05,toneMapping:'agx',objective:{type:'collectAll',title:'Encontre os sete cristais',timeLimit:0}},
+    environment:{sky:'day',gameplay:{hud:'full'},sunElevation:38,ambientOcclusion:true,bloom:0.05,toneMapping:'agx',objective:{type:'collectAll',title:'Encontre os sete cristais',timeLimit:0}},
     nodes:[node('ground','terrain',[0,0,0],{dimensions:[80,6,70],geometry:{...createNode('terrain').geometry,segments:64,biome,seed:84}}),
       node('home','group',[-18,0,0],{prefab:prefab('house',{building:{style:'townhouse',floors,width:9.4,depth:9,furnished:true}}),repeat:{...single,onto:'ground'}}),
       node('tree','group',[18,0,4],{prefab:prefab('tree'),repeat:{...single,onto:'ground'}}),

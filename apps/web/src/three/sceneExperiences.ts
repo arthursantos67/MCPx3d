@@ -7,7 +7,7 @@ import { styleCrypt } from './sceneCryptArt.ts'
 const single={mode:'linear',count:1,offset:[0,0,0],radius:0,axis:'y'}
 const node=(id:string,kind:NodeKind,position:Vector3Tuple,dimensions:Vector3Tuple,patch:Record<string,unknown>={})=>({...createNode(kind),id,name:id,position,dimensions,color:'#9aaebc',metalness:0.45,roughness:0.65,repeat:single,...patch})
 const asset=(id:string,type:string,position:Vector3Tuple,patch:Record<string,unknown>={})=>node(id,'group',position,[1,1,1],{prefab:{type,size:1,seed:5,primary:null,secondary:null,text:'',lit:true,interactive:true},...patch})
-const environment=(title:string,type:'explore'|'defeatEnemies'|'reachGoal',spawn:Vector3Tuple)=>({sky:'studio',shadows:true,ambientOcclusion:true,bloom:0.12,toneMapping:'agx',objective:{type,title,timeLimit:0},player:{spawn,yaw:0,speed:4.5,jumpHeight:1.1,mode:'walk',allowFly:false,health:100,camera:'first'}})
+const environment=(title:string,type:'explore'|'defeatEnemies'|'reachGoal',spawn:Vector3Tuple)=>({sky:'studio',gameplay:{hud:'full'},shadows:true,ambientOcclusion:true,bloom:0.12,toneMapping:'agx',objective:{type,title,timeLimit:0},player:{spawn,yaw:0,speed:4.5,jumpHeight:1.1,mode:'walk',allowFly:false,health:100,camera:'first'}})
 const scene=(name:string,nodes:unknown[],env:Record<string,unknown>)=>expandSceneRecipe({name,nodes,environment:env,background:'#18212e',exposure:1.1,lightIntensity:1.2,duration:12})
 
 /** A neutral starting workspace: no story, biome, houses, combat or mandatory game objective. */

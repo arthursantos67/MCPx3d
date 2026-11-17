@@ -1151,7 +1151,7 @@ export default function ThreeViewport({ document, world = null, selectedId, acti
     }
     const up = (event: PointerEvent) => {
       dragLook = null
-      if(game){const start=gamePointerStart;gamePointerStart=null;if(start&&!game.locked&&!game.paused&&!game.inventory&&Math.hypot(event.clientX-start[0],event.clientY-start[1])<4){if(start[2]===2)attack(game,true);else if(game.resourceAim)attack(game);else act()}return}
+      if(game){const start=gamePointerStart;gamePointerStart=null;if(start&&!game.paused&&!game.inventory&&Math.hypot(event.clientX-start[0],event.clientY-start[1])<4){if(start[2]===2)attack(game,true);else if(game.resourceAim)attack(game);else act()}return}
       const start = pointerStart
       pointerStart = null
       if (game || !start || !built || Math.hypot(event.clientX - start[0], event.clientY - start[1]) > 4) return

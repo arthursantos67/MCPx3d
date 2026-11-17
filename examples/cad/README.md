@@ -1,59 +1,26 @@
 # Exemplos CAD
 
-Os arquivos STEP contêm sólidos B-rep; STL contém malha em milímetros. Os documentos `.FCStd` históricos guardam sólidos importados. O histórico paramétrico editável pertence aos specs e revisões do Forma, não aos arquivos importados no FreeCAD.
+Os arquivos JSON são projetos/receitas para importar, inspecionar e editar. STEP/STL são gerados sob demanda, sem guardar resultados de uma máquina no repositório.
 
-## Conjunto composto
+| Exemplo | Conteúdo |
+|---|---|
+| [parametric-flange.json](parametric-flange.json) | Flange por medidas |
+| [construction_program.json](construction_program.json) | Programa com perfil, ressalto e furo |
+| [pipe_bend.json](pipe_bend.json) | Curva tubular por arco |
+| [helical_spring.json](helical_spring.json) | Mola helicoidal |
+| [sweep.json](sweep.json) | Tubo em trajetória segmentada |
+| [mechanical_mount.json](mechanical_mount.json) | Suporte com furos, rosca e acabamentos |
+| [threaded_drive.json](threaded_drive.json) | Corpos com rosca real e movimento vinculado |
+| [threaded_blind_mount.json](threaded_blind_mount.json) | Passagens/rebaixos e base com roscas cegas M4 |
+| [manual_press.json](manual_press.json) | Conceito geométrico de prensa com três corpos |
+| [functional_linear_stage.json](functional_linear_stage.json) | Conjunto com fuso Tr12×3, guias, mancais e vínculos |
 
-- [threaded_blind_mount.json](threaded_blind_mount.json): suporte com passagens/rebaixos e base com duas roscas cegas M4×0,7, vínculo `threaded`, engate útil e face inferior fechada. Importar/Verificar montagem valida antes de salvar. Fixadores são requisitos declarados, sem sólidos ou dimensionamento de resistência.
+Na interface CAD, importe o contrato correspondente, confira o diagnóstico e valide/salve para liberar os arquivos da revisão. Um conceito sem `mechanics` não recebe aprovação mecânica. Fixadores/adesivos são requisitos declarados, sem cálculo de carga ou certificação de fabricação.
 
-- [functional_linear_stage.json](functional_linear_stage.json) e [STEP](functional_linear_stage.step): atuador de oito corpos com Tr12×3 real, duas guias, mancais, volante removível, retenção axial e 12 vínculos mecânicos verificados. `generate_functional_sample.py` verifica o conjunto e reimporta STEP antes de escrever o arquivo. Os fixadores e adesivos declarados precisam ser instalados; o exemplo não dimensiona carga ou fabricação. Consulte [o perfil, a sequência proposta e os requisitos de montagem](../../docs/mechanical-assemblies.md).
-
-- [manual_press.json](manual_press.json): prensa simplificada com estrutura, fuso/haste e prato, três corpos independentes e movimento vinculado.
-- [manual_press.step](manual_press.step): conjunto com três sólidos validados após reimportação.
-- [manual_press.stl](manual_press.stl): malha dos mesmos corpos, 1.888 triângulos.
-
-Para reproduzir, em `apps/api`:
+Os scripts `generate_*.py` constroem exemplos usando a API. Execute da raiz, por exemplo:
 
 ```bash
-uv run python ../../examples/cad/generate_assembly_sample.py
+uv run --project apps/api python examples/cad/generate_assembly_sample.py
 ```
 
-O script verifica geometria, interferências em amostras do curso e STEP reimportado antes de escrever os arquivos. É um exemplo geométrico: não representa rosca real, resistência, tolerâncias ou projeto mecânico aprovado.
-
-Na interface, use **Projeto livre** para um pedido novo ou **Conjunto composto** para uma montagem explícita. Propostas aprovadas são salvas e liberam STEP/STL completos e por componente. Ajustar curso ou posição exige salvar uma nova revisão.
-
-## Peça com programa livre
-
-### Recursos mecânicos e roscas
-
-- [pipe_bend.json](pipe_bend.json): curva tubular com arco real, diâmetros e raio da linha central explícitos.
-- [helical_spring.json](helical_spring.json): mola de arame circular com hélice real e sentido declarado; extremidades abertas.
-- [sweep.json](sweep.json): seção tubular varrida em trajetória 3D segmentada. Os pontos são coordenadas locais do recurso.
-
-Os três programas 3.0 podem ser inspecionados pela rota `/api/cad/programs/inspect`; os recursos também estão disponíveis no agente e no editor. [Escopo, fidelidade STEP e limites](../../docs/project-improvements-2026-10-08.md).
-
-- [mechanical_mount.json](mechanical_mount.json): suporte com arredondamento, chanfro, loft, rasgo, dois furos rebaixados e rosca interna M12 × 1,75.
-- [mechanical_mount.step](mechanical_mount.step) e [mechanical_mount.stl](mechanical_mount.stl): um sólido, limites de 100 × 70 × 29 mm, 113.970 triângulos no STL; prévia com 18.236 triângulos.
-- [threaded_drive.json](threaded_drive.json): pedestal separado, haste com cabeça sextavada e rosca M12 × 2, porca com folga radial de 0,15 mm. Rotação da haste e translação da porca compartilham um comando; o curso de ±2,3 mm inclui frações do passo para verificar o encaixe.
-- [threaded_drive.step](threaded_drive.step) e [threaded_drive.stl](threaded_drive.stl): três sólidos reimportados e validados, 64.576 triângulos no STL; prévia com 9.984 triângulos.
-- `generate_feature_samples.py`: valida STEP reimportado, interferências amostradas e prévia, e escreve STEP/STL dos dois exemplos. Execute em `apps/api`: `uv run python ../../examples/cad/generate_feature_samples.py`.
-
-São exemplos geométricos sem certificação de classe de ajuste, resistência ou fabricação. O pedestal do segundo exemplo está ao lado do mecanismo para servir de corpo fixo; não é um suporte funcional de bancada. O mecanismo completo pode ser solicitado usando os [prompts de teste](../../docs/cad-prompts.md).
-
-[construction_program.json](construction_program.json) e [construction_program.step](construction_program.step) descrevem uma peça conectada com perfil extrudado, ressalto e furo transversal. `check_construction_program_freecad.py` preserva o verificador independente usado no marco histórico.
-
-## Peças históricas
-
-| Arquivo | Geometria |
-|---|---|
-| `mounting_plate.step` / `.FCStd` | Placa 120 × 80 × 10 mm, furos e chanfros |
-| `mounting_bracket.step` / `.FCStd` | Suporte em L 120 × 80 × 70 mm com furos |
-| `rounded_plate.step` / `.FCStd` | Placa com cantos arredondados e furos |
-| `round_flange.step` / `.FCStd` | Flange circular com furo central e furos de fixação |
-| `composite_mount.step` / `.FCStd` | Placa com ressalto unido e furos |
-
-Os scripts `generate_*`, `create_*_freecad_*` e `check_*_freecad*` reproduzem a geração e os checks históricos. A API mantém os contratos 2.x, mas os editores de moldes foram retirados; projetos novos usam programa 3.0 ou conjunto 4.0.
-
-No FreeCAD, abra o STEP ou documento nativo, escolha uma vista axonométrica e **Ajustar tudo**. Para mover um corpo importado, selecione-o na árvore e use **Transformar** no menu de contexto.
-
-[Capacidades e limites atuais](../../docs/cad-readiness.md) · [Verificações desta reorganização](../../docs/verification.md).
+Executam geometria nativa: rode um por vez. Os arquivos exportados são ignorados pelo Git. [Guia CAD](../../docs/cad.md) · [Contratos](../../packages/domain/README.md).
