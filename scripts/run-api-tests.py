@@ -26,7 +26,8 @@ def main() -> int:
     files = sorted((root / "apps" / "api" / "tests").glob("test_*.py"))
     if args.group != "all":
         files = [path for path in files if path.name.startswith("test_cad_") == (args.group == "cad")]
-    files = files[index - 1::total]
+    if not args.isolate_cases:
+        files = files[index - 1::total]
     if not files:
         parser.error("The selection contains no test files")
     env = {**os.environ, "CAD_KERNEL_THREADS": "1", "OPENBLAS_NUM_THREADS": "1", "OMP_NUM_THREADS": "1"}
@@ -48,6 +49,10 @@ def main() -> int:
             selections.extend(cases)
         else:
             selections.append(str(path))
+    if args.isolate_cases:
+        selections = selections[index - 1::total]
+    if not selections:
+        parser.error("The shard contains no test selections")
     for selection in selections:
         print(f"\nRunning {selection}", flush=True)
         process = subprocess.Popen(
