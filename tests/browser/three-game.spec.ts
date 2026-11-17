@@ -1,4 +1,4 @@
-import { openAdvancedEditor, projectAction, leaveGame } from './threeHelpers.ts'
+import { openAdvancedEditor, projectAction, leaveGame, waitForSceneReady } from './threeHelpers.ts'
 import { expect, test, type Page } from '@playwright/test'
 import { readFile } from 'node:fs/promises'
 import { createEmptyScene, createNode, validateScene } from '../../apps/web/src/three/sceneDocument.ts'
@@ -69,11 +69,14 @@ test('the playable island renders with sky, lights and post-processing, and expo
 })
 
 test('play mode walks, collects, opens doors with E, fires key triggers and never mutates the document', async ({ page }) => {
+  // Four software WebGL readbacks and an editor rebuild precede the round trip.
+  test.setTimeout(180_000)
   const errors: string[] = []
   await open(page, errors)
   const doc = arena()
   await load(page, doc)
   const original = await exported(page)
+  await waitForSceneReady(page)
   await page.keyboard.press('p')
   const hud = page.getByRole('region', { name: 'Modo jogo' })
   await expect(hud.getByLabel('Itens coletados')).toHaveText('Itens 1/1')
@@ -95,6 +98,7 @@ test('play mode walks, collects, opens doors with E, fires key triggers and neve
   await expect(hud).toContainText('Voo livre')
   await leaveGame(page)
   await expect(hud).toBeHidden()
+  await waitForSceneReady(page)
   expect(await exported(page)).toEqual(original)
   expect(errors).toEqual([])
 })
