@@ -1,27 +1,16 @@
-# Documentação atual
+# Documentação do Forma
 
-- [Bancada paramétrica CAD — 2026-11-06](cad-parametric-workbench.md): cinco famílias construídas por medidas sem IA, validação dimensional/volumétrica e correção de detalhes pequenos em peças grandes.
+| Quero… | Consulte |
+|---|---|
+| Instalar, abrir e conhecer os três workspaces | [README](../README.md) |
+| Entender requisitos, contratos e limites | [PRD](../PRD.md) |
+| Criar peças e conjuntos; recuperar rascunhos | [CAD](cad.md) |
+| Criar cenas e preservar projetos X3D | [X3D](x3d.md) |
+| Editar, jogar e exportar cenas/mundos | [Three.js](threejs.md) |
+| Configurar um modelo e resolver conexão/quota | [Provedores de IA](ai-providers.md) |
+| Entender pacotes, dados e motores | [Arquitetura](architecture.md) |
+| Executar verificações e testes | [Desenvolvimento e testes](testing.md) |
+| Usar o servidor MCP opcional | [Biblioteca X3D e MCP](x3d-mcp.md) |
+| Abrir exemplos de programas e conjuntos | [Exemplos CAD](../examples/cad/README.md) |
 
-- [Mundos vastos — Three.js 0.7](threejs-worlds.md): medição reproduzível, linha de base, contrato ThreeWorldDocument 2.0, terreno em blocos com LOD de 1 px, streaming em workers e colisão.
-- [Personagens e skins — Three.js 0.6](threejs-characters-hud.md): implementação atual, avatar, dedos, face, LOD, cache e exportação de esqueletos/clipes.
-
-- [Correções de movimento e combate — Three.js 0.6](threejs-motion-fixes.md): giro ao recuar, combos, escalada, equipamento, contato dos golpes e medição da IK.
-- [Desempenho do runtime Three.js](threejs-performance.md): causas medidas dos travamentos, pré-compilação de shaders, sombras, descarte da vegetação, custo de CPU por quadro e resultados.
-
-- [Mundos vivos — Three.js 0.5](threejs-living-worlds.md): contrato 1.3, personagens com rig, combate, inventário, NPCs, áudio sintetizado, clima e gradação.
-- [Estúdio Three.js](threejs-studio.md): modo jogo, interações, atalhos/gizmos, céu e pós-processamento, geometrias/terreno/luzes, GLB, edição/reparo contextual, animações e inspeção espacial.
-
-- [Melhorias gerais — continuação de 2026-10-08](project-improvements-2026-10-08.md): cancelamento, recursos compartilhados, curvas/molas/sweeps, acabamentos locais e avaliação com IA real.
-
-- [Fidelidade e estabilidade — 2026-10-08](audit-2026-10-08.md): fundos cegos, base roscada, engrenagens/cremalheiras, proteção de memória e medição de confiabilidade.
-- [Arquitetura](architecture.md): responsabilidades, agentes, motores e persistência.
-- [Auditoria de 2026-10-06](audit-2026-10-06.md): causas corrigidas, reprodução da interferência base/fuso e limites restantes.
-- [Provedores de IA](ai-providers.md): assinaturas Codex/Claude Code, endpoint externo e diagnóstico.
-- [Capacidades CAD](cad-readiness.md): formatos, verificações e limites.
-- [Vínculos mecânicos](mechanical-assemblies.md): fixações, apoios, guias, transmissão e atuador reproduzível.
-- [Prompts CAD](cad-prompts.md): testes de roscas, acabamentos, carcaças e mecanismos com movimentos ligados.
-- [Testes](testing.md): comandos e alcance das verificações.
-- [Biblioteca X3D e MCP opcional](x3d-mcp.md): dependência fixada e modos de operação.
-- [Histórico](archive/README.md): PRD, planejamento e auditorias anteriores.
-
-Contrato atual: [PRD.md](../PRD.md). Trabalho restante: [ISSUES.md](../ISSUES.md). Marcos até a 1.0: [ROADMAP.md](../ROADMAP.md).
+A API em execução expõe a referência interativa em [http://127.0.0.1:8001/docs](http://127.0.0.1:8001/docs). Variáveis de ambiente: [API](../apps/api/.env.example), [frontend](../apps/web/.env.example).

@@ -1,7 +1,7 @@
 [project]
 name = "domain"
 version = "0.1.0"
-description = "Shared ModelSpec/ModelPlan Python types (PRD §8)"
+description = "Shared CAD and X3D contracts and domain validation"
 readme = "README.md"
 authors = [
     { name = "Arthur Santos", email = "arthursantos.homeoffice@gmail.com" }

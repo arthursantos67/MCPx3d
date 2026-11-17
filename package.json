@@ -2,6 +2,9 @@
   "name": "ai-web3d-modeler",
   "private": true,
   "version": "0.6.0",
+  "engines": {
+    "node": "24.x"
+  },
   "workspaces": [
     "apps/web",
     "packages/agent",
@@ -11,6 +14,8 @@
     "dev": "node scripts/dev.mjs",
     "dev:api": "node scripts/run-api.mjs",
     "test:browser": "playwright test",
+    "test:browser:three": "playwright test --config playwright.three.config.ts",
+    "docs:check": "node scripts/check-docs.mjs",
     "test:cad:parametric": "node scripts/test-cad-parametric.mjs",
     "build": "npm run build --workspace web",
     "dev:web": "npm run dev --workspace web",

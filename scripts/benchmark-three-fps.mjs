@@ -7,7 +7,7 @@
 // "gpu" renders at the quality's pixel ratio; "cpu" lowers the internal resolution to 0.25 to isolate main-thread cost.
 import { spawn, execFileSync } from 'node:child_process'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
-import { cpus, totalmem, release } from 'node:os'
+import { cpus, totalmem, release, platform } from 'node:os'
 import { dirname, resolve } from 'node:path'
 import { chromium } from '@playwright/test'
 
@@ -32,7 +32,7 @@ const label = option('label', 'run'), port = Number(option('port', 5190))
 const phaseTimeout = Number(option('timeout', 300_000))
 const attempts = Number(option('attempts', 3))
 const out = resolve(option('out', `.cache/benchmark-three/${label}.json`)), compare = option('compare', null)
-const chrome = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE ?? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
+const chrome = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE
 const ratios = { gpu: null, cpu: 0.25 }
 const viewport = { width: 1920, height: 1080 }
 
@@ -61,7 +61,7 @@ async function launch() {
   // Headless Chrome keeps the real GPU (ANGLE/D3D11) and a steady vsync, and no other window can occlude or minimise
   // it; `--headed` shows the window instead.
   return chromium.launch({ executablePath: chrome, headless: !flag('headed'),
-    args: ['--use-angle=d3d11', '--enable-gpu', '--ignore-gpu-blocklist', '--enable-gpu-rasterization', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows', '--disable-features=CalculateNativeWinOcclusion', `--window-size=${viewport.width},${viewport.height + 120}`] })
+    args: [...(process.platform === 'win32' ? ['--use-angle=d3d11'] : []), '--enable-gpu', '--ignore-gpu-blocklist', '--enable-gpu-rasterization', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows', '--disable-features=CalculateNativeWinOcclusion', `--window-size=${viewport.width},${viewport.height + 120}`] })
 }
 
 async function hardware(browser) {
@@ -76,7 +76,7 @@ async function hardware(browser) {
   if (/swiftshader|llvmpipe|software|basic render/i.test(gpu.renderer)) throw new Error(`Renderer por software (${gpu.renderer}); o benchmark exige GPU real.`)
   let gpuName = null
   try { gpuName = execFileSync('nvidia-smi', ['--query-gpu=name,driver_version,memory.total', '--format=csv,noheader'], { encoding: 'utf8' }).trim() } catch { /* not NVIDIA */ }
-  return { gpu, gpuDriver: gpuName, cpu: cpus()[0].model, threads: cpus().length, memoryGiB: round(totalmem() / 2 ** 30, 1), os: `Windows ${release()}`, chrome: browser.version(), viewport }
+  return { gpu, gpuDriver: gpuName, cpu: cpus()[0].model, threads: cpus().length, memoryGiB: round(totalmem() / 2 ** 30, 1), os: `${platform()} ${release()}`, chrome: browser.version(), viewport }
 }
 
 async function measure(url, scene, mode) {

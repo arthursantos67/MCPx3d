@@ -36,7 +36,8 @@ test('organic skin gallery renders and exports portable skeletons, colors and ch
   await page.screenshot({ path: '.cache/browser/three-skins-gallery.png' })
   const original = JSON.parse((await download(page, 'Exportar JSON')).toString())
   const glb = await download(page, 'Exportar GLB'), json = JSON.parse(glb.subarray(20, 20 + glb.readUInt32LE(12)).toString())
-  expect(json.skins).toHaveLength(organic.length)
+  // Clothing and body meshes may export separate skin bindings to the same rig.
+  expect(new Set(json.skins.map((skin: { skeleton: number }) => skin.skeleton)).size).toBe(organic.length)
   expect(json.meshes.some((mesh: { primitives: { attributes: Record<string, number> }[] }) => mesh.primitives.some((primitive) => primitive.attributes.JOINTS_0 !== undefined && primitive.attributes.WEIGHTS_0 !== undefined && primitive.attributes.COLOR_0 !== undefined))).toBe(true)
   expect(json.animations.map((animation: { name: string }) => animation.name)).toEqual(expect.arrayContaining(['Personagens · caminhada', 'Personagens · ociosidade']))
   const parsed = await page.evaluate(async (bytes) => {
@@ -68,7 +69,7 @@ test('organic skin gallery renders and exports portable skeletons, colors and ch
 test('skinned avatar and NPC dialogue survive camera changes, quality changes and restarting play', async ({ page }) => {
   test.setTimeout(120_000)
   const errors = await open(page), doc = expandSceneRecipe({ name: 'Peles no jogo', background: '#dce3ea', exposure: 1, lightIntensity: 1.5, duration: 8,
-    environment: { sky: 'studio', motion: { wind: 0, grass: 'none', fauna: 'none' }, player: { spawn: [0, 0, 0], yaw: 0, speed: 3, jumpHeight: 1, mode: 'walk', avatar: 'wizard', weapon: 'staff', camera: 'third' } },
+    environment: { sky: 'studio', gameplay: { hud: 'full' }, motion: { wind: 0, grass: 'none', fauna: 'none' }, player: { spawn: [0, 0, 0], yaw: 0, speed: 3, jumpHeight: 1, mode: 'walk', avatar: 'wizard', weapon: 'staff', camera: 'third' } },
     nodes: [{ ...createNode('box'), id: 'floor', color: '#c5ccd4', metalness: 0, roughness: 0.8, dimensions: [12, 0.2, 12], position: [0, -0.1, 0], repeat },
       { ...actor('Guia', 'villager', [0, 0, -2.2]), behavior: { type: 'npc', speed: 0, range: 4, damage: 0, reaction: 'ignore' }, interaction: { trigger: 'click', key: '', radius: 4, action: 'dialogue', targetId: null, message: 'A pele acompanha o personagem.' } }] })
   await load(page, doc)

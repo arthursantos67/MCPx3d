@@ -1,147 +1,158 @@
-# Forma — requisitos atuais
+# Forma — requisitos do produto
 
-Baseline de 2026-10-02. Substitui o PRD histórico de Web3D v1, preservado em [docs/archive](docs/archive/README.md). Atualização de 2026-10-13: o produto tem dois agentes independentes, CAD e X3D, e uma terceira área de edição visual Three.js, jogável em primeira pessoa desde 2026-10-14.
+## 1. Propósito
 
-## Resultado esperado
+Forma é um estúdio de criação 3D que combina linguagem natural, edição visual e validação determinística. O repositório MCPx3d contém uma interface web, uma API local e pacotes compartilhados. O produto oferece três workspaces independentes: CAD para sólidos e conjuntos, X3D para cenas declarativas e Three.js para cenas animadas e mundos interativos.
 
-O usuário descreve uma peça ou um conjunto composto, acompanha sua construção, inspeciona a geometria e baixa STEP e STL. Em outra área, descreve e modifica cenas X3D, visualiza o resultado e baixa os artefatos validados.
+O resultado esperado é um projeto editável e exportável, com indicação clara de aprovação, avisos e limites. A IA propõe estruturas JSON; os motores da aplicação decidem se os contratos e a geometria são válidos.
 
-## CAD
+## 2. Usuários e tarefas
 
-- Ampliação geral (continuação de 2026-10-08): curvas de tubo por arco, molas helicoidais reais e seções circulares/anulares por trajetória segmentada entram no catálogo, editor e schemas. Chanfros/arredondamentos podem filtrar centros de arestas por região. Reparos conservam recursos funcionais, terminação dos furos e fundo mínimo; nomes de operações e campos literais explicitamente pedidos são conferidos antes do kernel. Desconexão HTTP sinaliza cancelamento e encerra o worker; bloqueio de arquivo limita a uma operação nativa entre processos da API que compartilham o mesmo caminho. Medições reais e alcance em [docs/project-improvements-2026-10-08.md](docs/project-improvements-2026-10-08.md).
+| Perfil | Tarefa | Resultado |
+|---|---|---|
+| Pessoa que precisa de uma peça | Descrever dimensões ou usar um modelo paramétrico | Sólido inspecionado e arquivo STEP/STL |
+| Pessoa que compõe mecanismos | Planejar corpos, posições, movimentos e vínculos | Conjunto com diagnóstico geométrico/mecânico e exportação por componente |
+| Pessoa que cria cenas | Descrever, editar e reutilizar objetos | Cena X3D validada e manifesto reimportável |
+| Pessoa que cria experiências | Compor objetos, terreno, personagens e regras | Projeto Three.js editável, explorável e exportável |
+| Desenvolvedor | Integrar provedores e motores, alterar contratos | Schemas compartilhados e verificações reproduzíveis |
 
-- Fidelidade e estabilidade (2026-10-08): furos/roscas internas declaram término cego/passante e fundo mínimo, verificados no sólido final. Preparação conserva profundidade; reparos não atravessam receptores explicitamente cegos. Fixação em rosca métrica aceita suporte passante/base cega, com engate útil e pelo menos dois fixadores. Prisma regular, engrenagem reta evolvente e cremalheira integram agente/editor/schema. Benchmark de 12 pedidos distingue validade e requisitos, sem afirmar 99% antes de medir. Detalhes em [docs/audit-2026-10-08.md](docs/audit-2026-10-08.md).
+## 3. Escopo e fronteiras
 
-- No editor, o furo inicial conserva passagem simples se não houver stock conhecido suficiente para o alojamento M5, sem escolher outro parafuso. A escolha explícita de alojamento/preset continua disponível e sujeita à validação.
-- Encaixes podem referenciar um padrão linear ou circular de furos receptores quando cada eixo individual corresponde a exatamente uma instância coaxial. Engate, folga e material são verificados nessa instância, nas poses aplicáveis. Padrões de eixos positivos e correspondências ambíguas continuam exigindo recursos individuais.
-- Fixações parafusadas reconhecem rebaixos/escareados reais: a prova de material usa o raio do perfil na profundidade consultada, verifica passagem e assento e recusa alojamentos preenchidos, sem parede ou sem fundo de apoio. O rebaixo não é tratado como desaparecimento indevido da parede do furo simples.
-- Trabalho nativo é enfileirado por processo da API: uma requisição CAD por vez, espera de até 60 s e resposta de ocupação sem correção paga. Um bloqueio de arquivo adicional serializa workers entre processos que compartilham `CAD_WORKER_LOCK_PATH`, com espera de até `CAD_WORKER_QUEUE_TIMEOUT_SECONDS` (60 s). OpenCascade usa duas threads por padrão, configuráveis entre uma e oito. Saúde e provedor de IA não entram nessa fila. Workers têm teto padrão de 2.048 MB, prazo de 240 s e são encerrados ao detectar desconexão HTTP. Checkouts com caminhos de bloqueio diferentes e máquinas diferentes não compartilham esse teto.
-- Qualidade e limites por ação (2026-10-07): conjuntos de três ou mais peças passam por uma revisão adicional antes da construção, com cálculos de eixos, engate, paredes e acesso à montagem. A interface compartilha um orçamento global: criação/edição até 20 chamadas de IA, 48 verificações distintas e 20 minutos; correção de montagem até 5 chamadas, 16 verificações e 4 minutos. Dois candidatos repetidos interrompem o reparo. Identidade canônica ignora a ordem dos campos JSON e um cache limitado reutiliza inspeções. O prazo do cliente encerra a ação/requisição; o prazo independente do backend encerra o worker nativo.
-- STL tem limite próprio de 64 MB (`MAX_CAD_STL_BYTES`), mantendo os 10 MB de STEP/X3D. A malha usa deflexão linear absoluta configurada de 0,1 mm e até quatro tolerâncias angulares: 0,1/0,2/0,35/0,5 rad, começando pela mais fina. Cabeçalhos/relatório informam a configuração aplicada. Rascunhos usam ZIP de até 128 MB (`MAX_CAD_DRAFT_BUNDLE_BYTES`); se só o STL não couber, conservam STEP e registram sua omissão.
-- Alojamentos reais para cabeças: furos simples, rebaixo cilíndrico e escareado, com presets de cabeça cilíndrica M3–M10. Furos novos em blocos/cilindros alinhados começam na face externa. A preparação de peças novas pode ampliar blocos inferidos para conservar parede e expor entradas, inclusive em padrões coplanares; não amplia um eixo que enterraria furos roscados existentes. A inspeção identifica rebaixos enterrados ou sem assento em blocos simples. Referência, limites e resultados reais em [docs/cad-generation-quality.md](docs/cad-generation-quality.md).
+- A aplicação interpreta dados tipados. Respostas de IA não são executadas como código, comandos, HTML ou XML.
+- CAD, X3D e Three.js compartilham configuração e navegação, mas conservam contratos e motores distintos. Não há conversão automática de cena para sólido CAD.
+- O modo padrão usa API local e biblioteca X3D incorporada por submódulo. Um servidor MCP é opcional.
+- Three.js deve permitir editar, reproduzir e jogar sem API e sem IA. A geração por conversa depende do provedor selecionado.
+- A instalação é destinada a uso privado. A API não possui autenticação multiusuário nem isolamento de projetos por conta.
 
-- Recuperação e exportação de rascunhos (2026-10-07): a falha de uma peça não deve inutilizar a geometria já construída. A interface oferece **Baixar rascunho STEP/STL (ZIP)** sem exigir aprovação do conjunto. O pacote contém sólidos válidos reimportados de STEP, STL derivado desse STEP, receita original e relatório de componentes/etapas omitidos. Um acabamento impossível permite exportar somente o prefixo válido anterior; nenhuma omissão recebe aprovação funcional. Se nenhum sólido puder ser construído, permanece o JSON original. Essa exportação não cria revisão em SQLite nem altera a última revisão aprovada.
-- A criação continua após esgotar o reparo geométrico de um componente, conservando sua receita e construindo os restantes como rascunho. Quota, cancelamento e indisponibilidade interrompem imediatamente. A retomada na mesma aba corrige somente os corpos pendentes e reutiliza o plano e os corpos concluídos. O SDK permite optar por esse comportamento com `allowUnverifiedDrafts`; seu padrão legado permanece estrito.
-- A interface concede até três correções geométricas por programa em cada ação, com histórico dos candidatos rejeitados, uma recuperação de formato/contrato e, se necessário, preenchimento dos campos dimensionais ausentes. Respostas truncadas, quota e cancelamento não provocam essas retentativas. Esse orçamento é explícito na interface; o SDK sem essa opção conserva a política de seu provedor.
-- O planejamento preserva uma quantidade explícita de 2–8 peças e escolhe um referencial global único, com offsets locais separados da posição do componente. Cada construtor recebe eixos, centros e intervalos globais calculados das peças disponíveis e o equivalente no seu referencial local. Encaixes simples inferidos podem ser alinhados/alongados deterministicamente para atender ao engate nas seis poses, mantendo diâmetros, roscas e peças concluídas; o motor confirma o resultado. Coordenadas e dimensões explícitas bloqueiam os ajustes automáticos correspondentes. Componentes recebem orçamento de saída de 6.500 tokens, limitado também pelo provedor.
+## 4. Experiência compartilhada
 
-- Premissas e perguntas são metadados textuais separados da geometria. Seu comprimento ou quantidade não invalida uma peça/conjunto; os textos são preservados integralmente. Tipos de dados, limites de contexto/saída do provedor e todas as validações geométricas continuam obrigatórios.
+O usuário seleciona o workspace, configura a IA quando necessário e acompanha a ação em andamento. A interface deve distinguir inferência, construção, inspeção e salvamento; mostrar erros acionáveis; permitir cancelamento; e conservar o último estado válido após falha.
 
-- Uma peça usa `CadProgramSpec` 3.0: base, união, corte e acabamento, primitivas, perfis extrudados/de revolução, tubos, toros, rasgos arredondados, furos simples/rebaixados/escareados, lofts, arredondamentos, chanfros, cascas, roscas helicoidais, prismas regulares, engrenagens retas evolventes e cremalheiras. Padrões lineares/circulares repetem primitivas e cortes.
-- Chanfros/arredondamentos rejeitados recebem reparo específico: até três reduções locais de medidas inferidas, verificadas pelo motor, ou uma decisão focada de seleção/medida/ordem dentro do orçamento de IA do provedor. Medidas explícitas não são reduzidas, etapas e roscas permanecem presentes, e a retomada conserva as combinações já rejeitadas para não repetir a mesma correção. O diagnóstico informa quantidade de arestas e medida aplicada; `circular` seleciona também ressaltos, bordas de furos e transições de rosca.
-- Roscas externas e internas têm diâmetro nominal, passo, comprimento, perfil métrico de 60° ou trapezoidal de 30°, sentido direito/esquerdo, 1–4 entradas e folga radial interna. São geometria real nos arquivos; não certificam classes ISO de ajuste ou raízes arredondadas. Reparos não podem trocar uma rosca existente por um cilindro liso sem pedido explícito.
-- Um conjunto usa `CadAssemblySpec` 4.0: 2–8 corpos independentes, posições e movimentos lineares, rotativos ou de parafuso. O agente escolhe a representação para um pedido novo; uma edição conserva a representação existente.
-- A criação de conjuntos na interface exige vínculos mecânicos por padrão. `mechanics` declara a peça ancorada, caminhos de conexão, fixações e pares de recursos por ID. O motor verifica superfícies de montagem, furos de fixação, eixos globais, material de mancais, engate ao longo do curso, retenção axial e relação entre avanço da rosca e movimento. Um carro linear exige duas guias paralelas separadas; compartilhar um grupo de movimento não comprova fixação nem transmissão. Recursos mecânicos fora do perfil suportado não recebem aprovação funcional; sem alternativa verificável, a interface apresenta falha técnica.
-- **Verificar montagem** inspeciona sem inferência. Projetos antigos sem `mechanics` continuam acessíveis e recebem estado `unverified`, incluindo distâncias entre corpos fixos separados. **Corrigir montagem com IA** solicita um plano completo de vínculos/posições e reutiliza componentes não afetados. Falhas conservam o rascunho atual e impedem salvar uma revisão mecanicamente inválida. Desmarcar a verificação permite criar conceitos geométricos, identificados como sem verificação mecânica.
-- Fixações suportadas: contato plano com adesivo declarado; união adesiva eixo/furo com material e engate; montagem parafusada com contato plano e pelo menos dois furos passantes alinhados em padrão linear/circular; passagem em suporte e rosca métrica interna na base; captura geométrica com batentes translacionais e antirrotação. Fixadores comerciais e adesivos são requisitos de montagem declarados, sem modelagem automática nem dimensionamento de resistência. A verificação de vínculos é amostrada e não calcula cargas, desgaste, pré-carga, processo de fabricação ou sequência de instalação. O perfil atual aceita guias cilíndricas, mancais lisos e fuso rotativo estacionário com carro guiado; movimentos helicoidais de corpo e outros pares ainda exigem expansão explícita.
-- Grupos podem ligar movimentos de tipos diferentes por fatores explícitos: deslocamento/ângulo efetivo = comando × fator. Isso permite associar a rotação do fuso ao deslocamento da porca/carro. O vínculo é cinemático; não calcula forças nem contato físico.
-- Cada componente deve ser um sólido conectado e válido. O conjunto passa por verificação de interferências na posição atual e em cinco amostras do curso.
-- A validação TypeScript de programas/conjuntos aplica os schemas compartilhados além das regras geométricas, inclusive em JSON importado. Planos de movimento com grupos incompatíveis são recusados antes de gerar componentes. A construção recebe o histórico completo e os movimentos dos corpos já disponíveis.
-- A interface CAD usa `noQuestions=true` em criação, edição e reparo. O schema exclui `clarify`; se um cliente ainda devolver uma pergunta, o coordenador a resolve internamente com até duas respostas adicionais por etapa. O usuário não recebe perguntas nem pedidos de autorização. Decisões e aproximações ficam nas premissas; impossibilidade persistente termina em falha técnica, sem aceitar geometria inválida. Quota/cancelamento conservam o contexto da decisão e o progresso. O SDK mantém esclarecimento opcional para callers legados.
-- Dimensões inferidas pelo planejador são decisões ajustáveis, separadas das medidas explícitas do pedido original. O construtor deve resolver encaixes no componente atual, usando a geometria real dos corpos concluídos e registrando premissas. Eixos e engate em seis poses são conferidos contra as peças disponíveis antes de aceitar um componente. Diferença entre intervalos axiais não comprova colisão. Se a validação final exigir rever uma peça já concluída, a criação/edição pode fazer um único replanejamento seletivo, reutilizando componentes não afetados; o reparo direto de interferências conserva seu modo sem replanejamento.
-- Colisões presentes somente nas amostras do curso também podem receber reparos de encaixe. Para componentes móveis com cilindros/cones coaxiais, a correção pode abrir no corpo fixo uma folga cilíndrica para o envelope de rotação/translação, com margem radial/axial de 0,2 mm. A inferência exige cortes existentes no receptor, limita a remoção estimada a 15% do seu volume e não corta receptores com roscas nem altera o corpo móvel, posições ou curso. Órbitas e geometrias ambíguas continuam exigindo correção explícita. Cada candidato passa pelas verificações de sólido e de todas as amostras; uma interseção inválida ou não finita do kernel é uma falha de validação.
-- Encaixes cilíndricos inferidos usam o eixo, posição e diâmetro da peça correspondente para alinhar o furo receptor. Propostas conservam as posições das peças, são limitadas e precisam passar novamente pelo motor; encaixes roscados não são substituídos por furos lisos.
-- Encaixes roscados compatíveis podem ser corrigidos localmente, sem inferência: centralizar e atravessar a porca, alinhar a fase helicoidal e aliviar um núcleo cilíndrico excessivo somente no trecho roscado antes da união. A inferência exige parâmetros iguais, engate no trecho roscado e movimentos coaxiais coerentes com o avanço; conserva diâmetro/passo/perfil/sentido/entradas, munhões, posições e comandos. Cada corpo alterado e todas as amostras do conjunto são verificados antes de aceitar progresso. Cortes retangulares genéricos não são usados em receptores roscados, nem se deslocam dois corpos roscados como tampas para evitar a colisão.
-- A API informa todas as colisões por par e posição em um diagnóstico versionado. Reparos locais conservam avanços parciais somente quando reduzem interferências sem introduzir ou piorar outras; têm limites de etapas/verificações e exigem validação completa antes de salvar.
-- A correção por assinatura também conserva progresso parcial comprovado: uma colisão restante em outro par não provoca novas correções automáticas da peça anterior. Na retomada, o diagnóstico atualizado determina a peça pendente.
-- **Corrigir interferências** opera diretamente no conjunto existente/importado, sem classificação, planejamento ou reconstrução prévia. Tenta as correções locais verificadas e solicita somente o componente pendente quando necessário; **Retomar correção** conserva esse modo.
-- Edições CAD pelo cliente local usam substituições por ID e inserções com posição explícita na sequência. Etapas não mencionadas permanecem intactas; excluir exige uma lista explícita e autorização aplicável. A resposta parcial vira um programa completo antes das verificações de domínio e geometria. Provedores externos mantêm o contrato de programa completo.
-- A interface diferencia geração pela IA, verificação do componente e verificação do conjunto. Rascunhos podem ser baixados como JSON e como ZIP de STEP/STL sem IA. Downloads de revisões aprovadas continuam exigindo validação e salvamento. [Exportação de rascunhos](docs/cad-drafts.md) descreve a distinção e os limites.
-- A detecção usa caixas conservadoras para descartar pares separados e interseções reais para confirmar colisões. Cálculos são reutilizados somente dentro da mesma inspeção e para poses equivalentes; os diagnósticos e as seis amostras de movimento permanecem completos. Roscas complexas ainda podem exigir minutos de processamento.
-- Uma revisão só é salva após exportar e reimportar STEP, verificar sólidos, volumes e limites espaciais. A revisão persistida é a fonte dos downloads STEP/STL, inclusive por componente.
-- Criação com IA salva automaticamente a geometria aprovada. Edições manuais exigem salvar uma nova revisão. Uma falha preserva a revisão anterior e a última prévia válida.
-- Projetos e revisões CAD persistem em SQLite. O navegador recupera os projetos usados anteriormente.
-- A recuperação de peça e conjunto é independente: uma falha em uma representação informa o erro e conserva a recuperação bem-sucedida da outra. Ao trocar de provedor, respostas tardias da inicialização anterior não sobrescrevem o estado da IA ativa.
-- Uma interrupção do provedor preserva o plano, os componentes concluídos e o rascunho/etapa de reparo do componente atual na mesma aba. Trocar modelo ou provedor aplica a configuração sem recarregar a página. A geometria disponível, o pedido e o diagnóstico são guardados em localStorage e recuperados após reload para prévia/download; a interface avisa se não conseguir guardá-los. O checkpoint completo de IA e seus orçamentos continuam somente na memória da aba.
-- Erros 429 distinguem quota diária/faturamento, tamanho da requisição e limite temporário quando o provedor fornece informação suficiente. O prazo informado bloqueia novas chamadas antecipadas. Uma quota esgotada não provoca retentativas automáticas; sem detalhes, o motivo permanece desconhecido.
+Configurar, testar e aplicar um provedor são ações separadas. Um teste de conexão não altera o provedor ativo. Trocar modelo/provedor não deve permitir que uma resposta tardia substitua o estado atual.
 
-## X3D
+Pedidos devem preservar medidas e recursos explícitos. Premissas e diagnósticos são metadados separados da geometria. Uma falha de contrato, indisponibilidade, quota ou cancelamento não pode ser apresentada como aprovação.
 
-- A IA retorna somente `ModelPlan` JSON; o domínio aplica operações ao `ModelSpec` 1.0.
-- O backend padrão serializa a cena localmente e usa os validadores XSD e semânticos da biblioteca upstream fixada. O transporte MCP é opcional.
-- Uma revisão inválida nunca substitui a última cena válida. HTML, X3D, ClassicVRML e manifesto JSON são disponibilizados por revisão; X3DJ permanece indisponível enquanto o conversor upstream retornar JSON inválido.
-- A política espacial padrão é visual: sobreposições de caixas delimitadoras geram avisos, preservando os encaixes e posições propostos. Elas não comprovam colisão entre superfícies. A opção explícita de separação global bloqueia qualquer sobreposição dessas caixas, mesmo com `allowOverlap`. Uma exigência textual sobre itens específicos não é convertida automaticamente numa proibição para a cena inteira.
-- O fluxo padrão não desloca peças automaticamente para satisfazer a validação. Schema, domínio, XSD e semântica continuam obrigatórios em ambas as políticas.
-- A prévia fica em iframe com `sandbox="allow-scripts"`. Projetos X3D são sessões temporárias; manifesto JSON exportado/importado permite preservação entre reinícios da API.
-- O cache de artefatos X3D finaliza e libera tarefas mesmo quando o cliente cancela a espera. Resultados válidos podem ser reutilizados; falhas não entram no cache e a exclusão de um projeto cancela suas tarefas.
-- A biblioteca de receitas X3D continua persistente em SQLite e passa pela mesma validação.
+## 5. CAD
 
-## Three.js — estúdio de cenas (início em 2026-10-13)
+### 5.1 Criação e edição
 
-Objetivo: construir cenas visuais detalhadas com objetos organizados, materiais e controle de iluminação. A primeira entrega estabelece um editor visual independente de CAD/X3D, com reprodução local e geração de receitas animadas pelo provedor configurado. Escala visual não implica validade mecânica ou fabricação.
+O workspace oferece Projeto livre, Conjunto composto e Peças paramétricas. A criação livre escolhe peça ou conjunto; edições conservam a representação existente. A bancada sem IA inclui placa de fixação, cantoneira, flange, caixa aberta e bucha, com validação dimensional antes da construção.
 
-- Novo item **Three.js** na navegação, carregado sob demanda. Trocar de área preserva o projeto; a renderização pausa quando a área fica oculta.
-- Viewport WebGL2 com câmera orbital, zoom/pan, seleção por raycast, enquadramento e diagnóstico de indisponibilidade/contexto perdido.
-- Cena demonstrativa de um pavilhão com elementos repetidos; cena vazia, primitivas, perfis extrudados/de revolução, tubos, nós toroidais e malhas/grupos. Hierarquia com parentagem acíclica, transformações locais (metros e graus), duplicação de subárvore, visibilidade e exclusão de subárvore.
-- Inspector com nome, transformação e material físico (cor, metalicidade, rugosidade, clearcoat, transmissão, emissão e texturas). Fundo, exposição, intensidade de luz, grade e wireframe são editáveis. Luzes iniciais são um rig fixo; o ambiente de reflexão é gerado localmente e sombras são configuráveis; luzes individuais ainda não são editáveis.
-- Histórico de até 50 edições na memória, rascunho único em localStorage e JSON portátil `ThreeSceneDocument` 1.1, com migração de 1.0. Importações inválidas preservam o documento atual; falhas de armazenamento aparecem na interface. Projeto JSON limitado a 32 MB, GLB estático a 16 MB, 500 nós, profundidade 12 e orçamento de 2 milhões de triângulos; números finitos, IDs únicos e referências válidas são obrigatórios.
-- Renderer descartável, redimensionamento observado, resolução limitada a DPR 2, geometrias/materiais compartilhados, desenho sob demanda quando pausado e loop somente durante reprodução visível. Estatísticas de triângulos e chamadas de desenho ajudam a observar o custo, sem prometer desempenho para cenas arbitrárias.
-- Incremento solicitado em 2026-10-13: geração de cenas animadas por descrição usando o provedor configurado. Receita compacta com até 80 templates e repetições lineares/radiais (1–100 cópias), expandida em até 500 nós; aplicação atômica após validação. Até duas chamadas (uma correção de contrato), cancelamento e prazo total configurável de 2, 5 (padrão) ou 10 minutos; falhas preservam a cena anterior. Meta de segundos/minutos depende de medição real por provedor e não constitui garantia de zero erros.
-- Progresso apresenta etapas observáveis (preparação, espera pela IA, validação, construção e aplicação), relógio, chamada atual e histórico com diagnóstico de falha. A integração recebe um JSON completo e não transmite subetapas internas do planejamento nem percentual. O prazo local Codex/Claude Code continua sendo de 300 s por chamada, independente do prazo total escolhido. Timeout/cancelamento exigem nova tentativa, sem retomada da resposta interrompida.
-- Animações declarativas de rotação, flutuação e órbita por objeto/grupo, com eixo, período, amplitude e fase. Timeline reproduzível de 1–120 s, play/pause, busca e reinício; animação não modifica a pose base nem cria revisões por frame. Arquivos 1.0 anteriores recebem valores padrão ao importar.
-- Ainda fora desta entrega: importação CAD/X3D, glTF por URLs, exportação GLB, HDRI externo, mapas físicos completos de GLB, instanciamento, LOD, gizmos, animação esquelética/keyframes livres, pós-processamento, física, colaboração e persistência no servidor. Exportação GLB, instanciamento, gizmos, keyframes e pós-processamento foram entregues na revisão jogável abaixo. [Plano, critérios e fases](docs/threejs-studio.md).
+Uma peça usa `CadProgramSpec` 3.0: sequência ordenada de base, união, corte e acabamento, em milímetros. O catálogo inclui primitivas, extrusão/revolução de perfis, tubos/toros, rasgos, furos simples/rebaixados/escareados, lofts, cascas, chanfros, arredondamentos, padrões lineares/circulares, roscas helicoidais, prismas, engrenagens retas, cremalheiras, curvas tubulares, molas e sweeps segmentados.
 
-### Revisão de qualidade Three.js — 2026-10-14
+Roscas possuem diâmetro, passo, comprimento, perfil, sentido, número de entradas e folga aplicável. A geometria é real no STEP/STL; não representa certificação de tolerância. Reparos não podem substituir silenciosamente uma rosca por cilindro nem reduzir medidas explicitamente solicitadas.
 
-Adicionar tela cheia com Escape/fallback, geometria procedural de perfis/curvas/malhas e importação GLB estática, materiais físicos, texturas procedurais e iluminação com reflexões/sombras. Separar criar cena, editar a cena existente e reparar sobreposições. Edições são patches por ID com preservação dos nós não mencionados, sem reconstrução implícita nem exclusões silenciosas.
+Um conjunto usa `CadAssemblySpec` 4.0: 2–8 componentes independentes, transformações, movimentos fixos/lineares/rotativos/helicoidais e grupos com fatores. Cada componente deve ser um sólido conectado e válido. A simulação é cinemática; não calcula forças.
 
-A inspeção espacial deve ocorrer fora da thread da interface, refinar caixas por triângulos, informar contenções/cobertura/poses e reconhecer pares de contato intencional. Diagnóstico amostrado não equivale a solver físico ou prova contínua. Reparos devem reduzir problemas sem introduzir novos pares antes de substituir o documento. Critérios, migração e limites em [threejs-studio.md](docs/threejs-studio.md).
+### 5.2 Verificação geométrica e mecânica
 
-### Estúdio jogável Three.js — 2026-10-14
+Schema, regras do domínio e kernel são verificações obrigatórias e distintas. Uma revisão aprovada exige construção válida, exportação/reimportação STEP, sólidos, volume e limites espaciais coerentes. Conjuntos passam por interferência na posição atual e em cinco amostras adicionais do curso.
 
-Elevar o gerador ao padrão atual de ferramentas Three.js: cenas mais detalhadas, iluminação e atmosfera realistas e interação por teclado como jogo, sem abandonar dados declarativos nem a inspeção espacial.
+A criação de conjuntos exige vínculos mecânicos por padrão. O contrato declara ancoragem, grafo de conexões, recursos por ID, apoios e fixações. A inspeção verifica contato, material, alinhamento, folga, engate, retenção e coerência entre avanço e movimento dentro do perfil suportado.
 
-- Contrato `ThreeSceneDocument` 1.2 (migra 1.0/1.1): plano, cápsula, poliedro, terreno procedural, texto e luzes pontuais/spot reais; keyframes, pulso, balanço e quique; animações disparadas por interação; interações de clique, proximidade e tecla (alternar animação/visibilidade, coletar, mensagem); `collidable`; céu físico/noite/espaço, sol orientável, neblina, bloom, mapeamento tonal e configuração do jogador. Limites: 2.000 nós, 32 luzes, 2 milhões de triângulos.
-- Modo jogo em primeira pessoa com WASD, mouse/pointer lock ou arrasto, corrida, pulo, voo, cápsula com colisão BVH para estáticos e caixas orientadas para objetos móveis, HUD com mira, ação, itens e mensagens. O jogo nunca modifica o documento.
-- Editor: gizmos mover/girar/escalar com encaixe, atalhos de teclado (gizmo, deslocamento, exclusão, duplicação, histórico, vistas, grade, captura, jogo), contorno de seleção, MSAA, instanciamento automático de superfícies estáticas repetidas, 17 texturas procedurais com relevo e exportação GLB (PBR, luzes, clipes) e PNG.
-- Receitas de IA com até 120 templates, repetições em grade e dispersão sem sobreposição, assentamento `onto` em terrenos/superfícies com contato declarado e prompt de direção de arte/level design. Exemplo jogável local (Ilha do Farol) verificado sem interferências inesperadas em todas as poses amostradas.
-- Geração tolerante: a IA nunca perde uma cena aproveitável por valores fora de limite ou referências quebradas. O motor ajusta ao contrato, aplica a melhor versão, informa cada ajuste e deixa sobreposições restantes para correção sobre a cena aplicada. Importações de arquivo permanecem estritas; cancelamento explícito descarta o resultado.
-- Qualidade espacial sem depender de coordenadas exatas da IA: biblioteca de 22 pré-fabricados paramétricos, grupos repetíveis com referências por cópia, inspeção que separa encaixes internos de montagens de erros e layout automático determinístico (assentar no terreno e afastar pares confirmados) antes de qualquer chamada adicional de IA.
-- Sistemas de jogo: câmera em primeira/terceira pessoa (V) com avatar, vida e dano, inimigos que patrulham e perseguem (derrotados com pulo ou golpe), obstáculos, pontos de controle, portal de chegada, objetivos com cronômetro e tela de vitória, escadas escaláveis e início sempre em terra firme. Terreno aplainado sob construções, estradas que seguem o relevo e dispersão que evita água, estradas e construções.
-- Fora desta entrega: física de corpos rígidos, áudio, personagens/animação esquelética, combate com armas/projéteis, multiplayer, exportação HTML jogável, LOD/streaming e persistência de assets no servidor. Colisão de objetos móveis é aproximada por caixas. Detalhes em [threejs-studio.md](docs/threejs-studio.md).
+O perfil inclui contatos planos adesivos, adesão eixo/furo, montagem parafusada com passagens e base roscada, captura geométrica, guias cilíndricas, mancais lisos e fuso estacionário rotativo com carro guiado. Fixadores comerciais e adesivos são requisitos declarados; a aplicação não os dimensiona automaticamente.
 
-### Mundos vivos Three.js — 2026-10-22 (versão 0.5)
+**Verificar montagem** funciona sem inferência. Dados sem vínculos recebem estado `unverified`. Conceitos geométricos são permitidos quando o usuário desativa explicitamente a exigência mecânica. Falha mecânica impede salvar uma revisão que declare essa aprovação.
 
-Objetivo: cenas com padrão de jogo de mercado — personagens animados, combate, progresso, som e atmosfera — mantendo dados declarativos, validação e inspeção. Detalhes em [docs/threejs-living-worlds.md](docs/threejs-living-worlds.md); próximos marcos em [ROADMAP.md](ROADMAP.md).
+### 5.3 Agente, reparo e recuperação
 
-- Contrato `ThreeSceneDocument` 1.3 (importa 1.0–1.3): `environment.audio` (ambiência/música automáticas ou explícitas, volume), `weather`, `grade`, `player.weapon`/`avatar`, objetivo `survive`; `node.sound` posicional; comportamentos `npc`/`launcher` com `health`, `attack`, `flying` e `delay`; interações `heal`/`powerup`/`dialogue` com `item`, `requires`, `amount` e `power`. Campos ausentes recebem padrões neutros.
-- 13 personagens procedurais com rig (NPCs, inimigos humanoides, fauna, aranha, drone, golem e dragão-chefe) e animação procedural; avatar de terceira pessoa com os mesmos modelos. Peças rígidas; pele contínua fica para a 0.6.
-- Armas (mãos, espada, blaster, arco, cajado) com projéteis varridos contra a colisão; inimigos com corpo a corpo, investida, tiro à distância, voo e resistência; NPCs que passeiam e conversam; inventário, chaves e bloqueios; curas e poderes temporários; plataformas móveis que carregam o jogador; lançadores; ondas por atraso; pontuação.
-- Áudio sintetizado localmente (Web Audio): 16 ambiências, música generativa em 9 humores com intensidade dinâmica, 23 efeitos e fontes posicionais. Nenhum arquivo de áudio externo. Inicia somente no modo jogo e pode ser silenciado (M).
-- Clima por partículas em GPU, gradação de cor com vinheta/granulação e água animada.
-- 25 objetos novos de mundo e jogabilidade, verificados sem interseções nas variantes. Quatro exemplos novos (cripta, mercado, ilhas celestes, sobrevivência) passam por inspeção e auditoria.
-- A IA recebe direção criativa (premissa, marco, pontos de interesse com densidade de objetos, paleta, som e ciclo de jogo), 19 temas novos e revisões de jogabilidade (itens exigidos sem fonte, vilas sem habitantes, tiro sem arma, sobrevivência sem ondas). Isso não mede a qualidade de um modelo real.
-- Fora desta entrega: pele contínua/GLB com esqueleto, física de corpos rígidos, navmesh, veículos, eventos encadeados, exportação HTML jogável, multiplayer e medição com provedor real.
+O agente planeja componentes no mesmo referencial global, preserva componentes concluídos e usa inspeções para ajustar o candidato. A interface resolve decisões internamente; impossibilidade persistente deve terminar em diagnóstico técnico.
 
-## Operação e limites
+Reparos locais podem corrigir encaixes cilíndricos/roscados, fase helicoidal, folgas de movimento e acabamentos inferidos dentro de limites explícitos. Progresso parcial só é aceito quando reduz defeitos sem introduzir ou piorar outros. O kernel confirma o resultado em todas as poses amostradas. Correção de interferências atua no conjunto existente e solicita apenas o componente necessário quando precisa de IA.
 
-### Mundos vastos Three.js — 0.7 (em andamento desde 2026-10-23)
+Criação/edição têm orçamento global de até 20 chamadas de IA, 48 verificações distintas e 20 minutos; correção de montagem, até 5 chamadas, 16 verificações e 4 minutos. Candidatos repetidos interrompem o reparo. Limites por provedor e por ação podem encerrar antes desse máximo.
 
-Jogabilidade ampliada em 28/10/2026: Aurora é um sandbox sem campanha ou chefe obrigatório, com rumores, seis lugares, coleta e onze receitas de equipamentos, consumíveis e construções. Há mãos vazias, cinco atalhos fixos por scroll/1–5, mochila em B, prévia de colocação, fogueira, abrigo/ponto de retorno, baús, cercas e iluminação. Progresso dos mundos inclui inventário, atalhos, construções e armazenamento. Água funda permite nadar/mergulhar, com margens e colisão derivadas da mesma malha; corrigidos níveis suspensos, recortes vegetais e sombras apagadas que ocultavam o terreno. O agente distingue jogos dirigidos/sandbox e HUD completo/discreto conforme o gênero, com fontes e usos reais para receitas. A entrada aguarda terreno, colisões e compilação, inclusive na recuperação. [Contrato, controles e limites](docs/threejs-sandbox.md). Escavação e construção estrutural modular permanecem pendentes; os kits colocáveis estão implementados.
+Quota, cancelamento ou indisponibilidade preservam componentes e checkpoints disponíveis na aba. A retomada reutiliza trabalho concluído. JSON, pedido e diagnóstico recuperáveis são guardados no navegador; o checkpoint completo da IA permanece em memória e não sobrevive ao fechamento/reload.
 
-Objetivo e fases no [roteiro](ROADMAP.md#07--mundos-vastos); estado e medições em [docs/threejs-worlds.md](docs/threejs-worlds.md). Fases 2–6 implementadas; validação interrompida a pedido do usuário em 27/10/2026 para enviar o estado atual. O gate completo permanece pendente, e a última medição preliminar ainda excedeu os limites de triângulos e de bloqueio na carga.
+Quando houver sólidos recuperáveis, o usuário pode exportar um rascunho ZIP com STEP/STL, receita e relatório de omissões. Rascunhos não recebem aprovação de montagem e não substituem revisões salvas. Sem sólido recuperável, o JSON continua disponível.
 
-- Desempenho é requisito de cada fase: `scripts/benchmark-three-fps.mjs` mede o modo jogo em GPU real (rota fixa, tempo de quadro/CPU/GPU, draw calls, triângulos, memória, bloqueios) e compara com a linha de base gravada em `docs/benchmarks`. Cenas 1.x não podem piorar além do ruído; mundos seguem o orçamento absoluto do roteiro. Classes de GPU sem máquina disponível ficam "não medidas".
-- Contrato `ThreeWorldDocument` 2.0: semente, terreno (`none`/`synthetic`/`climate`, até 16 km), regiões, locais com cena 1.x opcional, rotas e orçamentos. Uma cena 1.x migra sem perda e volta idêntica; projetos 1.x continuam abrindo como cenas.
-- Terreno em blocos (fase 2): relevo determinístico, LOD CDLOD com erro geométrico medido e limite de 1 pixel, saias nas bordas, geração em workers, streaming com até 2 ms por quadro na thread principal, um draw call para o terreno, colisão idêntica à malha desenhada e origem de render flutuante.
-- Biomas e água (fase 3): passe macro em worker com erosão, drenagem até o mar, lagos e rios escavados, clima e 8 camadas de chão; terreno com um único material de splat, água em um draw call e ambiência/música/clima por região.
-- Vegetação e regras de terreno (fase 4): plantas por bioma e orçamento, selecionadas por planta nos níveis de 70/130/1400 m (pré-fabricado completo, simplificado e impostores), com transição por dithering e texturas geradas em workers; grama e vento 1.x numa janela de chão em torno do jogador; locais aplainados e estradas traçadas pelo relevo. O gerador `synthetic-v5` usa ruído de gradiente para evitar planaltos retangulares.
-- Geração em duas escalas (fase 5): atlas da IA saneado de forma determinística, locais posicionados por regras, detalhe sob demanda pelo pipeline de cenas, edição local que preserva o que não foi citado e geração sem prazo, com etapas salvas e requisições reenviadas até concluir. Locais detalhados entram na cena jogada, construída em fatias, com HLOD a distância.
-- Exploração (fase 6): mapa com névoa de guerra, viagem rápida com pré-carga, montaria construída em fatias após entrar no jogo e persistência do mundo e do progresso no IndexedDB. O HLOD dos locais mantém as luzes e oculta superfícies por camada; `sceneCompile.ts` prepara programas em fatias e os passes de sombra também para cenas 1.x.
-- Limites: provedor de IA real e outras classes de GPU não medidos; estradas usam vaus, sem pontes; a cena jogada conserva o limite de 2000 nós. O bloqueio na entrada do jogo, herdado do avatar/skin das cenas 1.x, permanece pendente.
+### 5.4 Persistência e exportação
 
-Skins da 0.6: pele procedural contínua nos personagens orgânicos e no avatar, dedos articulados, expressões, roupas/cabelo com movimento secundário, três LODs e cache com recursos compartilhados. GLB exporta pele, esqueleto, cores/PBR e clipes de ociosidade/caminhada; a aparência dos shaders é aproximada. Importar e redirecionar esqueletos externos permanece pendente. [Implementação, testes e limites](docs/threejs-characters-hud.md).
+Projetos, revisões, inspeções e STEP aprovados persistem em SQLite. Criação aprovada por IA salva automaticamente; alterações manuais exigem nova validação/salvamento. Atualizações usam `expectedRevision`; conflito retorna 409 sem sobrescrever dados.
 
-Correções de jogabilidade da 0.6: orientação corporal pela velocidade, escalada articulada com saída validada, combos encadeados, equipamento visível e dano durante contato animado no runtime compartilhado. Caixas orientadas e cápsulas continuam aproximações; a redução medida no custo da IK não é uma garantia de FPS. [Escopo e medições](docs/threejs-motion-fixes.md).
+STEP preserva B-rep; STL representa malha em milímetros. Downloads de projeto e componente derivam da revisão persistida. A prévia pode ser simplificada independentemente dos arquivos exportados.
 
-`npm run dev` inicia API e frontend. CadQuery faz parte da instalação padrão; nenhum servidor MCP é necessário nesse modo. A IA local WebLLM continua disponível para navegadores com WebGPU, com alternativa de endpoint compatível com OpenAI configurado pelo usuário.
+## 6. X3D
 
-A configuração também oferece Codex e Claude Code pelos clientes oficiais instalados no computador do servidor e autenticados com a assinatura. A ponte funciona somente em loopback, recebe dados e retorna JSON; não entrega tokens ao navegador, não herda chaves de API de faturamento e não executa ferramentas propostas pela IA. Um teste independente confere conexão e resposta JSON antes de salvar a configuração, sem chamar os motores CAD/X3D. Os modelos e limites são os disponibilizados à conta pelo cliente; campo de modelo vazio usa seu padrão.
+A IA retorna `ModelPlan`; o domínio aplica operações ao `ModelSpec` 1.0. A API serializa a cena e valida estrutura, domínio, XSD e semântica antes de publicar a revisão. Alterações inválidas conservam a última cena válida.
 
-As assinaturas possuem política padrão separada para controlar uso: JSON direto, nenhum reparo automático de formato, uma correção geométrica adicional por programa e uma correção de aplicação por plano X3D. A interface CAD fornece explicitamente o orçamento de três correções e a recuperação de contrato descritos acima; callers do SDK sem essa opção conservam os limites do provedor. CAD autônomo pode resolver uma pergunta internamente com até duas respostas adicionais por etapa e fazer um único replanejamento seletivo após falha final. O modo legado do SDK conserva esclarecimento opcional. Resposta incompleta não é apresentada como confirmação de quota ou limite de tokens. A retomada manual CAD reutiliza componentes e rascunhos disponíveis nesta aba, inclusive após indisponibilidade do motor. A aprovação de revisões continua exigindo sólidos, STEP e verificação do conjunto; rascunhos têm um caminho de exportação identificado separadamente.
+O backend padrão é local. O transporte MCP opcional deve conservar as mesmas garantias. Exportações disponíveis: X3D, HTML, ClassicVRML e manifesto JSON. X3DJ permanece indisponível enquanto o conversor incorporado não produzir saída válida.
 
-Se o salvamento de um resultado CAD nativo concluído falhar, repetir o mesmo pedido nesta aba reutiliza esse resultado, sem outra inferência. O resultado só é liberado após salvar, alterar o pedido ou iniciar outro projeto. O servidor ainda valida a geometria antes de persistir/exportar.
+A política espacial padrão é visual: sobreposições de caixas delimitadoras geram avisos, sem provar colisão de superfícies nem deslocar objetos automaticamente. Separação global explícita pode bloquear essas sobreposições. A prévia HTML roda em iframe com sandbox e carrega X3DOM externo.
 
-A linguagem CAD não promete representar qualquer forma ou projetar uma máquina pronta para fabricação. Vínculos declarados recebem verificações geométricas e cinemáticas, sem um solver geral de mates ou dinâmica de contato. Não existem ainda esboços com restrições, cálculo de forças, classes de tolerância, solver de engrenamento ou verificação contínua de colisão. STEP preserva B-rep; STL é malha em milímetros. A qualidade de uma proposta depende também do modelo de IA escolhido. O perfil mecânico está documentado em [docs/mechanical-assemblies.md](docs/mechanical-assemblies.md).
+Sessões e artefatos X3D são temporários. O manifesto JSON deve permitir exportar/importar a cena entre reinícios; receitas reutilizáveis persistem em SQLite.
 
-Mudanças de contrato, persistência, validação ou garantias de exportação devem atualizar este documento, [ISSUES.md](ISSUES.md) e a [arquitetura](docs/architecture.md) juntos.
+## 7. Three.js
+
+### 7.1 Estúdio e documentos
+
+O viewport é o foco da interface. Projeto reúne arquivos, biblioteca e exemplos; Editor avançado expõe hierarquia, inspector, gizmos e controles de animação; Atividade apresenta progresso e diagnóstico.
+
+O contrato de cena 1.3 representa objetos, hierarquia, materiais, luzes, ambiente, animações, personagens e regras de interação. Importação aceita documentos compatíveis e migra versões 1.0–1.2. O contrato `ThreeWorldDocument` 2.0 representa semente, terreno, regiões, locais, rotas e orçamentos; arquivos de cena continuam abrindo como cenas.
+
+Criação, edição e correção por IA são ações distintas. Edição aplica patches por ID e preserva objetos omitidos. Correção usa inspeção espacial/temporal e exige melhora sem novos defeitos. Criação/edição conservam a melhor candidata construída e indicam pendências. O usuário pode escolher prazo total de 2, 5 ou 10 minutos para ações de cena.
+
+O editor permite seleção, transformação, materiais, luzes, terreno, texto, geometrias, reprodução de animações, desfazer/refazer, biblioteca de modelos e importação de GLB estático. Verificar cena funciona sem IA. Exportações incluem projeto JSON, GLB com animações suportadas e PNG; GLB não transporta o motor de jogo.
+
+### 7.2 Experiências jogáveis
+
+O modo jogo oferece primeira/terceira pessoa, caminhada, salto, corrida, voo permitido por cena, colisões aproximadas, portas, coleta, NPCs, diálogo, inimigos, armas, combate e objetivos. O HUD oferece estados de entrada, pausa, vitória/derrota, inventário, configurações e controles de teclado/mouse ou gamepad.
+
+As regras suportam missões, coleta/extração, receitas, inventário por slots, bancada, equipamentos, consumíveis, construções colocáveis e armazenamento. Sandbox não deve impor campanha ou chefe obrigatório. HUD completo ou discreto depende da configuração da experiência.
+
+Personagens incluem rig/skin procedural, animações, níveis de detalhe e recursos compartilhados. Áudio usa Web Audio; clima, água, vegetação, céu e pós-processamento dependem da qualidade configurada e da capacidade do navegador.
+
+### 7.3 Mundos e persistência
+
+Mundos usam terreno determinístico em blocos, LOD, workers, streaming e origem flutuante. Biomas, drenagem, lagos/rios, vegetação, locais e rotas compõem a exploração. Geração em duas escalas combina atlas e detalhamento local; mapa, viagem rápida e montaria dependem do mundo.
+
+Documentos/progresso de mundos usam IndexedDB; rascunhos de cena usam armazenamento local do navegador. Falha ou quota de armazenamento deve ser indicada com orientação para exportar JSON. Recursos precisam ser liberados ao trocar de cena ou encerrar o viewport.
+
+## 8. Provedores de IA
+
+WebLLM executa no navegador e exige WebGPU. Endpoints compatíveis com OpenAI recebem pedidos diretamente do navegador, usando URL/chave/modelo e CORS configurados pelo usuário. Clientes locais Codex/Claude Code são executados pela API no computador do servidor, autenticados no cliente oficial e acessíveis apenas por loopback autorizado.
+
+A ponte local recebe mensagens e devolve JSON, sem entregar credenciais da assinatura ao navegador nem executar ferramentas propostas pelo modelo. Testar conexão faz uma chamada real pequena. Disponibilidade, modelos e quotas pertencem ao provedor.
+
+429 deve distinguir quota permanente, limite temporário e tamanho de requisição quando houver dados suficientes. Quota esgotada não inicia retentativas automáticas. Timeout e cancelamento encerram a ação; respostas tardias não substituem o provedor/candidato atual.
+
+## 9. Operação e recursos
+
+| Item | Comportamento padrão |
+|---|---|
+| Frontend / API | Loopback, portas 5173 / 8001 |
+| Dados persistidos | `apps/api/data/cad.sqlite3` e `recipes.sqlite3` |
+| Sessão X3D | TTL de 3.600 segundos de inatividade |
+| Trabalho CAD | Um worker nativo por vez por fila/lock compartilhado |
+| Worker CAD | 2.048 MB, 240 s, duas threads do kernel |
+| Fila CAD | Até 60 s; caminho de lock compartilhável por configuração |
+| Artefato geral / STL / ZIP de rascunho | 10 MB / 64 MB / 128 MB |
+| Navegador Three.js / WebLLM | WebGL2 / WebGPU |
+
+Variáveis efetivas e limites configuráveis estão em `apps/api/.env.example` e `config.py`. O sistema operacional encerra workers que excedam o limite aplicável; falhas não publicam revisão. Desconexão HTTP sinaliza cancelamento. Instâncias com locks distintos não compartilham serialização.
+
+## 10. Critérios de aceitação
+
+| Fluxo | Critério observável |
+|---|---|
+| Instalação | Clone com submódulo, dependências e `npm run dev` iniciam os serviços documentados |
+| CAD paramétrico | Medidas válidas produzem sólido e STEP/STL; medidas incompatíveis geram diagnóstico |
+| CAD livre | Proposta aprovada salva revisão; falha conserva revisão anterior e rascunho disponível |
+| Conjunto mecânico | Vínculos/interferências são inspecionados nas poses suportadas antes da aprovação |
+| Revisão concorrente | `expectedRevision` obsoleto gera conflito e não sobrescreve projeto |
+| Recuperação | Retomada reutiliza componentes; rascunho exportado identifica omissões |
+| X3D | Cena passa por validadores; manifesto exportado pode ser importado em outra sessão |
+| Three.js | Exemplo pode ser editado, jogado e exportado sem API; documento autoral permanece preservado após jogo |
+| Provedor | Testar e aplicar são separados; cancelamento/quota não aprovam resultado incompleto |
+| Recursos | Testes CAD liberam processos entre arquivos; navegador usa um worker por executor |
+| Documentação | Links locais válidos e comandos coerentes com scripts e configurações |
+
+Lint, tipos, testes unitários, testes de domínio/API, build e Playwright sustentam esses critérios. Casos automatizados usam respostas programadas para não depender de uma assinatura real. Métricas em software WebGL não são garantias de desempenho em GPU real. Consulte [testes](docs/testing.md).
+
+## 11. Limites do produto
+
+CAD não é um projetista universal nem um sistema de certificação de fabricação: não inclui solver geral de mates, esboços com restrições, análise de cargas, desgaste, classes de tolerância ou colisão contínua. Verificação mecânica se limita ao perfil declarado e a poses amostradas.
+
+X3D usa caixas para a política espacial e depende de internet na prévia HTML. Three.js usa colisões aproximadas, sem física geral de corpos rígidos, multiplayer ou exportação do jogo completo em GLB. Malhas/texturas grandes podem exceder a quota do navegador; mundos mantêm limites de nós e recursos. Qualidade de geração depende do modelo, do pedido e dos contratos suportados.
+
+Mudanças de comportamento, contratos, persistência ou exportação devem atualizar este PRD e o guia técnico correspondente.

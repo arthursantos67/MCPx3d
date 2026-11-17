@@ -35,3 +35,14 @@ CLAUDE.md
 test-results/
 playwright-report/
 npm-debug.log*
+
+# Generated CAD exports and optional tool documents
+examples/cad/*.step
+examples/cad/*.stl
+examples/cad/*.FCStd*
+
+# Machine-specific test and coverage output
+coverage/
+.coverage*
+htmlcov/
+*.tsbuildinfo

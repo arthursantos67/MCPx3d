@@ -1,24 +1,7 @@
-# Frontend Forma
+# Interface web
 
-React, TypeScript, Vite e Three.js. Instale dependências na raiz com `npm ci`; `npm run dev` inicia frontend e API. Use `npm run dev:web` se a API já estiver rodando. `VITE_API_BASE_URL` substitui `http://localhost:8001`.
+React, TypeScript, Vite e Three.js. Na raiz: `npm ci` e `npm run dev:web`. O frontend abre em `http://127.0.0.1:5173`; a URL da API é configurada em [.env.example](.env.example).
 
-| Diretório | Responsabilidade |
-|---|---|
-| `src/workspace` | Shell, navegação e controles compartilhados |
-| `src/ai` | Seleção do provedor e estado do runtime |
-| `src/cad` | Controlador CAD, peça/conjunto, prévia WebGL e movimento |
-| `src/chat`, `src/x3d` | Controlador, conversa e área X3D |
-| `src/three` | Editor contextual com gizmos/atalhos, modo jogo com colisão e interações, geometrias/terreno/luzes, céu e pós-processamento, GLB, inspeção BVH em worker e animação |
-| `src/viewer` | Iframe sandbox e gerenciamento de Blob URLs |
-| `src/api` | HTTP, recuperação e downloads |
-| `src/settings` | IA local ou endpoint compatível com OpenAI |
+`src/cad`, `src/x3d` e `src/three` implementam os workspaces. `src/ai`/`settings` configuram provedores; `workspace` cuida da navegação; `api` contém clientes HTTP. Three.js edita/reproduz/joga localmente; CAD/X3D usam API para construir e validar.
 
-SDKs ficam em `packages/agent`, sem runtime duplicado no frontend. Pacotes privados compartilham fontes por importações relativas; npm workspaces centralizam instalação e checks.
-
-Configuração do provedor passa a valer em **Salvar e aplicar**, sem recarregar nem perder o rascunho. Chaves externas ficam em localStorage e seguem diretamente para o endpoint escolhido. Modos Codex/Claude Code usam a ponte local autenticada; as propostas geométricas continuam sujeitas à API.
-
-Checks na raiz: `npm run lint:web`, `npm run typecheck`, `npm test`, `npm run build` e `npm run test:browser`. Veja [testes](../../docs/testing.md) e [arquitetura](../../docs/architecture.md).
-
-O menu **Three.js** usa um bundle sob demanda. Edição/reprodução funcionam sem API/IA; a geração usa o `AgentProvider` compartilhado e passa por validação local. Requer WebGL2. O projeto JSON tem contrato próprio e não é intercambiável diretamente com CAD/X3D. Escopo e roadmap em [estúdio Three.js](../../docs/threejs-studio.md).
-
-O contrato Three.js 1.2 migra projetos 1.0/1.1. GLB estático é convertido em malhas JSON; arquivos com clipes/skins/compressão ou referências externas são recusados. A exportação GLB inclui materiais PBR, luzes e clipes. Texturas grandes podem exceder a quota de localStorage e exigem backup JSON. Inspeções refinam superfícies em poses amostradas, com limite de tempo/pares.
+Na raiz: `npm run lint:web`, `npm run typecheck`, `npm test`, `npm run build`. [Uso](../../README.md) · [Arquitetura](../../docs/architecture.md) · [Testes](../../docs/testing.md).
