@@ -17,7 +17,6 @@ test('the full catalogue searches thousands of local assets, previews and import
   const cards=library.getByRole('button',{name:/^Visualizar modelo:/})
   await expect.poll(()=>cards.count()).toBeGreaterThan(5)
   await expect.poll(()=>cards.first().locator('img').evaluate(image=>(image as HTMLImageElement).complete&&(image as HTMLImageElement).naturalWidth>0)).toBe(true)
-  await page.screenshot({path:'.cache/browser/three-model-catalog.png'})
   await cards.first().click()
   await expect(library.locator('.catalog-preview-canvas canvas')).toBeVisible()
   await library.getByLabel('Altura no mundo (metros)').fill('3')

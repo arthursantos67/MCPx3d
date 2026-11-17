@@ -24,7 +24,6 @@ for(const camera of ['first','third'] as const)test(`native knight approaches an
   const distance=Math.hypot(position![0]-target.position[0],position![2]-target.position[2])
   expect(distance).toBeGreaterThan(.5);expect(distance).toBeLessThan(1)
   await expect(async()=>{await page.keyboard.press('e');await expect(hud.getByLabel('Inimigos derrotados')).toHaveText('Inimigos 1/3',{timeout:1500})}).toPass({timeout:20000,intervals:[800]})
-  if(camera==='third')await page.screenshot({path:'.cache/browser/three-crypt-combat.png'})
   await page.keyboard.down('w')
   await expect.poll(async()=>{const position=await page.evaluate(()=>window.__formaBench.position());return position![2]},{timeout:10000}).toBeLessThan(target.position[2]+.2)
   await page.keyboard.up('w')

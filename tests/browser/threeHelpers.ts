@@ -1,4 +1,9 @@
-import type { Page } from '@playwright/test'
+import { expect, type Page } from '@playwright/test'
+
+export async function waitForSceneReady(page: Page) {
+  await expect(page.getByRole('button', { name: '▶ Jogar', exact: true })).toBeEnabled({ timeout: 90_000 })
+  await expect(page.locator('.three-world-travel')).toBeHidden({ timeout: 90_000 })
+}
 
 export async function projectAction(page: Page, name: string) {
   const toggle = page.getByRole('button', { name: 'Projeto ▾', exact: true })
@@ -19,4 +24,5 @@ export async function leaveGame(page: Page) {
   await page.keyboard.press('Escape')
   await hud.getByRole('button', { name: /^Sair( do jogo)?$/ }).first().click()
   await hud.waitFor({ state: 'hidden' })
+  await waitForSceneReady(page)
 }

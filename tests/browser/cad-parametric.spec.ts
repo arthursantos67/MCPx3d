@@ -59,7 +59,6 @@ test('parametric plate produces real STEP/STL, blocks invalid dimensions and ret
   await expect(page.getByRole('button', { name: 'Superior', exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Superior', exact: true }).click()
   await expect(page.locator('.cad-workspace__viewer [role="alert"]')).toHaveCount(0)
-  await page.screenshot({ path: '.cache/browser/cad-parametric-plate.png' })
 })
 
 test('all remaining families validate without AI and dimensional edits create a revision', async ({ page }) => {

@@ -29,7 +29,6 @@ test('Three.js renders the local pavilion and edits, restores and round trips a 
   await setup(page)
   await expect(page.getByLabel('Estatísticas do renderer')).toContainText(/[1-9][\d.]* triângulos/)
   await expect(page.getByText('Pavilhão Aurora', { exact: true })).toBeVisible()
-  await page.screenshot({ path: '.cache/browser/three-pavilion.png' })
   await projectAction(page, 'Cena vazia')
   await page.getByRole('button', { name: 'Adicionar', exact: true }).click()
   const name = page.getByRole('textbox', { name: 'Nome do objeto', exact: true })
@@ -111,7 +110,6 @@ test('invalid numeric edits keep the valid document and mobile layout fits', asy
   await scale.press('Enter')
   expect((await exported(page)).nodes[0].scale[0]).toBe(2)
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390)
-  await page.screenshot({ path: '.cache/browser/three-mobile.png', fullPage: true })
 })
 
 test('storage failure is reported while JSON export remains available', async ({ page }) => {
@@ -200,7 +198,6 @@ test('AI creates a complete procedural animated scene and scrubbing changes the 
   await page.getByRole('button', { name: 'Three.js Estúdio de cenas', exact: true }).click()
   await expect(page.getByLabel('Tempo atual')).not.toHaveText(frozen)
   await page.getByRole('button', { name: 'Pausar', exact: true }).click()
-  await page.screenshot({ path: '.cache/browser/three-generated-animated.png' })
   await page.reload()
   expect((await exported(page)).nodes[0].animation).toEqual(doc.nodes[0].animation)
 })
@@ -291,7 +288,6 @@ test('progress shows the provider wait and applies a configurable five-minute de
   const canvasBounds = (await page.getByRole('img', { name: 'Cena Three.js interativa' }).boundingBox())!
   const playbackBounds = (await page.getByRole('group', { name: 'Reprodução da cena' }).boundingBox())!
   expect(canvasBounds.y + canvasBounds.height).toBeLessThanOrEqual(playbackBounds.y + 1)
-  await page.screenshot({ path: '.cache/browser/three-generation-timeout.png' })
 })
 
 test('progress preserves the contract diagnosis and identifies the correction call', async ({ page }) => {

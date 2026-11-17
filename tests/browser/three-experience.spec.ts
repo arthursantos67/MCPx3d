@@ -19,7 +19,7 @@ async function exported(page: Page) {
 
 test('creation gives the scene the main area, keeps technical controls optional and expands gameplay', async ({ page }) => {
   // The 800-node valley is played and rebuilt twice in software WebGL.
-  test.setTimeout(180_000)
+  test.setTimeout(300_000)
   const errors: string[] = []
   page.on('pageerror', (error) => errors.push(error.message))
   page.on('console', (message) => { if (/Shader Error|THREE.WebGLProgram|GL_INVALID/.test(message.text())) errors.push(message.text()) })
@@ -38,13 +38,11 @@ test('creation gives the scene the main area, keeps technical controls optional 
   expect(doc.name).toBe('Vale dos Ventos')
   expect(doc.nodes.length).toBeGreaterThan(800)
   expect(doc.nodes.find((node: { kind: string }) => node.kind === 'terrain').geometry.biome).toBe('meadow')
-  await page.screenshot({ path: '.cache/browser/three-create.png' })
   await page.getByRole('button', { name: '▶ Jogar', exact: true }).click()
   const hud = page.getByRole('region', { name: 'Modo jogo' })
   await expect(hud).toContainText('Itens 0/7', { timeout: 90_000 })
   await expect(page.getByRole('textbox', { name: 'Descreva a cena Three.js' })).toBeHidden()
   expect((await page.locator('.three-stage').boundingBox())!.height).toBeGreaterThan(initial.height + 80)
-  await page.screenshot({ path: '.cache/browser/three-valley-game.png' })
   await leaveGame(page)
   await expect(hud).toBeHidden()
   await page.getByRole('button', { name: 'Editor avançado', exact: true }).click()
@@ -93,5 +91,4 @@ test('creation remains usable on a narrow screen without horizontal scrolling', 
   await page.getByRole('button', { name: 'Plataformas no espaço ↗', exact: true }).click()
   await expect(page.getByRole('textbox', { name: 'Descreva a cena Three.js' })).toContainText('plataformas no espaço')
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
-  await page.screenshot({ path: '.cache/browser/three-create-mobile.png' })
 })

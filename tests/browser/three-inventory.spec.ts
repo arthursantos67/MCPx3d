@@ -35,7 +35,6 @@ test('dragging ingredients and the output crafts once, preserves quantities and 
   await inventory.getByRole('button', { name: 'Mochila: Pedra, 4', exact: true }).dragTo(inventory.getByRole('button', { name: 'Bancada 2: vazio', exact: true }))
   const output = inventory.getByRole('button', { name: 'Retirar resultado: Machado de pedra', exact: true })
   await expect(output).toBeEnabled()
-  await page.screenshot({ path: '.cache/browser/three-inventory-workbench.png' })
   await output.dragTo(inventory.getByRole('button', { name: 'Atalho 3: Vazio', exact: true }))
   await expect(inventory.getByRole('button', { name: 'Atalho 3: Machado de pedra', exact: true })).toBeVisible()
   await expect(inventory.getByRole('button', { name: 'Mochila: Machado de pedra, 1', exact: true })).toBeVisible()

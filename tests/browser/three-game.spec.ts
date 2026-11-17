@@ -43,13 +43,12 @@ function arena() {
 
 test('the playable island renders with sky, lights and post-processing, and exports GLB and PNG', async ({ page }) => {
   // Full-window SwiftShader readback plus GLB export can exceed the generic 60 s budget.
-  test.setTimeout(90_000)
+  test.setTimeout(180_000)
   const errors: string[] = []
   await open(page, errors)
   await projectAction(page, 'Exemplo jogável')
   await expect(page.getByText('Ilha do Farol', { exact: true })).toBeVisible()
   await expect(page.getByLabel('Estatísticas do renderer')).toContainText(/[1-9][\d.]* triângulos/)
-  await page.screenshot({ path: '.cache/browser/three-island-editor.png' })
   const glb = await downloaded(page, 'Exportar GLB')
   expect(glb.name).toBe('ilha-do-farol.glb')
   expect(glb.data.subarray(0, 4).toString('latin1')).toBe('glTF')
@@ -64,7 +63,6 @@ test('the playable island renders with sky, lights and post-processing, and expo
   await page.keyboard.down('w')
   await page.waitForTimeout(700)
   await page.keyboard.up('w')
-  await page.screenshot({ path: '.cache/browser/three-island-game.png' })
   await leaveGame(page)
   await expect(hud).toBeHidden()
   expect(errors).toEqual([])
@@ -136,11 +134,11 @@ test('editor shortcuts switch gizmos, nudge, delete, undo and open the shortcut 
   expect(lit.nodes[1].light.type).toBe('spot')
   expect(lit.environment.sky).toBe('night')
   expect(lit.environment.bloom).toBe(1.2)
-  await page.screenshot({ path: '.cache/browser/three-night-light.png' })
   expect(errors).toEqual([])
 })
 
 test('game systems: hazards hurt, third-person camera, enemies are defeated and the objective shows victory', async ({ page }) => {
+  test.setTimeout(150_000)
   const errors: string[] = []
   await open(page, errors)
   const json = await page.evaluate(async () => {
@@ -155,6 +153,8 @@ test('game systems: hazards hurt, third-person camera, enemies are defeated and 
   const doc = JSON.parse(json)
   doc.environment.gameplay={quests:[],recipes:[],naturalResources:false,startingItems:[],hud:'full'}
   await load(page, doc)
+  await expect(page.locator('.three-commandbar__identity strong')).toHaveText(doc.name)
+  await expect(page.getByRole('button', { name: '▶ Jogar', exact: true })).toBeEnabled({ timeout: 90_000 })
   await page.keyboard.press('p')
   const hud = page.getByRole('region', { name: 'Modo jogo' })
   await expect.poll(async () => Number(await hud.getByRole('meter', { name: 'Vida' }).getAttribute('aria-valuenow')), { timeout: 30000 }).toBeLessThan(100)

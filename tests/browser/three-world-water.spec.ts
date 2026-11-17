@@ -37,7 +37,6 @@ test('Aurora renders a supported river beside a dry bank with the same level use
  const canvas=page.getByRole('img',{name:'Cena Three.js interativa'}),box=(await canvas.boundingBox())!
  const tilt=Math.atan2(at.by+1.62-at.level,Math.hypot(at.bx-at.x,at.bz-at.z)),cx=box.x+box.width/2,cy=box.y+box.height/2
  await page.mouse.move(cx,cy);await page.mouse.down();await page.mouse.move(cx,cy+tilt/.005,{steps:8});await page.mouse.up()
- await canvas.screenshot({path:'.cache/browser/three-aurora-river-bank.png'})
  await page.keyboard.down('w')
  await page.waitForFunction(()=>{const bench=window.__formaBench!,at=bench.position()!,water=bench.liquid!(at[0],at[2]);return water&&at[1]<water.level-.8&&water.level-bench.ground!(at[0],at[2])>1.4},null,{timeout:90000})
  await page.keyboard.up('w')

@@ -38,7 +38,7 @@ test('the default game keeps instructions and resource health off the screen and
  await page.keyboard.press('b');const inventory=page.getByRole('dialog',{name:'Inventário e fabricação'}),cells=inventory.getByRole('group',{name:'Grade de fabricação'}).getByRole('button')
  await expect(cells).toHaveCount(4);const box=(await cells.first().boundingBox())!;expect(box.width).toBeGreaterThanOrEqual(60);expect(box.height).toBeGreaterThanOrEqual(60)
  await expect(inventory).not.toContainText('Uma descoberta');await expect(inventory).not.toContainText('Arraste o resultado')
- await page.screenshot({path:'.cache/browser/three-inventory-clean.png'});expect(errors).toEqual([])
+ expect(errors).toEqual([])
 })
 
 test('crafting results accumulate on the cursor and swapping stacks preserves every remaining ingredient',async({page})=>{
@@ -84,7 +84,6 @@ test('striking a resource uses the animated impact, while E leaves wood unchange
  await page.keyboard.press('e');await expect(prompt.getByLabel('Resistência 10/10')).toBeVisible()
  await page.getByRole('img',{name:'Cena Three.js interativa'}).click({position:{x:200,y:200}})
  await expect(prompt.getByLabel('Resistência 5/10')).toBeVisible()
- await page.screenshot({path:'.cache/browser/three-first-person-harvest.png'})
  expect(errors).toEqual([])
 })
 test('lava uses the fluid surface and damages the player after entering it',async({page})=>{
@@ -93,7 +92,7 @@ test('lava uses the fluid surface and damages the player after entering it',asyn
  const errors=await open(page,validateScene(scene)),health=page.getByRole('meter',{name:'Vida',exact:true})
  await expect(health).toHaveAttribute('aria-valuenow','100');await page.keyboard.down('w')
  await expect.poll(async()=>Number(await health.getAttribute('aria-valuenow')),{timeout:15000}).toBeLessThan(100)
- await page.keyboard.up('w');await page.screenshot({path:'.cache/browser/three-lava-contact.png'})
+ await page.keyboard.up('w');
  expect(errors).toEqual([])
 })
 for(const [equipment,damage,left]of[['sword',8,2],['blaster',2,8]] as const)test(`item-specific ${equipment} combat damage is applied once at impact`,async({page})=>{
