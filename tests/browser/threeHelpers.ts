@@ -24,5 +24,4 @@ export async function leaveGame(page: Page) {
   await page.keyboard.press('Escape')
   await hud.getByRole('button', { name: /^Sair( do jogo)?$/ }).first().click()
   await hud.waitFor({ state: 'hidden' })
-  await waitForSceneReady(page)
 }
