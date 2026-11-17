@@ -26,7 +26,7 @@ uv run ruff check .
 uv run mypy src
 ```
 
-No domínio: `uv run pytest`. Na API, execute `uv run python ../../scripts/run-api-tests.py`. O executor roda cada arquivo em processo separado e sequencial; `--isolate-cases` libera memória nativa entre casos individuais, inclusive parâmetros. O CI usa essa opção no CAD para não acumular sólidos e caches de roscas. O prazo padrão é de 900 segundos por seleção. `--group core`/`--group cad` e `--shard 1/2` permitem dividir a suíte sem perder cobertura no conjunto das execuções.
+No domínio: `uv run pytest`. Na API, execute `uv run python ../../scripts/run-api-tests.py`. O executor roda cada arquivo em processo separado e sequencial; `--isolate-cases` libera memória nativa entre casos individuais, inclusive parâmetros. O CI usa essa opção no CAD para não acumular sólidos e caches de roscas. O prazo padrão é de 900 segundos por seleção. `--group core`/`--group cad` e `--shard 1/2` permitem dividir a suíte sem perder cobertura no conjunto das execuções. Com isolamento, os shards distribuem os casos após a coleta completa, dividindo também os arquivos mais pesados.
 
 Para um teste CAD local pequeno com teto de memória/prazo, após instalar a API:
 

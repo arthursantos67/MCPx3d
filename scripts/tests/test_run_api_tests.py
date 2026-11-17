@@ -42,10 +42,24 @@ class ApiTestRunnerTests(unittest.TestCase):
     def test_case_isolation_launches_each_collected_parameter_once(self):
         cases = ["tests/test_cad_assembly.py::test_pose[left]", "tests/test_cad_assembly.py::test_pose[right]"]
         collection = subprocess.CompletedProcess([], 0, stdout="\n".join(cases) + "\n\n2 tests collected", stderr="")
-        with patch.object(runner.subprocess, "run", return_value=collection):
-            result, launched = self.run_selection("--group", "cad", "--shard", "1/100", "--isolate-cases")
+        with patch.object(runner.subprocess, "run", return_value=collection), patch.object(
+            runner.Path, "glob", return_value=[Path("test_cad_assembly.py")]
+        ):
+            result, launched = self.run_selection("--group", "cad", "--isolate-cases")
         self.assertEqual(result, 0)
         self.assertEqual(launched, [Path(case).name for case in cases])
+
+    def test_isolated_shards_split_cases_within_a_heavy_file_without_losing_coverage(self):
+        cases = [f"tests/test_cad_assembly.py::test_pose[{side}]" for side in ("left", "right", "center")]
+        collection = subprocess.CompletedProcess([], 0, stdout="\n".join(cases), stderr="")
+        with patch.object(runner.subprocess, "run", return_value=collection), patch.object(
+            runner.Path, "glob", return_value=[Path("test_cad_assembly.py")]
+        ):
+            _, first = self.run_selection("--group", "cad", "--shard", "1/2", "--isolate-cases")
+            _, second = self.run_selection("--group", "cad", "--shard", "2/2", "--isolate-cases")
+        self.assertEqual(first, [Path(cases[0]).name, Path(cases[2]).name])
+        self.assertEqual(second, [Path(cases[1]).name])
+        self.assertCountEqual(first + second, [Path(case).name for case in cases])
 
     def test_timeout_stops_the_process_tree(self):
         process = Mock(pid=123)
